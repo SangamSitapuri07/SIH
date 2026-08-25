@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LegalEye — Legal Metrology Compliance Scanner (SIH26034)</title>
+<style>
+:root{--navy:#0f2540;--navy2:#16324f;--saff:#e8752a;--green:#157a3d;--red:#b3342a;--ink:#1d2733;--muted:#5c6b7a;--line:#dfe6ee;--bg:#eef3f8;--card:#fff;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+.tricolor{height:5px;background:linear-gradient(90deg,#f4901e 0 33%,#fff 33% 66%,#138808 66%);}
+header{background:linear-gradient(120deg,var(--navy),var(--navy2) 70%,#1e4270);color:#fff;padding:14px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.logo{width:44px;height:44px;flex:0 0 44px}
+header h1{font-size:21px;letter-spacing:.3px}
+header .tag{font-size:12px;color:#c9d6e4;margin-top:2px}
+.hbadge{margin-left:auto;background:rgba(232,117,42,.18);border:1px solid rgba(232,117,42,.55);color:#f4b27c;font-size:11.5px;font-weight:700;border-radius:20px;padding:4px 12px}
+main{max-width:1280px;margin:0 auto;padding:18px}
+.layout{display:grid;grid-template-columns:400px 1fr;gap:18px;align-items:start}
+@media(max-width:980px){.layout{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 2px 10px rgba(15,37,64,.06);padding:16px}
+.card h2{font-size:15px;color:var(--navy);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tab{flex:1;padding:7px 4px;font-size:12.5px;font-weight:700;border:1px solid var(--line);background:#f6f9fc;color:var(--muted);border-radius:9px;cursor:pointer;text-align:center}
+.tab.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+.samples{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.sample{border:1px solid var(--line);border-radius:10px;overflow:hidden;cursor:pointer;transition:.15s;background:#fff}
+.sample:hover{transform:translateY(-2px);box-shadow:0 6px 14px rgba(15,37,64,.15);border-color:var(--saff)}
+.sample img{width:100%;height:88px;object-fit:cover;object-position:top;}
+.sample .sn{font-size:11.5px;font-weight:700;padding:6px 8px 2px;color:var(--navy)}
+.sample .sh{font-size:10px;color:#8a6d3b;padding:0 8px 7px;line-height:1.3}
+.drop{border:2px dashed #b9c8d8;border-radius:12px;text-align:center;padding:26px 12px;color:var(--muted);font-size:13px;cursor:pointer;background:#fbfdff;transition:.15s}
+.drop.over{border-color:var(--saff);background:#fff7ef;color:#a34f12}
+.drop b{color:var(--navy)}
+.field{margin-top:12px;font-size:12px;color:var(--muted)}
+.field label{font-weight:700;color:var(--navy2);display:block;margin-bottom:4px;font-size:12px}
+.field input,.field select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:#fff}
+.field input[type=range]{padding:0}
+#video{width:100%;border-radius:10px;background:#000;aspect-ratio:4/3;object-fit:cover}
+.btn{display:inline-flex;align-items:center;gap:8px;background:var(--saff);color:#fff;border:0;border-radius:9px;padding:10px 16px;font-size:13.5px;font-weight:800;cursor:pointer;transition:.15s}
+.btn:hover{background:#d2641c}
+.btn.ghost{background:#eef3f8;color:var(--navy);border:1px solid var(--line)}
+.btn.ghost:hover{background:#e2eaf2}
+.btn.big{width:100%;justify-content:center;margin-top:12px;font-size:14.5px;padding:12px}
+.result-img-wrap{position:relative;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#0c1522;text-align:center}
+.result-img-wrap img{max-width:100%;display:block}
+.overlay{position:absolute;inset:0;pointer-events:none}
+.obox{position:absolute;border:2.5px solid;border-radius:4px;transition:.12s}
+.obox .olab{position:absolute;top:-18px;left:-2px;font-size:10px;font-weight:800;color:#fff;border-radius:4px;padding:1px 6px;white-space:nowrap}
+.verdict{border-radius:12px;padding:14px 18px;color:#fff;display:flex;align-items:center;gap:16px;margin-bottom:14px}
+.verdict.gA{background:linear-gradient(120deg,#0e6b34,#189a4b)}
+.verdict.gB{background:linear-gradient(120deg,#b05e10,#e08a2a)}
+.verdict.gC{background:linear-gradient(120deg,#8c2721,#c64539)}
+.ring{width:76px;height:76px;flex:0 0 76px}
+.vtxt b{font-size:18px;display:block}
+.vtxt span{font-size:12.5px;opacity:.92}
+table.checks{width:100%;border-collapse:collapse;font-size:12.6px;margin-top:4px}
+table.checks th{background:var(--navy);color:#fff;text-align:left;padding:7px 9px;font-size:11px}
+table.checks td{padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+table.checks tr.crow:hover{background:#f4f8fc}
+.status{display:inline-block;font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 8px;color:#fff;min-width:44px;text-align:center}
+.status.pass{background:var(--green)}.status.fail{background:var(--red)}.status.na{background:#8d99a6}
+.fix{font-size:11.5px;color:#a34f12;background:#fdf3e7;border-radius:6px;padding:3px 7px;margin-top:4px;display:inline-block}
+.ev{font-family:Consolas,monospace;font-size:11px;color:#37536e;background:#f0f5fa;border-radius:5px;padding:1px 6px;word-break:break-all}
+.empty{background:repeating-linear-gradient(45deg,#f7fafc,#f7fafc 12px,#f1f5f9 12px,#f1f5f9 24px);border:2px dashed #c3d0de;border-radius:12px;text-align:center;padding:70px 20px;color:var(--muted);font-size:14px}
+.empty b{color:var(--navy)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.stat{border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;background:#fff}
+.stat .v{font-size:26px;font-weight:800;color:var(--navy)}
+.stat .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+.bars{display:flex;flex-direction:column;gap:7px}
+.bar-row{display:flex;align-items:center;gap:8px;font-size:11.5px}
+.bar-row .bl{width:240px;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar-track{flex:1;background:#edf2f7;border-radius:5px;height:16px;position:relative}
+.bar-fill{height:16px;border-radius:5px;background:linear-gradient(90deg,#d4752a,#e8a15a);min-width:2px}
+.bar-n{width:20px;font-weight:800;color:var(--navy)}
+table.hist{width:100%;border-collapse:collapse;font-size:12.5px}
+table.hist th{background:#f0f4f8;color:var(--navy);text-align:left;padding:7px 9px;font-size:11px;border-bottom:2px solid var(--line)}
+table.hist td{padding:7px 9px;border-bottom:1px solid var(--line)}
+table.hist img{width:64px;height:40px;object-fit:cover;border-radius:5px;border:1px solid var(--line)}
+.spin{display:inline-block;width:16px;height:16px;border:3px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp 0.7s linear infinite;vertical-align:-3px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.note{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5;background:#f6f9fc;border-left:3px solid var(--navy2);padding:8px 10px;border-radius:6px}
+footer{margin:26px 0 10px;font-size:11.5px;color:var(--muted);text-align:center}
+.penalty{font-size:11px;color:#8c5540;background:#fdf0e8;border-radius:6px;padding:6px 9px;margin-top:8px}
+h2 svg{flex:0 0 18px}
+</style>
+</head>
+<body>
+<div class="tricolor"></div>
+<header>
+  <svg class="logo" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="22" fill="#e8752a" opacity=".18"/><path d="M24 8v4M14 40h20M24 12v24M10 16l14-4 14 4" stroke="#f4a259" stroke-width="2.4" stroke-linecap="round"/><path d="M8 16l-4 8a6 6 0 0 0 12 0l-4-8" stroke="#f4a259" stroke-width="2.2" fill="none" stroke-linejoin="round"/><path d="M40 16l-4 8a6 6 0 0 0 12 0l-4-8" stroke="#f4a259" stroke-width="2.2" fill="none" stroke-linejoin="round"/><path d="M25.5 25.5l5.2 5.2M20 22h8" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="24" cy="24" r="22" stroke="#f4a259" stroke-width="2"/></svg>
+  <div>
+    <h1>LegalEye</h1>
+    <div class="tag">Automated Packaged-Commodity Compliance Scanner &middot; Legal Metrology (PC) Rules, 2011 &middot; Dept. of Consumer Affairs</div>
+  </div>
+  <span class="hbadge">SIH 2026 &middot; PS SIH26034 &middot; Prototype v1.0</span>
+</header>
+
+<main>
+<div class="layout">
+  <!-- LEFT: INPUT -->
+  <div>
+    <div class="card">
+      <h2>1 &middot; Acquire Pack Image</h2>
+      <div class="tabs">
+        <div class="tab active" data-tab="samples">Sample Packs</div>
+        <div class="tab" data-tab="upload">Upload Photo</div>
+        <div class="tab" data-tab="camera">Live Camera</div>
+      </div>
+
+      <div id="tab-samples">
+        <div class="samples" id="sampleGrid"></div>
+        <button class="btn big" id="scanSampleBtn" disabled>Scan selected pack</button>
+        <div class="note">Reference packs ship with calibrated dimensions &mdash; use them to demo the full rules engine end-to-end.</div>
+      </div>
+
+      <div id="tab-upload" style="display:none">
+        <div class="drop" id="drop">Drop a label photo here<br>or <b>browse files</b><input type="file" id="fileInput" accept="image/*" hidden></div>
+        <div id="upPrev" style="margin-top:10px;text-align:center"></div>
+        <div class="field"><label>Product name (optional)</label><input id="upName" placeholder="e.g. Parle-G Gold 100 g"></div>
+        <div class="field"><label>Pack size class (display-panel area)</label>
+          <select id="upClass"><option value="small">&le; 200 cm&sup2; (small retail pack)</option><option value="medium">200&ndash;500 cm&sup2;</option><option value="large">500&ndash;2500 cm&sup2; (e.g. 5&nbsp;kg staples)</option><option value="xlarge">&gt; 2500 cm&sup2; (bulk)</option></select></div>
+        <div class="field"><label>Label physical width: <span id="wVal">180</span> mm</label><input type="range" id="upWidth" min="60" max="500" value="180"></div>
+        <button class="btn big" id="scanUploadBtn" disabled>Scan uploaded pack</button>
+      </div>
+
+      <div id="tab-camera" style="display:none">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="field"><label>Pack size class</label>
+          <select id="camClass"><option value="small">&le; 200 cm&sup2;</option><option value="medium">200&ndash;500 cm&sup2;</option><option value="large">500&ndash;2500 cm&sup2;</option><option value="xlarge">&gt; 2500 cm&sup2;</option></select></div>
+        <div class="field"><label>Label width: <span id="cwVal">180</span> mm</label><input type="range" id="camWidth" min="60" max="500" value="180"></div>
+        <button class="btn big" id="captureBtn">Capture &amp; Scan</button>
+        <div class="note">Live-scan mode: point a phone at any packaged product at a kirana store / inspection site.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h2>How the engine judges</h2>
+      <div style="font-size:12px;color:var(--muted);line-height:1.6">
+        OCR &rarr; declaration extraction &rarr; <b>12 rule checks</b> from the PC Rules 2011:
+        manufacturer address, commodity name, net quantity &amp; its numeral height (Rule 14 + Sch. VII),
+        MRP + &lsquo;inclusive of taxes&rsquo;, month-year, consumer care, import origin &amp; importer,
+        batch, FSSAI licence &amp; veg logo (food packs). Critical fails (no MRP / no net-qty) &rArr; <b>sale prohibited</b>.
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: RESULTS -->
+  <div>
+    <div id="emptyState" class="empty">
+      <b>No pack scanned yet</b><br>
+      Pick a sample pack, upload a label photo, or open the camera to begin the inspection.
+    </div>
+
+    <div id="resultPanel" style="display:none">
+      <div class="verdict gA" id="verdictBanner">
+        <svg class="ring" viewBox="0 0 76 76">
+          <circle cx="38" cy="38" r="31" stroke="rgba(255,255,255,.25)" stroke-width="8" fill="none"/>
+          <circle id="ringFill" cx="38" cy="38" r="31" stroke="#fff" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="194.8" stroke-dashoffset="194.8" transform="rotate(-90 38 38)"/>
+          <text id="ringText" x="38" y="44" text-anchor="middle" fill="#fff" font-size="19" font-weight="800">0</text>
+        </svg>
+        <div class="vtxt"><b id="vTitle">COMPLIANT</b><span id="vSub">&mdash;</span></div>
+      </div>
+
+      <div class="card">
+        <h2>2 &middot; Annotated Evidence Overlay</h2>
+        <div class="result-img-wrap"><img id="resImg" alt="scanned label"><div class="overlay" id="overlay"></div></div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <h2>3 &middot; Rule-by-Rule Compliance Sheet</h2>
+        <table class="checks" id="checkTable">
+          <thead><tr><th style="width:40px">ID</th><th>Declaration (PC Rules 2011)</th><th style="width:180px">Evidence on pack</th><th style="width:64px">Status</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="penalty" id="penaltyNote" style="display:none"></div>
+        <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn" id="pdfBtn">Download PDF report</button>
+          <span style="font-size:11.5px;color:var(--muted);align-self:center" id="scanMeta"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="card" style="margin-top:18px">
+  <h2>Enforcement Dashboard &middot; Inspection Repository</h2>
+  <div class="stats" id="statCards"></div>
+  <h2 style="margin-top:6px">Most frequent violations</h2>
+  <div class="bars" id="violationBars"></div>
+  <h2 style="margin:16px 0 6px">Scan history</h2>
+  <table class="hist"><thead><tr><th></th><th>Scan ID</th><th>Product</th><th>Verdict</th><th>Score</th><th>Time</th><th></th></tr></thead><tbody id="histBody"></tbody></table>
+</div>
+</main>
+
+<footer>LegalEye prototype for SIH 2026 problem statement SIH26034 &middot; OCR (RapidOCR) + rules engine over the Legal Metrology (Packaged Commodities) Rules, 2011. Prototype output &mdash; always verify against the latest published text of the Rules.</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+let selectedSample = null, uploadBlob = null, lastScan = null, ocrOn = false;
+
+// ---------- tabs ----------
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  ['samples','upload','camera'].forEach(k=>$('#tab-'+k).style.display = k===t.dataset.tab?'block':'none');
+  if(t.dataset.tab==='camera') startCam(); else stopCam();
+});
+
+// ---------- samples ----------
+fetch('/api/samples').then(r=>r.json()).then(list=>{
+  const g = $('#sampleGrid');
+  list.forEach(s=>{
+    const d = document.createElement('div'); d.className='sample';
+    d.innerHTML = `<img src="${s.url}"><div class="sn">${s.name}</div><div class="sh">${s.hint}</div>`;
+    d.onclick = ()=>{ document.querySelectorAll('.sample').forEach(x=>x.style.outline='');
+      d.style.outline='3px solid var(--saff)'; selectedSample=s; $('#scanSampleBtn').disabled=false;
+      $('#scanSampleBtn').innerHTML='Scan &ldquo;'+s.name+'&rdquo;'; };
+    g.appendChild(d);
+  });
+});
+$('#scanSampleBtn').onclick = ()=>{
+  const fd = new FormData(); fd.append('sample', selectedSample.key);
+  doScan(fd, selectedSample.name);
+};
+
+// ---------- upload ----------
+const drop = $('#drop'), fi = $('#fileInput');
+drop.onclick = ()=>fi.click();
+drop.ondragover = e=>{e.preventDefault();drop.classList.add('over')};
+drop.ondragleave = ()=>drop.classList.remove('over');
+drop.ondrop = e=>{e.preventDefault();drop.classList.remove('over'); if(e.dataTransfer.files[0]) setUpload(e.dataTransfer.files[0]);};
+fi.onchange = ()=>fi.files[0] && setUpload(fi.files[0]);
+function setUpload(f){ uploadBlob=f; $('#scanUploadBtn').disabled=false;
+  const img = document.createElement('img'); img.style.cssText='max-width:100%;border-radius:8px;border:1px solid var(--line)';
+  img.src = URL.createObjectURL(f); $('#upPrev').innerHTML=''; $('#upPrev').appendChild(img);
+}
+$('#upWidth').oninput = e=>$('#wVal').textContent = e.target.value;
+$('#camWidth').oninput = e=>$('#cwVal').textContent = e.target.value;
+$('#scanUploadBtn').onclick = ()=>{
+  const fd = new FormData(); fd.append('file', uploadBlob);
+  fd.append('product_name', $('#upName').value);
+  fd.append('package_class', $('#upClass').value);
+  fd.append('label_width_mm', $('#upWidth').value);
+  doScan(fd, $('#upName').value||'Uploaded pack');
+};
+
+// ---------- camera ----------
+let camStream = null;
+async function startCam(){
+  try{ camStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
+    $('#video').srcObject = camStream; }
+  catch(e){ $('#video').poster=''; alert('Camera not available: '+e.message); }
+}
+function stopCam(){ if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;} }
+$('#captureBtn').onclick = ()=>{
+  if(!camStream) return;
+  const v = $('#video'), cv = document.createElement('canvas');
+  cv.width=v.videoWidth; cv.height=v.videoHeight;
+  cv.getContext('2d').drawImage(v,0,0);
+  cv.toBlob(b=>{
+    const fd = new FormData(); fd.append('file', b, 'camera.jpg');
+    fd.append('package_class', $('#camClass').value);
+    fd.append('label_width_mm', $('#camWidth').value);
+    doScan(fd, 'Live camera pack');
+  },'image/jpeg',0.9);
+};
+
+// ---------- scan ----------
+async function doScan(fd, label){
+  $('#emptyState').style.display='none';
+  $('#resultPanel').style.display='block';
+  $('#verdictBanner').className='verdict gB';
+  $('#vTitle').innerHTML='<span class="spin"></span> Analysing pack&hellip;';
+  $('#vSub').textContent = 'OCR + 12-rule engine running';
+  document.querySelector('#checkTable tbody').innerHTML='';
+  $('#overlay').innerHTML=''; $('#resImg').src='';
+  $('#pdfBtn').disabled = true;
+  try{
+    const r = await fetch('/api/scan',{method:'POST',body:fd});
+    if(!r.ok){ const e = await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail||'scan failed'); }
+    const data = await r.json();
+    lastScan = data; renderResult(data); refreshDash();
+  }catch(e){
+    $('#vTitle').textContent='Scan failed'; $('#vSub').textContent=e.message;
+  }
+}
+
+function renderResult(d){
+  const g = d.grade;
+  $('#verdictBanner').className = 'verdict g'+g;
+  $('#vTitle').textContent = d.verdict;
+  $('#vSub').textContent = `${d.product_name||'Pack'} · ${d.failed_checks} violation(s) out of ${d.n_checks} applicable checks · Scan ${d.scan_id}`;
+  // ring
+  const p = d.score/100, c = 2*Math.PI*31;
+  $('#ringFill').style.transition='stroke-dashoffset 1s ease';
+  $('#ringFill').style.strokeDashoffset = c*(1-p);
+  $('#ringText').textContent = d.score;
+  $('#scanMeta').textContent = `panel class ${d.meta.package_class} · est. width ${d.meta.label_width_mm} mm · ${d.ocr_lines.length} text regions read`;
+  // image + boxes
+  const img = $('#resImg'); img.src = 'data:image/jpeg;base64,'+d.image_b64;
+  img.onload = ()=>{ drawBoxes(d); };
+  // table
+  const tb = document.querySelector('#checkTable tbody'); tb.innerHTML='';
+  d.checks.forEach((c,i)=>{
+    if(c.status==='na'){ return; }
+    const tr = document.createElement('tr'); tr.className='crow'; tr.dataset.i=i;
+    tr.innerHTML = `<td><b>${c.id}</b><div style="font-size:10px;color:var(--muted);margin-top:2px">w ${c.weight}</div></td>
+      <td><b style="color:var(--navy)">${c.title}</b>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${c.rule_ref}</div>
+          <div style="font-size:11.5px;margin-top:3px">${c.detail}</div>
+          ${c.fix?`<span class="fix">Fix: ${c.fix}</span>`:''}</td>
+      <td>${c.evidence?`<span class="ev">${c.evidence}</span>`:'<span style="color:#a3b1c0">&mdash;</span>'}</td>
+      <td><span class="status ${c.status}">${c.status.toUpperCase()}</span></td>`;
+    tr.onmouseenter = ()=>highlightBox(i);
+    tr.onmouseleave = ()=>highlightBox(-1);
+    tb.appendChild(tr);
+  });
+  // penalty
+  const fails = d.checks.filter(c=>c.status==='fail');
+  const pn = $('#penaltyNote');
+  if(fails.length){
+    pn.style.display='block';
+    pn.innerHTML = `<b>Penalty exposure:</b> ${fails.length} violation(s) under the PC Rules 2011 attract prosecution / compounding under s.36 read with s.48 of the Legal Metrology Act, 2009. ${d.grade==='C'?'Sale of this package as-is is prohibited — seize & record batch.':''}`;
+  } else { pn.style.display='none'; }
+  $('#pdfBtn').disabled = false;
+  $('#pdfBtn').onclick = ()=>window.open(`/api/report/${d.scan_id}.pdf`,'_blank');
+}
+
+function drawBoxes(d){
+  const img = $('#resImg'), ov = $('#overlay');
+  ov.innerHTML='';
+  const sx = img.clientWidth / d.meta.img_w, sy = img.clientHeight / d.meta.img_h;
+  d.checks.forEach((c,i)=>{
+    if(!c.box) return;
+    const col = c.status==='pass' ? 'rgba(21,158,84,.95)' : c.status==='fail' ? 'rgba(230,70,50,.95)' : 'rgba(140,150,160,.8)';
+    const b = document.createElement('div');
+    b.className='obox'; b.dataset.i=i;
+    b.style.cssText+=`left:${c.box[0]*sx}px;top:${c.box[1]*sy}px;width:${(c.box[2]-c.box[0])*sx}px;height:${(c.box[3]-c.box[1])*sy}px;border-color:${col}`;
+    b.innerHTML = `<span class="olab" style="background:${col}">${c.id}</span>`;
+    ov.appendChild(b);
+  });
+}
+function highlightBox(i){
+  document.querySelectorAll('.obox').forEach(b=>{
+    b.style.opacity = (i<0 || +b.dataset.i===i) ? 1 : .12;
+    if(+b.dataset.i===i) b.style.zIndex = 5;
+  });
+}
+window.addEventListener('resize',()=>{ if(lastScan) drawBoxes(lastScan); });
+
+// ---------- dashboard ----------
+function refreshDash(){
+  fetch('/api/stats').then(r=>r.json()).then(s=>{
+    $('#statCards').innerHTML = `
+      <div class="stat"><div class="v">${s.total}</div><div class="l">Packs scanned</div></div>
+      <div class="stat"><div class="v" style="color:var(--green)">${s.compliant}</div><div class="l">Compliant</div></div>
+      <div class="stat"><div class="v" style="color:#b05e10">${s.minor}</div><div class="l">Minor N.C.</div></div>
+      <div class="stat"><div class="v" style="color:var(--red)">${s.major}</div><div class="l">Major N.C.</div></div>
+      <div class="stat"><div class="v">${s.avg}</div><div class="l">Avg score</div></div>`;
+    const max = Math.max(1, ...Object.values(s.rules));
+    $('#violationBars').innerHTML = Object.entries(s.rules).map(([k,v])=>
+      `<div class="bar-row"><div class="bl" title="${k}">${k}</div><div class="bar-track"><div class="bar-fill" style="width:${100*v/max}%"></div></div><div class="bar-n">${v}</div></div>`).join('') || '<div style="font-size:12px;color:var(--muted)">No violations recorded yet.</div>';
+  });
+  fetch('/api/history').then(r=>r.json()).then(h=>{
+    $('#histBody').innerHTML = h.map(row=>`
+      <tr><td><img src="data:image/jpeg;base64,${row.thumb}"></td>
+      <td>${row.id}</td><td>${row.product}</td>
+      <td><b style="color:${row.grade==='A'?'var(--green)':row.grade==='B'?'#b05e10':'var(--red)'}">${row.grade} · ${row.verdict.replace('NON-COMPLIANT ','NC ')}</b></td>
+      <td>${row.score}</td><td style="color:var(--muted)">${row.ts.replace('T',' ')}</td>
+      <td><a href="/api/report/${row.id}.pdf" style="color:var(--navy);font-weight:700;font-size:11.5px">PDF</a></td></tr>`).join('');
+  });
+}
+refreshDash();
+</script>
+</body>
+</html>
