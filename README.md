@@ -1,21 +1,34 @@
-# SIH 2026 — Team Workspace
+# SIH 2025 — PS 176 (Marine) — Project: TBD
 
-Smart India Hackathon 2026 · Finalist-track projects & research.
-Submission deadline: **20 Sept 2026** · Grand Finale: Dec 2026.
+> ⚠️ **This README is a placeholder.** The actual problem statement has not yet been pasted by the user. The project direction, tech stack, and architecture will be finalized once the PS text is confirmed.
 
-## 🔬 Primary Project — `SIH26038-RetinaScan-DR-Screening`
-**Explainable AI for Diabetic Retinopathy Screening in Rural India** (MathWorks)
-MATLAB-based pipeline: image-quality gate → retinal segmentation → DR severity
-grading (0–4) with >90% sens / >85% spec for referable DR → Grad-CAM
-explainability + calibrated confidence → Simulink telemedicine workflow model.
-See [`SIH26038-RetinaScan-DR-Screening/README.md`](SIH26038-RetinaScan-DR-Screening/README.md) for the full execution plan.
+## Current Status
 
-## ✅ Built & Running — `LegalEye-SIH26034`
-Legal Metrology (PC) Rules 2011 packaged-commodity compliance scanner —
-RapidOCR + 12-rule engine + live camera scan + PDF enforcement reports +
-dashboard. Rank-1 win-odds pick; fully working prototype in this repo.
+| Item | Value |
+| --- | --- |
+| Branch | `wwith` |
+| PS | **176 — Marine (awaiting full text)** |
+| Stack direction | Mobile (React Native / Flutter), real-time data |
+| Innovation angle | Real-time / live data |
+| Session deliverable | Working prototype / MVP |
 
-## 📚 `research/`
-- `SIH2026_Software_Shortlist.html` — win-oriented shortlist of all 172 software PS
-- `SIH_2023-25_Unfinished_Problems_Top20.html` — repeated-but-unsolved PS from SIH 2023–25
-- `all_226_ps_parsed.json` — every SIH 2026 PS parsed with descriptions
+## What this repo will become
+
+Once the PS text is in, this repo will hold a working prototype that solves PS 176 in the most innovative, "out-of-the-box" way we can — with a real-time angle, a mobile-first experience, and a demo that judges can actually run.
+
+## Folder plan (will be updated after PS is confirmed)
+
+```
+wwith/
+├── README.md           ← you are here
+├── docs/               ← problem analysis, design notes
+├── app/                ← mobile app (React Native or Flutter)
+├── backend/            ← API + real-time data pipeline
+├── data/               ← sample / synthetic data
+└── demo/               ← scripts and assets for the hackathon demo
+```
+
+## Next step
+
+📋 **User to paste the full text of PS 176 (title, organization, description, expected solution).**
+Once that lands, the first thing we'll do is read it together, pull out the requirements, and lock the architecture before any code is written.
