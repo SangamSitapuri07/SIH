@@ -75,6 +75,10 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     panel_coverage: "agents had live data",
     panel_loading_hint: "Real satellite + ocean data is being fetched live — the first analysis of a point can take 10–30 s. Nothing here is dummy data.",
     panel_click_anywhere: "Click anywhere on the ocean map to run the live analysis",
+    gfw_title: "Real fishing data (Global Fishing Watch)",
+    gfw_toggle: "Include real vessel + fishing-effort data in analysis (slower, needs token)",
+    gfw_note: "Token found — with this on, map clicks and advisories include REAL Global Fishing Watch data: how many hours boats actually fished there, which flags, which gear. Ask-ORCA chat uses it automatically.",
+    gfw_no_token: "No token found in the backend .env — add GFW_API_TOKEN to .env and restart the backend. Chat queries upgrade automatically once it's there.",
   },
   hi: {
     tab_map: "🗺️ नक्शा",
@@ -148,6 +152,10 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     panel_coverage: "एजेंटों के पास लाइव डेटा था",
     panel_loading_hint: "रीयल सैटेलाइट + समुद्र डेटा लाइव लाया जा रहा है — किसी बिंदु का पहला विश्लेषण 10–30 सेकंड ले सकता है। यहाँ कुछ भी dummy नहीं है।",
     panel_click_anywhere: "लाइव विश्लेषण के लिए नक्शे पर समुद्र में कहीं भी क्लिक करें",
+    gfw_title: "असली मछली पकड़ने का डेटा (Global Fishing Watch)",
+    gfw_toggle: "विश्लेषण में असली नाव + मछली-प्रयास डेटा शामिल करें (थोड़ा धीमा, token चाहिए)",
+    gfw_note: "Token मिल गया — इसे ON करने से नक्शा-क्लिक और सलाह में REAL Global Fishing Watch डेटा आएगा: वहाँ असल में कितने घंटे नावों ने मछली पकड़ी, किस देश के झंडे, कौन-सा gear। 'ओर्का से पूछें' chat इसे अपने आप इस्तेमाल करता है।",
+    gfw_no_token: "Backend के .env में token नहीं मिला — .env में GFW_API_TOKEN जोड़ें और backend दोबारा चालू करें। Token आते ही chat अपने आप upgrade हो जाएगा।",
   },
 };
 

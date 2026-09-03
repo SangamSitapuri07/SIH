@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DemoZone, INDIAN_COASTAL_ZONES, postFeedback, wsUrl, fetchHealth } from "@/lib/orca-client";
+import { DemoZone, INDIAN_COASTAL_ZONES, postFeedback, wsUrl, fetchHealth, gfwDeepEnabled, setGfwDeep } from "@/lib/orca-client";
 import { t, Lang, LANGS } from "@/lib/i18n";
 
 interface Health {
@@ -24,11 +24,13 @@ export default function SettingsPanel({
   setLang: (l: Lang) => void;
 }) {
   const [health, setHealth] = useState<Health | null>(null);
+  const [gfwDeep, setGfwDeepState] = useState(false);
   const [fb, setFb] = useState("");
   const [fbDone, setFbDone] = useState(false);
   const [wsState, setWsState] = useState("checking…");
 
   useEffect(() => {
+    setGfwDeepState(gfwDeepEnabled());
     fetchHealth()
       .then(setHealth)
       .catch(() => setHealth(null));
@@ -95,6 +97,28 @@ export default function SettingsPanel({
             <option value={zone.name}>{zone.name}</option>
           )}
         </select>
+      </section>
+
+      {/* GFW deep data toggle */}
+      <section className="rounded-lg border bg-white p-4">
+        <h3 className="text-sm font-semibold mb-2">🚢 {t(lang, "gfw_title")}</h3>
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={gfwDeep}
+            onChange={(e) => {
+              setGfwDeepState(e.target.checked);
+              setGfwDeep(e.target.checked);
+            }}
+          />
+          <span className="text-sm text-slate-700">{t(lang, "gfw_toggle")}</span>
+        </label>
+        <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+          {health && (health as any).credentials?.gfw_token_configured === false
+            ? `⚠️ ${t(lang, "gfw_no_token")}`
+            : t(lang, "gfw_note")}
+        </p>
       </section>
 
       {/* system status / data freshness */}

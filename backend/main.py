@@ -123,6 +123,17 @@ from pipeline.advisory import build_advisory
 from pipeline.orca_data import zone_snapshot, zone_snapshot_cached, grid_snapshot, INDIAN_COASTAL_ZONES
 
 
+def _gfw_default(client_value: Any = None) -> bool:
+    """GFW deep data default: ON when a real token is configured, unless
+    the client explicitly said otherwise. The token lives in .env
+    (GFW_API_TOKEN) — a quick map click can stay fast (client sends
+    include_gfw=false), while Ask-ORCA/chat upgrades itself to real
+    fishing-effort + fleet data automatically once the token exists."""
+    if client_value is not None:
+        return bool(client_value)
+    return bool(os.environ.get("GFW_API_TOKEN") or os.environ.get("GFW_TOKEN"))
+
+
 def _with_deadline(fn, timeout_sec: float, what: str):
     """Run fn with a hard wall-clock cap. On timeout return an honest 504
     that tells the caller the work CONTINUES in the background (results
@@ -536,7 +547,7 @@ async def chat_once(payload: dict[str, Any]) -> dict[str, Any]:
         return await asyncio.to_thread(
             chat_mod.answer_once,
             message, lat, lon, payload.get("date"),
-            bool(payload.get("include_gfw", False)),
+            _gfw_default(payload.get("include_gfw")),
             payload.get("lang"),
         )
     except Exception as e:  # noqa: BLE001
@@ -607,7 +618,7 @@ async def ws_chat(ws: WebSocket) -> None:
                 continue
 
             date = msg.get("date")
-            include_gfw = bool(msg.get("include_gfw", False))
+            include_gfw = _gfw_default(msg.get("include_gfw"))
             lang = msg.get("lang")
 
             loop = asyncio.get_running_loop()
@@ -665,6 +676,8 @@ def _warm_caches() -> None:
     import threading
 
     def _warm() -> None:
+        import os as _os
+        import time as _time
         try:
             from pipeline import incois_pfz, jtwc
             incois_pfz.get_lines()
@@ -678,6 +691,17 @@ def _warm_caches() -> None:
             build_advisory(20.9, 70.37)  # Veraval / Gujarat demo zone
         except Exception:  # noqa: BLE001
             pass
+        # Pre-warm the 8 quick-start pins (snapshots only, gentle 3 s gap)
+        # so the FIRST click in a demo is instant instead of a 20-90 s
+        # cold fetch. Background daemon — requests are never blocked on it.
+        # ORCA_PREWARM=0 disables (slow networks / metered connections).
+        if _os.environ.get("ORCA_PREWARM", "1") == "1":
+            for z in INDIAN_COASTAL_ZONES:
+                try:
+                    zone_snapshot_cached(z["lat"], z["lon"], include_gfw=False)
+                except Exception:  # noqa: BLE001
+                    pass
+                _time.sleep(3)
 
     threading.Thread(target=_warm, daemon=True, name="cache-warmer").start()
 

@@ -438,3 +438,54 @@ INDIAN_OCEAN_REGIONS = {
     "maldives_eez": {"code": "462", "source": "EEZ",
                      "description": "Maldives EEZ"},
 }
+
+
+# ── Self-test ────────────────────────────────────────────────────────
+
+def _selftest() -> int:
+    """`python -m pipeline.gfw` — honest live check with the real token.
+
+    Reads GFW_API_TOKEN from the environment / .env (never prints it)
+    and runs ONE small real query: 30-day fishing effort in a 0.5° box
+    around Veraval (20.9 N, 70.37 E), our PFZ validation ground.
+    """
+    import os
+    from datetime import date, timedelta
+
+    tok = os.environ.get("GFW_API_TOKEN")
+    if not tok:
+        print("[GFW self-test] GFW_API_TOKEN not found in env or .env —")
+        print("                paste it into your .env file first.")
+        return 2
+    print(f"[GFW self-test] token found ({len(tok)} chars, hidden).")
+
+    end = date.today() - timedelta(days=4)   # GFW data lags ~4 days
+    start = end - timedelta(days=30)
+    print(f"[GFW self-test] querying REAL fishing effort: "
+          f"Veraval box 20.40-21.40 N, 69.87-70.87 E, {start}..{end}")
+
+    effort = get_fishing_effort(20.9, 70.37, start.isoformat(), end.isoformat())
+    if not effort or "error" in effort:
+        print("[GFW self-test] effort FAILED:", (effort or {}).get("error", "no response"))
+        return 1
+    print(f"[GFW self-test] ✅ effort: {effort.get('hours')} fishing hours, "
+          f"{effort.get('vessel_ids')} vessels in 30 days")
+
+    try:
+        fleet = get_fishing_vessels_in_region(
+            20.9, 70.37, 0.5, start.isoformat(), end.isoformat())
+    except Exception as e:  # noqa: BLE001
+        fleet = {"error": str(e)}
+    if isinstance(fleet, dict) and "error" not in fleet and fleet:
+        print(f"[GFW self-test] ✅ fleet: {fleet.get('vessel_count')} vessels, "
+              f"top flags: {dict(sorted((fleet.get('by_flag') or {}).items(), key=lambda kv: -kv[1])[:5])}")
+    else:
+        print("[GFW self-test] fleet endpoint:", (fleet or {}).get("error", "not available"))
+    print("[GFW self-test] DONE — token works. ORCA agents will now show "
+          "real GFW fishing data wherever include_gfw is on.")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(_selftest())

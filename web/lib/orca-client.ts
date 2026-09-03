@@ -245,14 +245,28 @@ async function apiPost<T>(path: string, body: unknown, timeoutMs = 220_000): Pro
   return res.json();
 }
 
+// ── GFW deep-data switch ──────────────────────────────────────────
+// Off by default = fast map clicks. When the user flips "Real fishing
+// data (GFW)" in Settings, insight + advisory include REAL Global
+// Fishing Watch effort/fleet (needs GFW_API_TOKEN in the backend .env).
+
+export function gfwDeepEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  try { return localStorage.getItem("orca.gfwDeep") === "1"; } catch { return false; }
+}
+
+export function setGfwDeep(v: boolean): void {
+  try { localStorage.setItem("orca.gfwDeep", v ? "1" : "0"); } catch { /* private mode */ }
+}
+
 export const fetchInsight = (lat: number, lon: number, date?: string) =>
   apiGet<OrcaInsight>(
-    `/api/v1/reason?lat=${lat}&lon=${lon}${date ? `&date=${date}` : ""}&include_gfw=false`,
+    `/api/v1/reason?lat=${lat}&lon=${lon}${date ? `&date=${date}` : ""}&include_gfw=${gfwDeepEnabled()}`,
     220_000
   );
 
 export const fetchAdvisory = (lat: number, lon: number) =>
-  apiGet<Advisory>(`/api/v1/advisory?lat=${lat}&lon=${lon}`, 120_000);
+  apiGet<Advisory>(`/api/v1/advisory?lat=${lat}&lon=${lon}&include_gfw=${gfwDeepEnabled()}`, 120_000);
 
 export interface LayersResponse {
   type: "FeatureCollection";

@@ -33,20 +33,32 @@ export default function Home() {
   const [ticker, setTicker] = useState<OrcaAlert[]>([]);
 
   const insightBusyRef = useRef(false);
+  const pendingZoneRef = useRef<DemoZone | null>(null);
+  const runIdRef = useRef(0);
 
+  // Latest click WINS: rapid clicks queue up and only the newest zone
+  // gets analyzed next — no dropped clicks, no parallel agent-chains
+  // strangling the network.
   const handleSelectZone = (z: DemoZone) => {
-    // One live analysis at a time: concurrent clicks on a slow network
-    // each spawn a full 10-agent chain and starve each other.
-    if (insightBusyRef.current) return;
-    insightBusyRef.current = true;
+    pendingZoneRef.current = z;
     setZone(z);
     setAdvisory(null); // stale until re-fetched
-    // keep the old deep-insight behaviour for the Map tab
-    setInsightLoading(true);
     setInsight(null);
+    setInsightLoading(true);
+    if (insightBusyRef.current) return; // runNext() picks it up when free
+    runNextInsight();
+  };
+
+  const runNextInsight = () => {
+    const z = pendingZoneRef.current;
+    if (!z) return;
+    pendingZoneRef.current = null;
+    insightBusyRef.current = true;
+    const myId = ++runIdRef.current;
     fetchInsight(z.lat, z.lon)
-      .then(setInsight)
+      .then((r) => { if (runIdRef.current === myId) setInsight(r); })
       .catch((err) => {
+        if (runIdRef.current !== myId) return; // superseded by a newer click
         const timedOut =
           err instanceof Error &&
           (err.name === "TimeoutError" || /timed out/i.test(err.message) || /API 504/.test(err.message));
@@ -71,7 +83,11 @@ export default function Home() {
       })
       .finally(() => {
         insightBusyRef.current = false;
-        setInsightLoading(false);
+        if (pendingZoneRef.current) {
+          runNextInsight(); // a newer click was queued while we worked
+        } else if (runIdRef.current === myId) {
+          setInsightLoading(false);
+        }
       });
   };
 

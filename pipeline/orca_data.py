@@ -51,7 +51,12 @@ from pipeline.openmeteo_sst import get_sst_at_point
 # without it. The full snapshot completes in ~sum-of-timeouts in the
 # worst case, but in practice with the thread pool all sources run
 # concurrently and the total is bounded by max timeout.
-SOURCE_TIMEOUT_SEC = 12.0
+# Per-source cap inside the PARALLEL gather. 20 s (was 12): the US-hosted
+# chlorophyll servers (NOAA/OC-CCI) regularly need 12-20 s from Indian
+# networks — the old cap killed them before they could answer. Parallel
+# gather means the wall-clock is max(source times), not the sum, so a
+# bigger cap costs nothing when others are fast.
+SOURCE_TIMEOUT_SEC = 20.0
 
 # Lazy source getters. They import the heavy modules (which may need
 # numpy/xarray) on first call, and they look up the function via the
