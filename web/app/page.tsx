@@ -108,8 +108,7 @@ export default function Home() {
                 {zone.name}
               </div>
               <div className="text-gray-600">
-                Right-click anywhere on the ocean for a custom-point analysis ·
-                green dashed lines = today's official INCOIS PFZ advisory.
+                {t(lang, "map_click_hint")}
               </div>
             </div>
           </div>

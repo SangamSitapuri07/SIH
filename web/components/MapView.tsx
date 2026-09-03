@@ -34,6 +34,12 @@ function FlyToSelected({ selected }: { selected: DemoZone | null }) {
 
 function ClickToAnalyze({ onClick }: { onClick: (lat: number, lon: number) => void }) {
   useMapEvents({
+    // Normal left-click anywhere on the ocean -> analyse that exact point.
+    // Leaflet only fires "click" for a short press (no drag), so panning
+    // never triggers an accidental analysis. Right-click kept as alias.
+    click(e) {
+      onClick(e.latlng.lat, e.latlng.lng);
+    },
     contextmenu(e) {
       onClick(e.latlng.lat, e.latlng.lng);
     },

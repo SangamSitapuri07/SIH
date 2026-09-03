@@ -63,6 +63,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     my_location: "📍 My location",
     zones_label: "Zones",
     ticker_prefix: "ALERT",
+    map_click_hint: "Click ANYWHERE on the ocean (left-click) - every point runs a full live 10-agent analysis. The 8 pins are just quick-start zones, not a data limit.",
   },
   hi: {
     tab_map: "🗺️ नक्शा",
@@ -124,6 +125,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     my_location: "📍 मेरी लोकेशन",
     zones_label: "ज़ोन",
     ticker_prefix: "अलर्ट",
+    map_click_hint: "समुद्र पर KAHIN BHI क्लिक करें - हर बिंदु पर पूरा लाइव 10-एजेंट विश्लेषण चलेगा। 8 पिन सिर्फ़ शुरुआती ज़ोन हैं, कोई सीमा नहीं।",
   },
 };
 
