@@ -50,14 +50,19 @@ for _p in (_here.parent, _here.parent.parent, Path.cwd()):
     _load_dotenv(os.path.join(str(_p), ".env"))
 
 
-# --- Keycloak endpoints (MOSDAC's SSO) -----------------------------
-REALM = "Mosdac"
-KEYCLOAK_BASE = "https://mosdac.gov.in/realms/" + REALM
-TOKEN_URL = KEYCLOAK_BASE + "/protocol/openid-connect/token"
-LOGIN_URL = KEYCLOAK_BASE + "/login-actions/authenticate"
-
-# Try these client IDs in order
-CLIENT_IDS = ["account", "mosdac-portal", "mosdac-public"]
+# --- MOSDAC API endpoints (from official mdapi.py source) -----------
+# The official MOSDAC Python client (mdapi.py) uses these URLs:
+#   POST https://mosdac.gov.in/download_api/gettoken      (login)
+#   POST https://mosdac.gov.in/download_api/refresh-token (refresh)
+#   POST https://mosdac.gov.in/download_api/logout        (logout)
+#   POST https://mosdac.gov.in/apios/datasets.json        (search)
+#   POST https://mosdac.gov.in/download_api/download      (download)
+# It's NOT Keycloak (despite the /realms/Mosdac/ URLs in the SSO
+# pages). The auth is a simple JSON POST.
+TOKEN_URL = "https://mosdac.gov.in/download_api/gettoken"
+REFRESH_URL = "https://mosdac.gov.in/download_api/refresh-token"
+LOGOUT_URL = "https://mosdac.gov.in/download_api/logout"
+SEARCH_URL = "https://mosdac.gov.in/apios/datasets.json"
 
 
 class MosdacAuthError(Exception):
@@ -79,115 +84,32 @@ def _get_creds():
 
 
 def _try_password_grant(user, pwd, client_id):
-    """Strategy 1: simple POST with username + password."""
+    """Strategy 1: simple POST with username + password.
+    (client_id ignored for this auth scheme — kept for API compat.)
+    """
     try:
         r = requests.post(
             TOKEN_URL,
-            data={
-                "grant_type": "password",
-                "client_id": client_id,
-                "username": user,
-                "password": pwd,
-                "scope": "openid",
-            },
+            json={"username": user, "password": pwd},
             timeout=15,
         )
     except requests.RequestException:
         return None
     if r.status_code == 200:
         try:
-            return r.json().get("access_token")
+            data = r.json()
+            if data.get("access_token"):
+                return data["access_token"]
         except Exception:
             return None
     return None
 
 
 def _try_code_flow(user, pwd, client_id):
-    """Strategy 2: full OAuth authorization-code flow."""
-    s = requests.Session()
-    s.headers.update({
-        "User-Agent": "ORCA-ps176/0.1 (SIH 2026)",
-        "Accept": "text/html,application/xhtml+xml,application/json",
-    })
-    try:
-        r = s.get(
-            LOGIN_URL,
-            params={
-                "client_id": client_id,
-                "redirect_uri": KEYCLOAK_BASE + "/account/",
-                "response_type": "code",
-                "scope": "openid",
-            },
-            timeout=15,
-            allow_redirects=True,
-        )
-    except requests.RequestException:
-        return None
-
-    if r.status_code != 200:
-        return None
-
-    html = r.text
-
-    # Find form action and hidden inputs
-    form_action = None
-    form_inputs = {}
-    for line in html.splitlines():
-        m = re.search(r'<form[^>]+action="([^"]+)"', line)
-        if m:
-            form_action = m.group(1)
-            continue
-        m = re.search(r'<input[^>]+name="([^"]+)"[^>]+value="([^"]*)"', line)
-        if m:
-            form_inputs[m.group(1)] = m.group(2)
-        else:
-            m = re.search(r'<input[^>]+value="([^"]*)"[^>]+name="([^"]+)"', line)
-            if m:
-                form_inputs[m.group(2)] = m.group(1)
-
-    if not form_action:
-        return None
-
-    form_inputs["username"] = user
-    form_inputs["password"] = pwd
-
-    # POST credentials
-    url = form_action if form_action.startswith("http") else KEYCLOAK_BASE + form_action
-    try:
-        r2 = s.post(url, data=form_inputs, timeout=15, allow_redirects=False)
-    except requests.RequestException:
-        return None
-
-    if r2.status_code not in (301, 302, 303):
-        return None
-
-    # Find the auth code in the redirect Location
-    location = r2.headers.get("Location", "")
-    m = re.search(r"[?&]code=([^&]+)", location)
-    if not m:
-        return None
-    code = m.group(1)
-
-    # Exchange the code for a bearer token
-    try:
-        r3 = requests.post(
-            TOKEN_URL,
-            data={
-                "grant_type": "authorization_code",
-                "client_id": client_id,
-                "code": code,
-                "redirect_uri": KEYCLOAK_BASE + "/account/",
-            },
-            timeout=15,
-        )
-    except requests.RequestException:
-        return None
-
-    if r3.status_code == 200:
-        try:
-            return r3.json().get("access_token")
-        except Exception:
-            return None
+    """Strategy 2: refresh token exchange (no longer used but kept
+    for API compat). MOSDAC's auth is single-step — password grant
+    is the only way. So this just returns None.
+    """
     return None
 
 
