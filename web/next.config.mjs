@@ -13,7 +13,11 @@ const nextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "http://localhost:8000/api/:path*",
+        // 127.0.0.1, not "localhost": on Windows, "localhost" may resolve
+        // to ::1 (IPv6) where uvicorn isn't listening — one of the causes
+        // behind the ECONNRESET flood in dev. (The UI calls the backend
+        // directly anyway; this proxy is only the fallback route.)
+        destination: "http://127.0.0.1:8000/api/:path*",
       },
     ];
   },

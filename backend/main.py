@@ -131,6 +131,19 @@ app = FastAPI(
     version="0.2.0",
 )
 
+# CORS: the Next.js dev proxy proved flaky on Windows (browser→:3000 proxy
+# →:8000 connections RST while the DIRECT WebSocket to :8000 worked fine),
+# so the web UI now calls the backend directly on localhost. Allow any
+# localhost/127.0.0.1 origin (any port) plus the Arena e2b preview hosts.
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$|^https://.*\.e2b\.app$",
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # CORS for the Next.js dev server (and any other local frontend)
 app.add_middleware(
     CORSMiddleware,

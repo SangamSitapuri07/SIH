@@ -1,9 +1,10 @@
 // ORCA API client — talks to the FastAPI backend.
 //
-// REST: relative URLs ("/api/v1/...") — the Next.js dev server proxies
-// them to localhost:8000 (see next.config.mjs). Works identically on the
-// user's laptop and behind the Arena preview proxy, because the browser
-// never needs to know where the backend is.
+// REST: on localhost the browser calls http://127.0.0.1:8000 DIRECTLY
+// (CORS enabled on the backend) because the Next.js dev proxy proved to
+// be a broken middleman on Windows (all connections RST while the direct
+// WebSocket worked). The relative "/api/*" proxy route remains as an
+// automatic fallback and is still the primary route in the Arena preview.
 //
 // WebSocket: Next's HTTP rewrites can't proxy WS, so the browser connects
 // straight to the backend. On the laptop that's ws://localhost:8000; in
@@ -168,10 +169,58 @@ export interface ChatFinal {
 }
 
 // ── Fetch helpers ─────────────────────────────────────────────────
+//
+// Base-URL strategy (learnt the hard way on the user's Windows laptop):
+// the Next.js dev proxy (browser → :3000 → :8000) was resetting every
+// connection while the DIRECT :8000 WebSocket worked fine. So on
+// localhost we call the backend DIRECTLY first (CORS is enabled there)
+// and only fall back to the /api proxy if the direct call can't be
+// made at all. Whichever route works is remembered for the session.
+
+const BASE_KEY = "orca.apiBase";
+
+function candidateBases(): string[] {
+  if (typeof window === "undefined") return [""]; // SSR: relative proxy
+  const remembered = sessionStorage.getItem(BASE_KEY);
+  if (remembered != null) return [remembered];
+  const h = location.hostname;
+  if (h === "localhost" || h === "127.0.0.1") {
+    // Direct backend first (bypasses the flaky dev proxy), proxy as backup
+    return ["http://127.0.0.1:8000", ""];
+  }
+  const m = h.match(/^(\d+)-(.+)$/); // Arena preview: 3000-<sandbox>.e2b.app
+  if (m) return ["", `${location.protocol}//8000-${m[2]}`]; // proxy first (known-good)
+  return [""];
+}
+
+function isNetworkError(e: unknown): boolean {
+  // fetch() rejects with TypeError only for network/CORS failures,
+  // never for HTTP error statuses — those are real answers.
+  return e instanceof TypeError;
+}
+
+async function apiFetch(path: string, init: RequestInit): Promise<Response> {
+  const bases = candidateBases();
+  let lastErr: unknown = null;
+  for (const base of bases) {
+    try {
+      const res = await fetch(base + path, { cache: "no-store", ...init });
+      if (typeof window !== "undefined") {
+        try { sessionStorage.setItem(BASE_KEY, base); } catch { /* private mode */ }
+      }
+      return res;
+    } catch (e) {
+      lastErr = e;
+      if (!isNetworkError(e)) throw e; // AbortError etc. — don't mask it
+      // network error → try the next base
+    }
+  }
+  try { sessionStorage.removeItem(BASE_KEY); } catch { /* noop */ }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
 
 async function apiGet<T>(path: string, timeoutMs = 90_000): Promise<T> {
-  const res = await fetch(path, {
-    cache: "no-store",
+  const res = await apiFetch(path, {
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
@@ -182,7 +231,7 @@ async function apiGet<T>(path: string, timeoutMs = 90_000): Promise<T> {
 }
 
 async function apiPost<T>(path: string, body: unknown, timeoutMs = 220_000): Promise<T> {
-  const res = await fetch(path, {
+  const res = await apiFetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -225,6 +274,12 @@ export const fetchAlerts = (lat?: number, lon?: number) =>
     120_000
   );
 
+export const fetchHealth = () =>
+  apiGet<{ status: string; version: string; gfw_token: boolean; [k: string]: any }>(
+    `/api/v1/health`,
+    15_000
+  );
+
 export const simulateAlert = (lat: number, lon: number) =>
   apiPost<{ created: OrcaAlert; note: string }>(
     `/api/v1/alerts/simulate`,
@@ -245,12 +300,15 @@ export const postFeedback = (payload: unknown) =>
 // ── WebSocket ─────────────────────────────────────────────────────
 
 export function wsUrl(): string {
-  if (typeof window === "undefined") return "ws://localhost:8000/ws/chat";
+  if (typeof window === "undefined") return "ws://127.0.0.1:8000/ws/chat";
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const host = location.hostname;
   // Arena/E2B preview: 3000-<sandbox>.e2b.app → 8000-<sandbox>.e2b.app
-  const m = host.match(/^3000-(.+)$/);
-  if (m) return `${proto}//8000-${m[1]}/ws/chat`;
+  const m = host.match(/^(\d+)-(.+)$/);
+  if (m && m[1] !== "8000") return `${proto}//8000-${m[2]}/ws/chat`;
+  // Localhost: be explicit about IPv4 — on Windows "localhost" can resolve
+  // to ::1 (IPv6) while uvicorn only listens on 127.0.0.1.
+  if (host === "localhost") return `${proto}//127.0.0.1:8000/ws/chat`;
   return `${proto}//${host}:8000/ws/chat`;
 }
 

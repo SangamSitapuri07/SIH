@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DemoZone, INDIAN_COASTAL_ZONES, postFeedback, wsUrl } from "@/lib/orca-client";
+import { DemoZone, INDIAN_COASTAL_ZONES, postFeedback, wsUrl, fetchHealth } from "@/lib/orca-client";
 import { t, Lang, LANGS } from "@/lib/i18n";
 
 interface Health {
@@ -29,8 +29,7 @@ export default function SettingsPanel({
   const [wsState, setWsState] = useState("checking…");
 
   useEffect(() => {
-    fetch("/api/v1/health", { cache: "no-store" })
-      .then((r) => r.json())
+    fetchHealth()
       .then(setHealth)
       .catch(() => setHealth(null));
 
