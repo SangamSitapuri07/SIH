@@ -20,20 +20,51 @@ T = TypeVar("T")
 
 _lock = threading.Lock()
 _store: dict[str, tuple[float, Any]] = {}
+_inflight: dict[str, threading.Event] = {}
 
 
 def cached(key: str, ttl_sec: float, fn: Callable[[], T]) -> T:
-    """Return cached value for `key` if fresh, else call fn() and cache it."""
-    now = time.time()
+    """Return cached value for `key` if fresh, else call fn() and cache it.
+
+    Single-flight: if the same key is computed concurrently (the UI fires
+    /reason + /advisory for the same point at the same moment), followers
+    JOIN the leader's computation instead of duplicating a 30–90 s
+    multi-source fetch. Found the hard way on a Windows laptop where two
+    parallel cold fetches rate-limited the free APIs and the Next.js
+    proxy reset the connection.
+    """
     with _lock:
         ent = _store.get(key)
-        if ent is not None and ent[0] > now:
+        if ent is not None and ent[0] > time.time():
             return ent[1]
-    # Compute outside the lock so one slow fetch doesn't block readers
-    value = fn()
-    with _lock:
-        _store[key] = (now + ttl_sec, value)
-    return value
+        ev = _inflight.get(key)
+        if ev is None:
+            ev = threading.Event()
+            _inflight[key] = ev
+            leader = True
+        else:
+            leader = False
+
+    if not leader:
+        # Another request is already computing this key — wait for it.
+        ev.wait(timeout=240)
+        with _lock:
+            ent = _store.get(key)
+            if ent is not None:
+                return ent[1]
+        # Leader failed before storing; compute ourselves.
+        return fn()
+
+    try:
+        value = fn()
+        with _lock:
+            _store[key] = (time.time() + ttl_sec, value)
+        return value
+    finally:
+        with _lock:
+            done = _inflight.pop(key, None)
+            if done is not None:
+                done.set()
 
 
 def cache_stats() -> dict[str, Any]:

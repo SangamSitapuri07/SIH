@@ -114,6 +114,35 @@ def _safe(callable_, *args, default=None, label="source", timeout: float = SOURC
         return None, f"{label}: {type(e).__name__}: {e}\n{tb}"
 
 
+def _gather(
+    jobs: dict[str, tuple[Any, tuple, dict, str]],
+    timeout: float = SOURCE_TIMEOUT_SEC,
+) -> dict[str, tuple[Any, str | None]]:
+    """Run named source jobs CONCURRENTLY, same (result, error) convention
+    as _safe(). Wall-clock ≈ slowest single source instead of the sum —
+    this is what saves a cold snapshot from blowing through the Next.js
+    dev-proxy socket (seen on Windows: ~85 s sequential → ECONNRESET)."""
+    out: dict[str, tuple[Any, str | None]] = {}
+    if not jobs:
+        return out
+    ex = ThreadPoolExecutor(max_workers=len(jobs))
+    futs = {name: ex.submit(fn, *a, **kw) for name, (fn, a, kw, _label) in jobs.items()}
+    for name, fut in futs.items():
+        label = jobs[name][3]
+        try:
+            res = fut.result(timeout=timeout)
+            if isinstance(res, dict) and "error" in res and len(res) == 2:
+                out[name] = (None, f"{label}: {res['error']}")
+            else:
+                out[name] = (res, None)
+        except FuturesTimeout:
+            out[name] = (None, f"{label}: timeout after {timeout:.0f}s")
+        except Exception as e:  # noqa: BLE001
+            out[name] = (None, f"{label}: {type(e).__name__}: {e}")
+    ex.shutdown(wait=False, cancel_futures=True)
+    return out
+
+
 def zone_snapshot(
     lat: float,
     lon: float,
@@ -158,17 +187,45 @@ def zone_snapshot(
         "data_sources_failed": [],
     }
 
+    # ── Sources 1–3 run CONCURRENTLY (Open-Meteo + NOAA + OC-CCI + INCOIS).
+    # Sequential fetching cost ~85 s in the worst case, and the UI fires
+    # /reason + /advisory for the same point at the same moment — parallel
+    # fetching plus single-flight caching (ttlcache) is what keeps the
+    # Next.js dev proxy from resetting the connection on slow networks.
+    noaa_fn = occci_fn = incois_fn = None
+    try:
+        noaa_fn = _get_noaa()
+    except ImportError as e:
+        snap["data_sources_failed"].append(f"NOAA: import error: {e}")
+    try:
+        occci_fn = _get_occci()
+    except ImportError as e:
+        snap["data_sources_failed"].append(f"OC-CCI: import error: {e}")
+    try:
+        incois_fn = _get_incois()
+    except ImportError as e:
+        snap["data_sources_failed"].append(f"INCOIS: import error: {e}")
+
+    jobs: dict[str, tuple[Any, tuple, dict, str]] = {
+        "openmeteo": (get_sst_at_point, (lat, lon, gfw_start, gfw_end), {}, "Open-Meteo"),
+    }
+    if noaa_fn is not None:
+        jobs["noaa"] = (noaa_fn, (lat, lon, chl_date), {}, "NOAA ERDDAP")
+    if occci_fn is not None:
+        jobs["occci"] = (occci_fn, (lat, lon, chl_date), {}, "ESA OC-CCI")
+    if incois_fn is not None:
+        jobs["incois"] = (incois_fn, (lat, lon, chl_date), {}, "INCOIS LAS")
+
+    results = _gather(jobs, timeout=SOURCE_TIMEOUT_SEC)
+
     # 1) Open-Meteo SST + waves
-    sst, err = _safe(
-        get_sst_at_point, lat, lon, gfw_start, gfw_end,
-        default=None, label="Open-Meteo",
-    )
+    sst, err = results.get("openmeteo", (None, "Open-Meteo: not run"))
     if sst and not err:
-        snap["sst_max"] = sst.get("sst_max")
-        snap["sst_min"] = sst.get("sst_min")
-        snap["sst_mean"] = sst.get("sst_mean")
-        snap["wave_max"] = sst.get("wave_max")
-        snap["wave_mean"] = sst.get("wave_mean")
+        snap["sst_max"] = sst.get("sst_max") if isinstance(sst, dict) else None
+        snap["sst_min"] = sst.get("sst_min") if isinstance(sst, dict) else None
+        snap["sst_mean"] = sst.get("sst_mean") if isinstance(sst, dict) else None
+        snap["wave_max"] = sst.get("wave_max") if isinstance(sst, dict) else None
+        snap["wave_mean"] = sst.get("wave_mean") if isinstance(sst, dict) else None
         snap["data_sources_used"].append("Open-Meteo Marine (SST + waves)")
     else:
         snap["data_sources_failed"].append(err or "Open-Meteo: no data")
@@ -178,73 +235,61 @@ def zone_snapshot(
     # the last 2 days) have no files yet. Try the requested date first;
     # if it has nothing, step back 3 days and surface chlorophyll_date so
     # the caller/UI can show the data's true age. Never invent a value.
-    try:
-        noaa_fn = _get_noaa()
-        got_noaa = False
-        last_err = None
-        for attempt_date, shift_note in ((chl_date, None), (
-                (date.fromisoformat(target_date) - timedelta(days=3)).isoformat(), "-3d")):
-            chl, err = _safe(
-                noaa_fn, lat, lon, attempt_date,
-                default=None, label="NOAA ERDDAP",
+    chl, err_noaa = results.get("noaa", (None, None))
+    got_noaa = bool(chl and not err_noaa and isinstance(chl, dict) and chl.get("value") is not None)
+    attempt_date = chl_date
+    if not got_noaa and noaa_fn is not None:
+        attempt_date = (date.fromisoformat(target_date) - timedelta(days=3)).isoformat()
+        chl2, err2 = _safe(
+            noaa_fn, lat, lon, attempt_date,
+            default=None, label="NOAA ERDDAP",
+        )
+        if chl2 and not err2 and chl2.get("value") is not None:
+            chl = chl2
+            got_noaa = True
+        else:
+            err_noaa = err2 or err_noaa or "NOAA: no data"
+
+    if got_noaa and isinstance(chl, dict):
+        snap["chlorophyll"] = chl.get("value")
+        snap["chlorophyll_unit"] = chl.get("units", "mg/m^3")
+        snap["chlorophyll_source"] = chl.get("source", "NOAA ERDDAP DINEOF")
+        snap["chlorophyll_date"] = attempt_date
+        if attempt_date != chl_date:
+            snap["chlorophyll_note"] = (
+                f"Requested date had no product yet (satellite lag); "
+                f"showing {attempt_date} analysis instead."
             )
-            if chl and not err and chl.get("value") is not None:
-                snap["chlorophyll"] = chl.get("value")
-                snap["chlorophyll_unit"] = chl.get("units", "mg/m^3")
-                snap["chlorophyll_source"] = chl.get("source", "NOAA ERDDAP DINEOF")
-                snap["chlorophyll_date"] = attempt_date
-                if shift_note:
-                    snap["chlorophyll_note"] = (
-                        f"Requested date had no product yet (satellite lag); "
-                        f"showing {attempt_date} analysis instead."
-                    )
-                # Also surface the box stats so users can see the spatial variance
-                if chl.get("box_min") is not None:
-                    snap["chlorophyll_box_min"] = chl["box_min"]
-                    snap["chlorophyll_box_max"] = chl["box_max"]
-                snap["data_sources_used"].append(f"NOAA ERDDAP (chlorophyll, {attempt_date})")
-                got_noaa = True
-                break
-            last_err = err or "NOAA: no data"
-        if not got_noaa:
-            snap["data_sources_failed"].append(last_err or "NOAA: no data")
-    except ImportError as e:
-        snap["data_sources_failed"].append(f"NOAA: import error: {e}")
+        if chl.get("box_min") is not None:
+            snap["chlorophyll_box_min"] = chl["box_min"]
+            snap["chlorophyll_box_max"] = chl["box_max"]
+        snap["data_sources_used"].append(f"NOAA ERDDAP (chlorophyll, {attempt_date})")
+    elif noaa_fn is not None:
+        snap["data_sources_failed"].append(err_noaa or "NOAA: no data")
 
     # 2b) ESA OC-CCI cross-validation (independent corroboration)
-    try:
-        occci_fn = _get_occci()
-        occci, err = _safe(
-            occci_fn, lat, lon, chl_date,
-            default=None, label="ESA OC-CCI",
-        )
+    if occci_fn is not None:
+        occci, err = results.get("occci", (None, "ESA OC-CCI: not run"))
         if occci and not err and occci.get("value") is not None:
             snap["chlorophyll_occci"] = occci.get("value")
             snap["chlorophyll_occci_source"] = occci.get("source", "ESA OC-CCI")
             snap["data_sources_used"].append("ESA OC-CCI (chlorophyll cross-check)")
         else:
             snap["data_sources_failed"].append(err or "OC-CCI: no data")
-    except ImportError as e:
-        snap["data_sources_failed"].append(f"OC-CCI: import error: {e}")
 
     # 3) INCOIS backup chlorophyll
-    try:
-        incois_fn = _get_incois()
-        incois_chl, err = _safe(
-            incois_fn, lat, lon, chl_date,
-            default=None, label="INCOIS LAS",
-        )
+    if incois_fn is not None:
+        incois_chl, err = results.get("incois", (None, "INCOIS LAS: not run"))
         if incois_chl and not err and incois_chl.get("value") is not None:
             # Only use INCOIS if NOAA failed (NOAA is more recent)
             if "chlorophyll" not in snap:
                 snap["chlorophyll"] = incois_chl.get("value")
                 snap["chlorophyll_unit"] = incois_chl.get("units", "mg/m^3")
                 snap["chlorophyll_source"] = incois_chl.get("source", "INCOIS LAS")
+                snap["chlorophyll_date"] = chl_date
             snap["data_sources_used"].append("INCOIS LAS (backup chlorophyll)")
         else:
             snap["data_sources_failed"].append(err or "INCOIS: no data")
-    except ImportError as e:
-        snap["data_sources_failed"].append(f"INCOIS: import error: {e}")
 
     # 4) GFW fishing effort + fleet composition
     if include_gfw:
