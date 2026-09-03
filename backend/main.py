@@ -440,7 +440,7 @@ def get_reason(
         return insight
 
     try:
-        return _with_deadline(_run, 95, "10-agent analysis")
+        return _with_deadline(_run, 110, "10-agent analysis")
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
@@ -465,7 +465,7 @@ def get_advisory(
     try:
         return _with_deadline(
             lambda: cached(key, 600, lambda: build_advisory(lat, lon, date_norm, include_gfw=gfw)),
-            95, "advisory",
+            110, "advisory",
         )
     except HTTPException:
         raise
@@ -701,7 +701,9 @@ def _warm_caches() -> None:
         if _os.environ.get("ORCA_PREWARM", "1") == "1":
             for z in INDIAN_COASTAL_ZONES:
                 try:
-                    zone_snapshot_cached(z["lat"], z["lon"], include_gfw=False)
+                    # honors AUTO: with a GFW token the pins warm WITH
+                    # real fishing data; without one they stay fast.
+                    zone_snapshot_cached(z["lat"], z["lon"], include_gfw=_gfw_default(None))
                 except Exception:  # noqa: BLE001
                     pass
                 _time.sleep(3)

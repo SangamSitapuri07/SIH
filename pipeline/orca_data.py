@@ -120,7 +120,7 @@ def _safe(callable_, *args, default=None, label="source", timeout: float = SOURC
 
 
 def _gather(
-    jobs: dict[str, tuple[Any, tuple, dict, str]],
+    jobs: dict[str, tuple],
     timeout: float = SOURCE_TIMEOUT_SEC,
 ) -> dict[str, tuple[Any, str | None]]:
     """Run named source jobs CONCURRENTLY, same (result, error) convention
@@ -131,17 +131,18 @@ def _gather(
     if not jobs:
         return out
     ex = ThreadPoolExecutor(max_workers=len(jobs))
-    futs = {name: ex.submit(fn, *a, **kw) for name, (fn, a, kw, _label) in jobs.items()}
+    futs = {name: ex.submit(j[0], *j[1], **j[2]) for name, j in jobs.items()}
     for name, fut in futs.items():
         label = jobs[name][3]
+        to = jobs[name][4] if len(jobs[name]) > 4 else timeout  # per-job override
         try:
-            res = fut.result(timeout=timeout)
+            res = fut.result(timeout=to)
             if isinstance(res, dict) and "error" in res and len(res) == 2:
                 out[name] = (None, f"{label}: {res['error']}")
             else:
                 out[name] = (res, None)
         except FuturesTimeout:
-            out[name] = (None, f"{label}: timeout after {timeout:.0f}s")
+            out[name] = (None, f"{label}: timeout after {to:.0f}s")
         except Exception as e:  # noqa: BLE001
             out[name] = (None, f"{label}: {type(e).__name__}: {e}")
     ex.shutdown(wait=False, cancel_futures=True)
@@ -211,7 +212,7 @@ def zone_snapshot(
     except ImportError as e:
         snap["data_sources_failed"].append(f"INCOIS: import error: {e}")
 
-    jobs: dict[str, tuple[Any, tuple, dict, str]] = {
+    jobs: dict[str, tuple] = {
         "openmeteo": (get_sst_at_point, (lat, lon, gfw_start, gfw_end), {}, "Open-Meteo"),
     }
     if noaa_fn is not None:
@@ -220,6 +221,26 @@ def zone_snapshot(
         jobs["occci"] = (occci_fn, (lat, lon, chl_date), {}, "ESA OC-CCI")
     if incois_fn is not None:
         jobs["incois"] = (incois_fn, (lat, lon, chl_date), {}, "INCOIS LAS")
+
+    # GFW runs INSIDE the same parallel gather (they're slow paid-report
+    # POSTs — 35 s budget each) instead of a serial block after it.
+    # Sequential GFW cost ~70 s extra on the user's network and pushed
+    # every cold /reason past the route deadline → endless 504s.
+    if include_gfw:
+        try:
+            jobs["gfw_effort"] = (
+                _get_gfw_effort(), (lat, lon, gfw_start, gfw_end, radius_deg),
+                {}, "GFW fishing effort", 35.0,
+            )
+        except ImportError as e:
+            snap["data_sources_failed"].append(f"GFW effort: import error: {e}")
+        try:
+            jobs["gfw_fleet"] = (
+                _get_gfw_fleet(), (lat, lon, radius_deg, gfw_start, gfw_end),
+                {}, "GFW fleet", 35.0,
+            )
+        except ImportError as e:
+            snap["data_sources_failed"].append(f"GFW fleet: import error: {e}")
 
     results = _gather(jobs, timeout=SOURCE_TIMEOUT_SEC)
 
@@ -296,50 +317,37 @@ def zone_snapshot(
         else:
             snap["data_sources_failed"].append(err or "INCOIS: no data")
 
-    # 4) GFW fishing effort + fleet composition
+    # 4) GFW fishing effort + fleet composition (fetched in the parallel
+    # gather above — just map the results here)
     if include_gfw:
-        try:
-            effort_fn = _get_gfw_effort()
-            effort, err = _safe(
-                effort_fn, lat, lon, gfw_start, gfw_end, radius_deg,
-                default=None, label="GFW fishing effort", timeout=35,  # paid report POST, slower
-            )
-            if effort and not err and "error" in effort:
-                err = f"GFW effort: {effort['error']}"  # token invalid/expired/quota — surface it honestly
-                effort = None
-            if effort and not err:
-                hours = effort.get("hours")
-                if hours is not None:
-                    snap["fishing_hours"] = hours
-                    snap["vessel_count_effort"] = effort.get("vessel_ids", 0)
-                    snap["data_sources_used"].append("Global Fishing Watch (effort)")
-                else:
-                    snap["data_sources_failed"].append(
-                        "GFW effort: response has no 'hours' field"
-                    )
+        effort, err = results.get("gfw_effort", (None, "GFW effort: not run"))
+        if effort and not err and "error" in effort:
+            err = f"GFW effort: {effort['error']}"  # token invalid/expired/quota — surface honestly
+            effort = None
+        if effort and not err:
+            hours = effort.get("hours")
+            if hours is not None:
+                snap["fishing_hours"] = hours
+                snap["vessel_count_effort"] = effort.get("vessel_ids", 0)
+                snap["data_sources_used"].append("Global Fishing Watch (effort)")
             else:
-                snap["data_sources_failed"].append(err or "GFW effort: no data")
-        except ImportError as e:
-            snap["data_sources_failed"].append(f"GFW effort: import error: {e}")
+                snap["data_sources_failed"].append(
+                    "GFW effort: response has no 'hours' field"
+                )
+        else:
+            snap["data_sources_failed"].append(err or "GFW effort: no data")
 
-        try:
-            fleet_fn = _get_gfw_fleet()
-            fleet, err = _safe(
-                fleet_fn, lat, lon, radius_deg, gfw_start, gfw_end,
-                default=None, label="GFW fleet", timeout=35,  # paid report POST, slower
-            )
-            if fleet and not err and "error" in fleet:
-                err = f"GFW fleet: {fleet['error']}"
-                fleet = None
-            if fleet and not err and "by_flag" in fleet:
-                snap["vessel_count"] = fleet.get("vessel_count")
-                snap["fleet_by_flag"] = fleet.get("by_flag", {})
-                snap["fleet_by_gear"] = fleet.get("by_gear", {})
-                snap["data_sources_used"].append("Global Fishing Watch (fleet)")
-            else:
-                snap["data_sources_failed"].append(err or "GFW fleet: no data")
-        except ImportError as e:
-            snap["data_sources_failed"].append(f"GFW fleet: import error: {e}")
+        fleet, err = results.get("gfw_fleet", (None, "GFW fleet: not run"))
+        if fleet and not err and "error" in fleet:
+            err = f"GFW fleet: {fleet['error']}"
+            fleet = None
+        if fleet and not err and "by_flag" in fleet:
+            snap["vessel_count"] = fleet.get("vessel_count")
+            snap["fleet_by_flag"] = fleet.get("by_flag", {})
+            snap["fleet_by_gear"] = fleet.get("by_gear", {})
+            snap["data_sources_used"].append("Global Fishing Watch (fleet)")
+        else:
+            snap["data_sources_failed"].append(err or "GFW fleet: no data")
     else:
         snap["data_sources_failed"].append("GFW: skipped (include_gfw=False)")
 
