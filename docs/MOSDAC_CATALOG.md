@@ -109,3 +109,26 @@ SST / sea surface temperature. The complete OCM list:
 
 That's **7 real ISRO products + 1 free fallback**. More than enough
 for a complete PS 176 demo.
+
+---
+
+## ✅ VERIFIED LIVE — 3 Sep 2026 (Arena agent + zwiter07 account)
+
+**Auth (machine door):**
+- token: `POST https://mosdac.gov.in/download_api/gettoken` — JSON `{"username","password"}` → `{access_token, refresh_token}`
+- refresh: `POST /download_api/refresh-token`
+- download: `GET /download_api/download?id=<record_id>` (Bearer)
+- search: `GET /apios/datasets.json` — **NO login needed**
+- DO NOT use Keycloak SSO programmatically (browser-only; lockout after repeated fails). FIXED in `pipeline/mosdac_auth.py`.
+
+**Query formats:** `datasetId=<id>&startTime=YYYY-MM-DD&endTime=YYYY-MM-DD&boundingBox=minLon,minLat,maxLon,maxLat&count<=100` · daily limit 5000 files/user · bbox Gujarat: `66.0,18.0,72.5,23.5`
+
+**Datasets verified live:**
+| datasetId | kya | count proof |
+|---|---|---|
+| `E06OCM_L2C_LAC_OC` | EOS-06 (Oceansat-3) OCM ocean colour = **chlorophyll** | 71 files — Gujarat box, 25Aug–2Sep 2026 |
+| `3RIMG_L2B_SST` | INSAT-3DR **SST** | 352 files — Gujarat box, 25Aug–2Sep 2026 |
+| `E06SCT_L2B_WV12` / `_WV25` | SCAT-3 **ocean winds** | catalog confirmed |
+
+**Catalog browser (public):** https://mosdac.gov.in/catalog-app/satellite.php  (satellites: EOS-06=id22, EOS-08=33, OCEANSAT-2=9, SCATSAT-1=15, INSAT-3DR=14, INSAT-3DS=24)
+**Official manual:** https://mosdac.gov.in/downloadapi-manual · client: https://mosdac.gov.in/software/mdapi.zip

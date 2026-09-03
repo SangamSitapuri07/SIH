@@ -69,29 +69,22 @@ def main():
 
         # Now actually call GFW to prove the token works
         print()
-        print("  Testing GFW API call for Chennai offshore (13.5, 80.5)...")
+        print("  Testing GFW API call for Indian EEZ (region-id 8480)...")
         try:
             import json
             import urllib.request
             url = (
                 "https://gateway.api.globalfishingwatch.org/v3/4wings/report"
                 "?datasets%5B0%5D=public-global-fishing-effort%3Alatest"
-                "&date-range=2026-07-15T00%3A00%3A00.000Z%2C2026-08-15T00%3A00%3A00.000Z"
+                "&date-range=2026-08-03%2C2026-09-02"
                 "&format=JSON"
                 "&spatial-resolution=LOW"
                 "&temporal-resolution=ENTIRE"
                 "&group-by=VESSEL_ID"
                 "&spatial-aggregation=true"
             )
-            body = {
-                "geojson": {
-                    "type": "Polygon",
-                    "coordinates": [[
-                        [80.0, 13.0], [81.0, 13.0], [81.0, 14.0],
-                        [80.0, 14.0], [80.0, 13.0],
-                    ]],
-                }
-            }
+            # v3 official: plain-date date-range in URL + EEZ region-id in body (docs-verified)
+            body = {"region": {"dataset": "public-eez-areas", "id": 8480}}
             req = urllib.request.Request(
                 url,
                 data=json.dumps(body).encode("utf-8"),
