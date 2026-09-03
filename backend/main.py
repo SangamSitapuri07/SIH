@@ -28,13 +28,65 @@ The WebSocket connects directly to this port (see web/lib/orca-client.ts).
 from __future__ import annotations
 
 import asyncio
+import faulthandler
 import json
 import os
+import platform
 import sys
 import traceback
 from datetime import date as date_cls
 from pathlib import Path
 from typing import Any
+
+
+# ── Crash forensics ──
+# On the laptop we saw the backend die mid-request with NO traceback
+# (proxy only said "socket hang up"). That signature means a NATIVE
+# crash (segfault/abort inside a C library), which Python never prints.
+# faulthandler dumps the exact Python stack on SIGSEGV/SIGABRT/SIGFPE —
+# to the terminal AND to logs/orca-fault.log so the evidence survives
+# even if the terminal window closes. Zero cost when nothing crashes.
+_LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
+try:
+    _fault_file = open(_LOG_DIR / "orca-fault.log", "a", buffering=1, encoding="utf-8")
+    faulthandler.enable(file=_fault_file)
+except OSError:  # read-only fs — fall back to stderr
+    faulthandler.enable()
+print(
+    f"[ORCA] python={sys.version.split()[0]} os={platform.system()} "
+    f"pid={os.getpid()} fault-log={_LOG_DIR / 'orca-fault.log'}",
+    flush=True,
+)
+
+
+def _warn_if_port_busy(port: int = 8000) -> None:
+    """Windows gotcha: SO_REUSEADDR lets TWO uvicorns bind port 8000 at the
+    same time there. Then each accepts some of the connections — half your
+    requests go to a stale/zombie backend and you see random 'socket hang
+    up' in Next.js. Detect it: if port 8000 already answers before we bind,
+    scream loudly instead of failing silently."""
+    import socket
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/api/v1/health", timeout=2
+        ) as resp:
+            if resp.status == 200:
+                print(
+                    f"[ORCA] ⚠️  WARNING: a backend is ALREADY answering on "
+                    f"port {port} (pid {os.getpid()} is starting anyway).\n"
+                    f"[ORCA] ⚠️  On Windows this splits requests between two "
+                    f"backends → random socket hang-ups.\n"
+                    f"[ORCA] ⚠️  Kill it first:  Get-Process python | Stop-Process -Force",
+                    flush=True,
+                )
+    except Exception:  # noqa: BLE001 - anything failing means port is free
+        return
+
+
+_warn_if_port_busy()
 
 
 # ── Auto-load .env file (if it exists) ──
