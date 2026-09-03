@@ -42,15 +42,27 @@ def _fetch_baseline(lat: float, lon: float, target_date: str, window_years: int 
     """Fetch the same date-of-year from the past N years to build a baseline.
 
     Uses the last 3 years as a quick proxy for the climatology.
-    Default 3 (not 5) so all 3 queries complete within the 12s
-    outer timeout. Production would use 30 years of ERA5.
+    Time-budgeted: on slow networks each ERA5 archive call can eat
+    15-40 s, so we hard-stop at ~22 s total and give up after 2
+    consecutive failures rather than blocking the whole 10-agent run.
+    Production would use 30 years of ERA5.
     """
+    import time
+    t0 = time.monotonic()
+    budget_sec = 22.0
+    consecutive_failures = 0
     target = date.fromisoformat(target_date)
     # We'll fetch one query per year and average
     # (ERA5 archive doesn't support multi-year queries efficiently)
     all_sst: list[float] = []
     all_wave: list[float] = []
     for years_ago in range(1, window_years + 1):
+        if time.monotonic() - t0 > budget_sec:
+            print("[Anomaly] baseline time budget exhausted — using partial data", file=sys.stderr)
+            break
+        if consecutive_failures >= 2:
+            print("[Anomaly] archive failing repeatedly — giving up early", file=sys.stderr)
+            break
         try:
             past = target.replace(year=target.year - years_ago)
         except ValueError:
@@ -69,7 +81,7 @@ def _fetch_baseline(lat: float, lon: float, target_date: str, window_years: int 
         url = f"{ARCHIVE_URL}?{urllib.parse.urlencode(params)}"
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "ORCA/1.0"})
-            with urllib.request.urlopen(req, timeout=15) as r:
+            with urllib.request.urlopen(req, timeout=8) as r:
                 data = json.loads(r.read().decode("utf-8"))
             sst_arr = data.get("daily", {}).get("sea_surface_temperature_max", [])
             wave_arr = data.get("daily", {}).get("wave_height_max", [])
@@ -79,8 +91,10 @@ def _fetch_baseline(lat: float, lon: float, target_date: str, window_years: int 
                 all_sst.append(sum(sst_v) / len(sst_v))
             if wave_v:
                 all_wave.append(sum(wave_v) / len(wave_v))
+            consecutive_failures = 0
         except Exception as e:  # noqa: BLE001
             print(f"[Anomaly] {past.year} fetch failed: {type(e).__name__}", file=sys.stderr)
+            consecutive_failures += 1
             continue
 
     if not all_sst:
@@ -115,7 +129,16 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
     current_wave = snap.get("wave_max")
 
     try:
-        baseline = _fetch_baseline(lat, lon, target_date, window_years=3)
+        # Historical baseline for a point changes ~never within a day —
+        # cache it so repeat clicks don't re-walk 3 slow archive calls.
+        from pipeline.ttlcache import cached
+        baseline = cached(
+            f"anom:{lat:.2f},{lon:.2f}:{target_date}",
+            21_600,  # 6 h
+            lambda: _fetch_baseline(lat, lon, target_date, window_years=3),
+        )
+        if baseline is None:
+            baseline = {}
     except urllib.error.HTTPError as e:
         return {
             "agent": "anomaly",

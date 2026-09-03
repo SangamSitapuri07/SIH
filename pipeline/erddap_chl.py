@@ -91,7 +91,7 @@ def build_query_url(
 def _fetch_csv(url: str) -> list[dict[str, str]]:
     """Fetch an ERDDAP CSV URL and return rows as list of dicts."""
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=10) as resp:
         text = resp.read().decode("utf-8")
 
     # ERDDAP .csv has 2 header lines (names, units), then data

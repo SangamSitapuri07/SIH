@@ -120,7 +120,28 @@ from pipeline import alerts as alerts_mod
 from pipeline import chat as chat_mod
 from pipeline import layers as layers_mod
 from pipeline.advisory import build_advisory
-from pipeline.orca_data import zone_snapshot, grid_snapshot, INDIAN_COASTAL_ZONES
+from pipeline.orca_data import zone_snapshot, zone_snapshot_cached, grid_snapshot, INDIAN_COASTAL_ZONES
+
+
+def _with_deadline(fn, timeout_sec: float, what: str):
+    """Run fn with a hard wall-clock cap. On timeout return an honest 504
+    that tells the caller the work CONTINUES in the background (results
+    land in the TTL caches), so a retry in a few seconds is instant.
+    Saves the UI from hanging for minutes when a public API stalls on a
+    slow network — happened on the laptop: /reason blew past 220 s."""
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+    ex = ThreadPoolExecutor(max_workers=1)
+    fut = ex.submit(fn)
+    try:
+        return fut.result(timeout=timeout_sec)
+    except FuturesTimeout:
+        ex.shutdown(wait=False)
+        raise HTTPException(
+            status_code=504,
+            detail=(f"{what} took longer than {timeout_sec:.0f}s on this network. "
+                    "It is still computing in the background — retry in 10-30 "
+                    "seconds and the answer comes instantly from cache."),
+        )
 from pipeline.reasoner import reason
 from pipeline.ttlcache import cached, cache_stats
 
@@ -395,19 +416,22 @@ def get_reason(
     agents: str | None = Query(None, description="Comma-separated agent IDs (default: all)"),
 ) -> dict[str, Any]:
     _validate_date(date)
-    try:
-        snap = zone_snapshot(lat, lon, date, include_gfw=include_gfw)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"zone_snapshot failed: {type(e).__name__}: {e}")
-
     agent_list = [a.strip() for a in agents.split(",") if a.strip()] if agents else None
-    try:
+
+    def _run() -> dict[str, Any]:
+        # Cached snapshot: /reason, /advisory and chat for the same point
+        # share one live fetch instead of each paying the full cost.
+        snap = zone_snapshot_cached(lat, lon, date, include_gfw=include_gfw)
         insight = reason(snap, include_agents=agent_list)
+        insight["snapshot"] = snap
+        return insight
+
+    try:
+        return _with_deadline(_run, 95, "10-agent analysis")
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"reason failed: {type(e).__name__}: {e}\n{traceback.format_exc()}")
-
-    insight["snapshot"] = snap
-    return insight
 
 
 # ── Phase-4: deterministic advisory ──
@@ -425,7 +449,12 @@ def get_advisory(
     date_norm = date or date_cls.today().isoformat()
     key = f"advisory:{lat:.2f}:{lon:.2f}:{date_norm}:{include_gfw}"
     try:
-        return cached(key, 600, lambda: build_advisory(lat, lon, date_norm, include_gfw=include_gfw))
+        return _with_deadline(
+            lambda: cached(key, 600, lambda: build_advisory(lat, lon, date_norm, include_gfw=include_gfw)),
+            95, "advisory",
+        )
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"advisory failed: {type(e).__name__}: {e}\n{traceback.format_exc()}")
 

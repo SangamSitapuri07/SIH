@@ -32,15 +32,40 @@ ALL_AGENTS = [
 ]
 
 
+# Hard wall-clock budget for the whole agent stage. On slow networks a
+# chain of 9 agents with network calls can otherwise run for minutes and
+# the UI times out waiting (seen on the laptop: /reason > 220 s). Rather
+# skip late agents honestly than answer late.
+AGENT_BUDGET_SEC = 75.0
+
+
 def run_all(snap: dict, include: list[str] | None = None) -> list[dict]:
     """Run the requested agents (or all by default) and return their results.
 
     Each agent gets the snapshot and (optionally) a list of previously-run
-    agent results for cross-agent synthesis (ecology, risk).
+    agent results for cross-agent synthesis (ecology, risk). Agents past
+    the shared time budget are skipped with an honest placeholder instead
+    of making the whole insight late.
     """
+    import time
+    t0 = time.monotonic()
     results: list[dict] = []
     for name, fn in ALL_AGENTS:
         if include and name not in include:
+            continue
+        if time.monotonic() - t0 > AGENT_BUDGET_SEC:
+            results.append({
+                "agent": name,
+                "findings": [{
+                    "type": "skipped_time_budget",
+                    "severity": "info",
+                    "value": None,
+                    "msg": "Skipped — slow network: the 10-agent run hit its time budget. "
+                           "Try again; cached sources make the second run faster.",
+                }],
+                "summary": "Skipped (slow network).",
+                "risk_level": "unknown",
+            })
             continue
         # Ecology and Risk want to see other agents' results
         if name in ("marine_ecology", "marine_risk"):

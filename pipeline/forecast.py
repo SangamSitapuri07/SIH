@@ -33,7 +33,7 @@ TTL_SEC = 30 * 60
 MS_TO_KN = 1.943844
 
 
-def _http_json(url: str, params: dict[str, str], timeout: float = 20.0) -> dict:
+def _http_json(url: str, params: dict[str, str], timeout: float = 12.0) -> dict:
     full = f"{url}?{urllib.parse.urlencode(params)}"
     req = urllib.request.Request(full, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=timeout) as r:

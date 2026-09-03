@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   Advisory,
@@ -32,7 +32,13 @@ export default function Home() {
   const [advisory, setAdvisory] = useState<Advisory | null>(null);
   const [ticker, setTicker] = useState<OrcaAlert[]>([]);
 
+  const insightBusyRef = useRef(false);
+
   const handleSelectZone = (z: DemoZone) => {
+    // One live analysis at a time: concurrent clicks on a slow network
+    // each spawn a full 10-agent chain and starve each other.
+    if (insightBusyRef.current) return;
+    insightBusyRef.current = true;
     setZone(z);
     setAdvisory(null); // stale until re-fetched
     // keep the old deep-insight behaviour for the Map tab
@@ -40,19 +46,33 @@ export default function Home() {
     setInsight(null);
     fetchInsight(z.lat, z.lon)
       .then(setInsight)
-      .catch((err) =>
+      .catch((err) => {
+        const timedOut =
+          err instanceof Error &&
+          (err.name === "TimeoutError" || /timed out/i.test(err.message) || /API 504/.test(err.message));
         setInsight({
           zone: { lat: z.lat, lon: z.lon, date: new Date().toISOString().slice(0, 10) },
           agents: [],
           overall_risk: "unknown",
-          summary: `Failed to reach the ORCA API. ${err instanceof Error ? err.message : String(err)}`,
-          recommendation: "Check that the FastAPI backend is running on port 8000.",
+          summary: timedOut
+            ? (lang === "hi"
+                ? "नेटवर्क धीमा है और विश्लेषण समय से पहले पूरा नहीं हुआ। कुछ सेकंड बाद उसी बिंदु पर दोबारा क्लिक करें — कैश होने से दूसरी बार तेज़ चलेगा।"
+                : "Slow network — the analysis didn't finish in time. Click the same point again in a few seconds; caches make the retry much faster.")
+            : (lang === "hi"
+                ? `ORCA API तक नहीं पहुँच पाए। ${err instanceof Error ? err.message : String(err)}`
+                : `Failed to reach the ORCA API. ${err instanceof Error ? err.message : String(err)}`),
+          recommendation: timedOut
+            ? (lang === "hi" ? "दोबारा प्रयास करें — backend ज़िंदा है, बस धीमा है।" : "Retry — the backend is alive, just slow.")
+            : (lang === "hi" ? "जाँचें कि FastAPI backend port 8000 पर चल रहा है।" : "Check that the FastAPI backend is running on port 8000."),
           data_sources_used: [],
-          data_sources_failed: ["API: backend unreachable"],
+          data_sources_failed: [timedOut ? "Network: analysis timed out (retry warms the cache)" : "API: backend unreachable"],
           fetched_at: new Date().toISOString(),
-        })
-      )
-      .finally(() => setInsightLoading(false));
+        });
+      })
+      .finally(() => {
+        insightBusyRef.current = false;
+        setInsightLoading(false);
+      });
   };
 
   const TABS: { id: Tab; label: string }[] = [

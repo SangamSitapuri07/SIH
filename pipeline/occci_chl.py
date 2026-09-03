@@ -90,7 +90,7 @@ def get_chlorophyll(
         url = build_query_url(lat, lon, try_date, radius_deg=0.05)
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "ORCA/1.0"})
-            with urllib.request.urlopen(req, timeout=15) as r:
+            with urllib.request.urlopen(req, timeout=8) as r:
                 data = json.loads(r.read().decode("utf-8"))
             rows = data.get("table", {}).get("rows", [])
             if not rows:

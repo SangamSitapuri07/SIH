@@ -50,7 +50,7 @@ def _fetch(lat: float, lon: float, start_date: str, end_date: str) -> dict:
     url = f"{WEATHER_URL}?{urllib.parse.urlencode(params)}"
     print(f"[Weather] {lat:.2f},{lon:.2f} {start_date}..{end_date}", file=sys.stderr)
     req = urllib.request.Request(url, headers={"User-Agent": "ORCA/1.0"})
-    with urllib.request.urlopen(req, timeout=15) as r:
+    with urllib.request.urlopen(req, timeout=8) as r:  # 8s: keep the 10-agent run snappy on slow links
         return json.loads(r.read().decode("utf-8"))
 
 
@@ -74,7 +74,16 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
         }
 
     try:
-        data = _fetch(lat, lon, target_date, target_date)
+        # Same point (±5 km) + same date = same answer for ~an hour.
+        # Repeat clicks / reason+advisory pairs skip a second live call.
+        from pipeline.ttlcache import cached
+        data = cached(
+            f"wx:{lat:.2f},{lon:.2f}:{target_date}",
+            3600,
+            lambda: _fetch(lat, lon, target_date, target_date),
+        )
+        if data is None:
+            raise urllib.error.URLError("cached fetch returned None")
     except urllib.error.HTTPError as e:
         return {
             "agent": "weather",

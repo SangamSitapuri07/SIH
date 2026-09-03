@@ -130,7 +130,7 @@ def distance_to_polyline_km(
 
 def _fetch_now() -> dict[str, Any]:
     req = urllib.request.Request(WFS_URL, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=12) as r:
         raw = json.loads(r.read().decode("utf-8"))
 
     lines: list[dict[str, Any]] = []

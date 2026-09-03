@@ -270,7 +270,7 @@ def get_sst_grid(
     url = f"{MARINE_API_URL}?{urllib.parse.urlencode(params)}"
 
     try:
-        data = _request(url, timeout=120)
+        data = _request(url, timeout=30)
     except urllib.error.HTTPError as e:
         body = ""
         try:

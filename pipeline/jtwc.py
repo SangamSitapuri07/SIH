@@ -62,7 +62,7 @@ _R34_RE = re.compile(r"RADIUS OF 034 KT WINDS\s*-\s*(.+)QUADRANT", re.S)
 _QUAD_RE = re.compile(r"(\d+)\s*NM\s*(?:NORTHEAST|SOUTHEAST|SOUTHWEST|NORTHWEST)\s*QUADRANT")
 
 
-def _http_get(url: str, timeout: float = 15.0) -> str:
+def _http_get(url: str, timeout: float = 12.0) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", errors="replace")

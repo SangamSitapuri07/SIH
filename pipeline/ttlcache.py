@@ -76,3 +76,12 @@ def cache_stats() -> dict[str, Any]:
             for key, (exp, _v) in _store.items()
             if exp > now
         }
+
+
+def clear() -> None:
+    """Drop every cached entry and in-flight marker. Used by the test
+    suite (autouse fixture) so monkey-patched fetchers aren't shadowed
+    by values cached under the same key by an earlier test."""
+    with _lock:
+        _store.clear()
+        _inflight.clear()
