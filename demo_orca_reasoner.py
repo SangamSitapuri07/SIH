@@ -1,4 +1,4 @@
-"""Live demo: full ORCA pipeline with all 4 data sources + 6 agents.
+"""Live demo: full ORCA pipeline with 4+ data sources + 10 agents.
 
 This is the SIH pitch demo. Run with your GFW_API_TOKEN set:
 

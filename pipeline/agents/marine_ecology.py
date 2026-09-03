@@ -54,6 +54,56 @@ def analyze(snap: dict[str, Any], agent_results: list[dict[str, Any]] | None = N
             "msg": f"Productive chlorophyll ({chl:.2f} mg/m³) + active fishing ({fishing_hours:.1f} hrs) — proven fishing ground.",
         })
 
+    # Pattern 4a: Ecosystem profile (always emitted when any data exists).
+    # Standard oceanographic productivity classes (chl mg/m³) and pelagic
+    # thermal-habitat bands (SST °C) — the same bands the satellite and
+    # ocean agents use, summarized as one ecological statement so the
+    # agent never goes silent when data is present.
+    if chl is not None or sst_mean is not None:
+        notes: list[str] = []
+        if chl is not None:
+            if chl < 0.1:
+                notes.append(f"chlorophyll {chl:.2f} mg/m³ → oligotrophic (very low productivity)")
+            elif chl < 0.5:
+                notes.append(f"chlorophyll {chl:.2f} mg/m³ → low-to-moderate productivity")
+            elif chl < 1.5:
+                notes.append(f"chlorophyll {chl:.2f} mg/m³ → productive waters")
+            elif chl < 5.0:
+                notes.append(f"chlorophyll {chl:.2f} mg/m³ → highly productive waters")
+            else:
+                notes.append(f"chlorophyll {chl:.2f} mg/m³ → bloom-level productivity")
+        if sst_mean is not None:
+            if sst_mean < 22:
+                notes.append(f"SST {sst_mean:.1f}°C → cold / upwelling thermal regime")
+            elif sst_mean <= 29:
+                notes.append(f"SST {sst_mean:.1f}°C → optimal pelagic thermal habitat")
+            else:
+                notes.append(f"SST {sst_mean:.1f}°C → very warm waters")
+        findings.append({
+            "type": "ecosystem_profile",
+            "severity": "info",
+            "value": {"chl": chl, "sst": sst_mean},
+            "msg": "Ecosystem profile: " + "; ".join(notes) + ".",
+        })
+
+    # Pattern 4b: Chlorophyll spatial gradient (food-concentration front
+    # proxy). zone_snapshot carries box_min/box_max of the chlorophyll
+    # patch around the point; a strong local gradient concentrates food
+    # and is where pelagic fish aggregate.
+    cmin = snap.get("chlorophyll_box_min")
+    cmax = snap.get("chlorophyll_box_max")
+    if (cmin is not None and cmax is not None and cmin > 0
+            and cmax > cmin * 2 and cmax > 0.5):
+        findings.append({
+            "type": "chl_spatial_gradient",
+            "severity": "good",
+            "value": {"box_min": cmin, "box_max": cmax},
+            "msg": (
+                f"Strong chlorophyll gradient nearby ({cmin:.2f}→{cmax:.2f} mg/m³) — "
+                "front-like boundary concentrates food; pelagic fish often aggregate along it."
+            ),
+        })
+
     # Pattern 4: Cross-agent consensus on recommendations
     if agent_results:
         recs = [a.get("summary", "") for a in agent_results if "summary" in a]
@@ -80,7 +130,8 @@ def analyze(snap: dict[str, Any], agent_results: list[dict[str, Any]] | None = N
         risk = "high"
     elif "warn" in severities:
         risk = "moderate"
-    elif "good" in severities:
+    elif "good" in severities or "info" in severities:
+        # Data present, nothing worrying detected → low ecological concern
         risk = "low"
     else:
         risk = "unknown"

@@ -1,10 +1,14 @@
 """Tests for Open-Meteo SST adapter (live calls — no key required)."""
+import pytest
+from pipeline.tests.conftest import requires_network
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from pipeline import openmeteo_sst as om
 
 
+@pytest.mark.live
+@requires_network
 def test_single_point_live():
     """Hit the real Open-Meteo API. They don't require a key."""
     r = om.get_sst_at_point(19.0, 72.8, "2026-08-01", "2026-08-30")
@@ -21,6 +25,8 @@ def test_single_point_live():
           f"wave max {r['wave_max']}m)")
 
 
+@pytest.mark.live
+@requires_network
 def test_grid_live():
     """Hit the grid endpoint with a small 2°×2° at 0.5° step = 25 points."""
     r = om.get_sst_grid(18.0, 20.0, 72.0, 74.0, "2026-08-01", "2026-08-30", step_deg=0.5)
@@ -46,6 +52,8 @@ def test_grid_too_dense():
     print("✅ test_grid_too_dense passed (rejected 5000+ point grid)")
 
 
+@pytest.mark.live
+@requires_network
 def test_demo_indian_ocean():
     """Run the curated demo points and check we get something for Mumbai."""
     results = om.demo_indian_ocean_sst("2026-08-01", "2026-08-30")

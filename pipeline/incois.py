@@ -61,6 +61,7 @@ def _try_opendap_chl(timeout_sec: float = 6.0) -> dict[str, Any] | None:
         }
 
     import signal
+    import threading
 
     class TimeoutError_(Exception):  # noqa: N801
         pass
@@ -68,8 +69,14 @@ def _try_opendap_chl(timeout_sec: float = 6.0) -> dict[str, Any] | None:
     def _alarm_handler(signum, frame):
         raise TimeoutError_(f"INCOIS OPeNDAP timed out after {timeout_sec}s")
 
+    # SIGALRM only works in the main thread. zone_snapshot() calls this
+    # inside a ThreadPoolExecutor worker thread, where signal.signal()
+    # raises "ValueError: signal only works in main thread of the main
+    # interpreter". In worker threads we skip the alarm — the caller's
+    # future.result(timeout=...) already caps our runtime.
     old_handler = None
-    if hasattr(signal, "SIGALRM"):
+    on_main_thread = threading.current_thread() is threading.main_thread()
+    if on_main_thread and hasattr(signal, "SIGALRM"):
         old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
         signal.setitimer(signal.ITIMER_REAL, timeout_sec)
 

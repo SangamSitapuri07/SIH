@@ -1,23 +1,34 @@
-"""ORCA FastAPI backend — exposes the unified data layer + 6 agents
-over HTTP for the Next.js frontend.
+"""ORCA FastAPI backend — exposes the unified data layer, 10 agents,
+the deterministic advisory engine and the chat trace over HTTP+WebSocket
+for the Next.js frontend.
 
 Endpoints:
-  GET  /                       health check
-  GET  /api/v1/health          service health
-  GET  /api/v1/zone            ZoneSnapshot for one lat/lon
-  GET  /api/v1/grid            grid of ZoneSnapshots for a bbox
-  GET  /api/v1/reason          full multi-agent reasoning for one zone
-  GET  /api/v1/datasets        list of data sources + status
-  GET  /api/v1/zones           list of curated demo zones
+  GET  /                        health check + endpoint map
+  GET  /api/v1/health           service health
+  GET  /api/v1/zone             ZoneSnapshot for one lat/lon
+  GET  /api/v1/grid             grid of ZoneSnapshots for a bbox
+  GET  /api/v1/reason           full multi-agent reasoning for one zone
+  GET  /api/v1/datasets         data sources + agent registry status
+  GET  /api/v1/zones            curated demo zones
+  GET  /api/v1/agents           agent registry (roles, sources, status)
+  GET  /api/v1/advisory         deterministic GO/CAUTION/NO-GO advisory card
+  GET  /api/v1/layers           GeoJSON layers (official PFZ, cyclones, ports, EEZ)
+  GET  /api/v1/alerts           current alerts (live-evaluated for a point)
+  POST /api/v1/alerts/simulate  honestly-labelled DEMO alert (disaster drill)
+  POST /api/v1/chat             rule-based assistant, one-shot JSON
+  POST /api/v1/feedback         store user feedback (JSONL on disk)
+  WS   /ws/chat                 live chat trace (routing → agent steps →
+                                tokens → final advisory) + alert.push
 
 Run locally:
-  cd /home/user/SIH
   python -m uvicorn backend.main:app --reload --port 8000
-
-Then the Next.js dev server proxies /api/* to it (see web/next.config.mjs).
+The Next.js dev server proxies /api/* to it (see web/next.config.mjs).
+The WebSocket connects directly to this port (see web/lib/orca-client.ts).
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import sys
 import traceback
@@ -29,8 +40,6 @@ from typing import Any
 # ── Auto-load .env file (if it exists) ──
 # Lets the user put GFW_API_TOKEN / MOSDAC_USERNAME / MOSDAC_PASSWORD
 # in a .env file once and have the backend pick them up automatically.
-# OS env vars always take precedence over .env (so $env:FOO = "x"
-# in PowerShell still wins).
 def _load_dotenv(path: Path) -> None:
     if not path.exists():
         return
@@ -39,7 +48,7 @@ def _load_dotenv(path: Path) -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        k = k.strip()
+        k = k.strip().strip('"').strip("'")
         v = v.strip().strip('"').strip("'")
         if k and k not in os.environ:
             os.environ[k] = v
@@ -47,23 +56,27 @@ def _load_dotenv(path: Path) -> None:
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _load_dotenv(PROJECT_ROOT / ".env")
-# Also try the parent directory (some users put .env next to the venv)
 _load_dotenv(PROJECT_ROOT.parent / ".env")
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from pipeline import alerts as alerts_mod
+from pipeline import chat as chat_mod
+from pipeline import layers as layers_mod
+from pipeline.advisory import build_advisory
 from pipeline.orca_data import zone_snapshot, grid_snapshot, INDIAN_COASTAL_ZONES
 from pipeline.reasoner import reason
+from pipeline.ttlcache import cached, cache_stats
 
 
 app = FastAPI(
     title="ORCA — Marine Intelligence API",
     description="Marine EcOsystem Reasoning with Collaborative Agents · SIH 2026 PS 176",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 # CORS for the Next.js dev server (and any other local frontend)
@@ -74,14 +87,20 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3001",
-        # The Arena preview proxy uses different hostnames; in dev we
-        # allow any origin. Tighten this in production.
-        "*",
+        "*",  # Arena preview proxy; tighten in production
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _validate_date(d: str | None) -> None:
+    if d is not None:
+        try:
+            date_cls.fromisoformat(d)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid date: {d}, expected YYYY-MM-DD")
 
 
 # ── Health & metadata ──
@@ -90,7 +109,7 @@ app.add_middleware(
 def root() -> dict[str, Any]:
     return {
         "service": "ORCA — Marine Intelligence API",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "sih_problem_statement": "SIH 26176 (PS 176)",
         "endpoints": [
             "/api/v1/health",
@@ -99,6 +118,14 @@ def root() -> dict[str, Any]:
             "/api/v1/reason",
             "/api/v1/datasets",
             "/api/v1/zones",
+            "/api/v1/agents",
+            "/api/v1/advisory",
+            "/api/v1/layers",
+            "/api/v1/alerts",
+            "POST /api/v1/alerts/simulate",
+            "POST /api/v1/chat",
+            "POST /api/v1/feedback",
+            "WS /ws/chat",
         ],
     }
 
@@ -106,12 +133,11 @@ def root() -> dict[str, Any]:
 @app.get("/api/v1/health")
 def health() -> dict[str, Any]:
     gfw_token_set = bool(os.environ.get("GFW_API_TOKEN"))
-    mosdac_user = os.environ.get("MOSDAC_USERNAME", "")
-    mosdac_pwd = os.environ.get("MOSDAC_PASSWORD", "")
-    mosdac_set = bool(mosdac_user and mosdac_pwd)
+    mosdac_set = bool(os.environ.get("MOSDAC_USERNAME") and os.environ.get("MOSDAC_PASSWORD"))
     return {
         "status": "ok",
-        "version": "0.1.0",
+        "version": "0.2.0",
+        "gfw_token_configured": gfw_token_set,
         "credentials": {
             "gfw_token_configured": gfw_token_set,
             "mosdac_configured": mosdac_set,
@@ -122,62 +148,60 @@ def health() -> dict[str, Any]:
             "esa_occci": "live (no key)",
             "gfw": "live" if gfw_token_set else "needs GFW_API_TOKEN env var or .env file",
             "incois_las": "server unreliable — fallback only",
+            "incois_pfz_wfs": "live — official daily PFZ advisory lines (no key)",
+            "jtwc": "live — active tropical cyclone warnings (no key)",
             "mosdac": "live" if mosdac_set else "needs MOSDAC_USERNAME + MOSDAC_PASSWORD",
         },
+        "cache": cache_stats(),
+    }
+
+
+@app.get("/api/v1/agents")
+def agents_registry() -> dict[str, Any]:
+    """The 10-agent registry — roles exactly as designed in the ORCA spec."""
+    return {
+        "agents": [
+            {"id": "ocean", "name": "Ocean Analysis 🌊",
+             "role": "SST, waves, currents, swell analysis and anomaly flags",
+             "sources": ["Open-Meteo Marine API"], "implemented": True},
+            {"id": "satellite", "name": "Satellite Analysis 🛰️",
+             "role": "Chlorophyll-a, ocean colour, productivity classification",
+             "sources": ["NOAA ERDDAP VIIRS DINEOF", "ESA OC-CCI", "INCOIS LAS (backup)", "MOSDAC OCM-3 (credentials)"],
+             "implemented": True},
+            {"id": "weather", "name": "Weather & Hazard 🌦️",
+             "role": "Wind, gusts, rainfall, storm risk (WMO/IMD thresholds)",
+             "sources": ["Open-Meteo Forecast (ECMWF/MeteoFrance)"], "implemented": True},
+            {"id": "gis", "name": "GIS & Spatial 🗺️",
+             "role": "Coastline, zones, boundaries and spatial context",
+             "sources": ["GADM/Natural Earth bundles", "MarineRegions EEZ (layers)"], "implemented": True},
+            {"id": "marine_ecology", "name": "Marine Ecology 🐟",
+             "role": "Cross-synthesis: upwelling, bloom risk, productivity profile",
+             "sources": ["synthesizes ocean + satellite + weather results"], "implemented": True},
+            {"id": "fisheries", "name": "Fisheries / PFZ 🎣",
+             "role": "PFZ verdict from chlorophyll + SST + fleet signals",
+             "sources": ["ZoneSnapshot", "GFW AIS (optional)", "INCOIS PFZ WFS (official advisory)"],
+             "implemented": True},
+            {"id": "marine_risk", "name": "Marine Risk 🚨",
+             "role": "Low / Moderate / High / Critical synthesized risk",
+             "sources": ["synthesizes ocean + weather + hazard results"], "implemented": True},
+            {"id": "anomaly", "name": "Anomaly Detection 🔍",
+             "role": "Deviation vs historical baseline (SST/chl anomalies)",
+             "sources": ["ZoneSnapshot statistics"], "implemented": True},
+            {"id": "validation", "name": "Data Validation ✅",
+             "role": "Missing / inconsistent / abnormal data QC on every snapshot",
+             "sources": ["ZoneSnapshot metadata"], "implemented": True},
+            {"id": "orca_reasoning", "name": "ORCA Reasoning & Orchestration 🧠",
+             "role": "Coordinates all agents, resolves conflicts, final explainable insight",
+             "sources": ["all agents"], "implemented": True},
+        ],
+        "count": 10,
     }
 
 
 @app.get("/api/v1/datasets")
 def datasets() -> dict[str, Any]:
-    """List all data sources with metadata."""
+    """List all data sources + the 10 agents with metadata."""
     return {
-        "sources": [
-            {
-                "id": "noaa_erddap_dineof",
-                "name": "NOAA ERDDAP VIIRS DINEOF (chlorophyll)",
-                "kind": "satellite",
-                "cost": "free",
-                "auth": "none",
-                "coverage": "global, 0.025° daily, 3-day delay",
-                "url": "https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPN20VIIRSDINEOFDaily",
-            },
-            {
-                "id": "openmeteo_marine",
-                "name": "Open-Meteo Marine (SST + waves)",
-                "kind": "weather_model",
-                "cost": "free",
-                "auth": "none",
-                "coverage": "global, 0.08° daily, MeteoFrance model",
-                "url": "https://marine-api.open-meteo.com/v1/marine",
-            },
-            {
-                "id": "gfw_ais",
-                "name": "Global Fishing Watch (AIS)",
-                "kind": "vessel_tracking",
-                "cost": "free with token",
-                "auth": "GFW_API_TOKEN env var",
-                "coverage": "global, 0.01° daily, 2012-present",
-                "url": "https://gateway.api.globalfishingwatch.org/v3/4wings/report",
-            },
-            {
-                "id": "incois_las",
-                "name": "INCOIS LAS (chlorophyll backup)",
-                "kind": "satellite",
-                "cost": "free",
-                "auth": "none",
-                "coverage": "Indian Ocean, OCM-2",
-                "url": "http://las.incois.gov.in/thredds/",
-            },
-            {
-                "id": "mosdac_ocm3",
-                "name": "MOSDAC OCM-3 L4 (🇮🇳 Indian daily chlorophyll)",
-                "kind": "satellite",
-                "cost": "free with credentials",
-                "auth": "MOSDAC_USERNAME / MOSDAC_PASSWORD env vars",
-                "coverage": "Indian Ocean, 1 km daily",
-                "url": "https://www.mosdac.gov.in",
-            },
-        ],
         "agents": [
             {"id": "ocean", "name": "Ocean Analysis 🌊", "implemented": True},
             {"id": "satellite", "name": "Satellite Analysis 🛰️", "implemented": True},
@@ -190,15 +214,62 @@ def datasets() -> dict[str, Any]:
             {"id": "validation", "name": "Data Validation ✅", "implemented": True},
             {"id": "orca_reasoning", "name": "ORCA Reasoning 🧠 (in reasoner.py)", "implemented": True},
         ],
+        "sources": [
+            {
+                "id": "noaa_erddap_dineof",
+                "name": "NOAA ERDDAP VIIRS DINEOF (chlorophyll)",
+                "kind": "satellite", "cost": "free", "auth": "none",
+                "coverage": "global, 0.025° daily, 3-day delay",
+                "url": "https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPN20VIIRSDINEOFDaily",
+            },
+            {
+                "id": "openmeteo_marine",
+                "name": "Open-Meteo Marine (SST + waves)",
+                "kind": "weather_model", "cost": "free", "auth": "none",
+                "coverage": "global, 0.08° daily, MeteoFrance model",
+                "url": "https://marine-api.open-meteo.com/v1/marine",
+            },
+            {
+                "id": "gfw_ais",
+                "name": "Global Fishing Watch (AIS)",
+                "kind": "vessel_tracking", "cost": "free with token", "auth": "GFW_API_TOKEN env var",
+                "coverage": "global, 0.01° daily, 2012-present",
+                "url": "https://gateway.api.globalfishingwatch.org/v3/4wings/report",
+            },
+            {
+                "id": "incois_las",
+                "name": "INCOIS LAS (chlorophyll backup)",
+                "kind": "satellite", "cost": "free", "auth": "none",
+                "coverage": "Indian Ocean, OCM-2",
+                "url": "http://las.incois.gov.in/thredds/",
+            },
+            {
+                "id": "incois_pfz_wfs",
+                "name": "INCOIS PFZ advisory lines (official, daily) 🎣",
+                "kind": "advisory", "cost": "free", "auth": "none",
+                "coverage": "Indian coast, daily MultiLineString advisories",
+                "url": "https://incois.gov.in/geoserver/PFZ_Automation/ows",
+            },
+            {
+                "id": "jtwc_rss",
+                "name": "JTWC tropical cyclone warnings",
+                "kind": "advisory", "cost": "free", "auth": "none",
+                "coverage": "North Indian + NW Pacific + SH, ~6-hourly",
+                "url": "https://www.metoc.navy.mil/jtwc/rss/jtwc.rss",
+            },
+            {
+                "id": "mosdac_ocm3",
+                "name": "MOSDAC OCM-3 L4 (🇮🇳 Indian daily chlorophyll)",
+                "kind": "satellite", "cost": "free with credentials",
+                "auth": "MOSDAC_USERNAME / MOSDAC_PASSWORD env vars",
+                "coverage": "Indian Ocean, 1 km daily",
+                "url": "https://www.mosdac.gov.in",
+            },
+        ],
     }
 
 
 # ── Indian coastal zones ──
-# These are real lat/lon coordinates for 8 Indian coastal zones. They
-# are NOT dummy data — each click triggers a real FastAPI → NOAA ERDDAP
-# → Open-Meteo → GFW → INCOIS call for that exact point. The 8 zones
-# are just a UI convenience so the user has a starting point; you can
-# also call /api/v1/zone or /api/v1/reason with any lat/lon.
 
 @app.get("/api/v1/zones")
 def list_zones() -> dict[str, Any]:
@@ -206,22 +277,17 @@ def list_zones() -> dict[str, Any]:
     return {"zones": INDIAN_COASTAL_ZONES, "count": len(INDIAN_COASTAL_ZONES)}
 
 
-# ── Core endpoints ──
+# ── Core endpoints (v0.1, unchanged) ──
 
 @app.get("/api/v1/zone")
 def get_zone(
-    lat: float = Query(..., ge=-90, le=90, description="Latitude"),
-    lon: float = Query(..., ge=-180, le=180, description="Longitude"),
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
     date: str | None = Query(None, description="YYYY-MM-DD (default: today)"),
-    radius_deg: float = Query(0.5, ge=0.05, le=5.0, description="Bbox half-width"),
-    include_gfw: bool = Query(True, description="Include GFW fishing data"),
+    radius_deg: float = Query(0.5, ge=0.05, le=5.0),
+    include_gfw: bool = Query(True),
 ) -> dict[str, Any]:
-    """Single ZoneSnapshot: chlorophyll, SST, waves, fishing."""
-    if date is not None:
-        try:
-            date_cls.fromisoformat(date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid date: {date}, expected YYYY-MM-DD")
+    _validate_date(date)
     try:
         return zone_snapshot(lat, lon, date, radius_deg=radius_deg, include_gfw=include_gfw)
     except Exception as e:  # noqa: BLE001
@@ -236,20 +302,19 @@ def get_grid(
     max_lon: float = Query(...),
     step_deg: float = Query(1.0, ge=0.1, le=5.0),
     date: str | None = Query(None),
-    include_gfw: bool = Query(False, description="GFW off by default for grids (expensive)"),
+    include_gfw: bool = Query(False),
 ) -> dict[str, Any]:
-    """Grid of ZoneSnapshots for a bbox. Use for map overlays."""
     if min_lat >= max_lat:
         raise HTTPException(status_code=400, detail="min_lat must be < max_lat")
     if min_lon >= max_lon:
         raise HTTPException(status_code=400, detail="min_lon must be < max_lon")
-    # Warn on overly large grids
     n_pts = ((max_lat - min_lat) / step_deg + 1) * ((max_lon - min_lon) / step_deg + 1)
     if n_pts > 100 and include_gfw:
         raise HTTPException(
             status_code=400,
             detail=f"Grid too large for GFW ({int(n_pts)} points). Use include_gfw=false or smaller bbox.",
         )
+    _validate_date(date)
     try:
         return grid_snapshot(min_lat, max_lat, min_lon, max_lon, date, step_deg, include_gfw)
     except Exception as e:  # noqa: BLE001
@@ -260,33 +325,256 @@ def get_grid(
 def get_reason(
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
-    date: str | None = Query(None, description="YYYY-MM-DD (default: today)"),
+    date: str | None = Query(None),
     include_gfw: bool = Query(True),
     agents: str | None = Query(None, description="Comma-separated agent IDs (default: all)"),
 ) -> dict[str, Any]:
-    """Full multi-agent reasoning: snapshot + 6 agent results + final insight."""
-    if date is not None:
-        try:
-            date_cls.fromisoformat(date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid date: {date}, expected YYYY-MM-DD")
+    _validate_date(date)
     try:
         snap = zone_snapshot(lat, lon, date, include_gfw=include_gfw)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"zone_snapshot failed: {type(e).__name__}: {e}")
 
-    agent_list = None
-    if agents:
-        agent_list = [a.strip() for a in agents.split(",") if a.strip()]
-
+    agent_list = [a.strip() for a in agents.split(",") if a.strip()] if agents else None
     try:
         insight = reason(snap, include_agents=agent_list)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"reason failed: {type(e).__name__}: {e}\n{traceback.format_exc()}")
 
-    # Attach the raw snapshot for full transparency
     insight["snapshot"] = snap
     return insight
+
+
+# ── Phase-4: deterministic advisory ──
+
+@app.get("/api/v1/advisory")
+def get_advisory(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    date: str | None = Query(None),
+    include_gfw: bool = Query(False, description="Deep mode — adds fleet data (slower)"),
+) -> dict[str, Any]:
+    """GO / CAUTION / NO-GO advisory card. Deterministic, no LLM.
+    Cached 10 min per 0.01° cell so the 30-second demo flow is instant."""
+    _validate_date(date)
+    date_norm = date or date_cls.today().isoformat()
+    key = f"advisory:{lat:.2f}:{lon:.2f}:{date_norm}:{include_gfw}"
+    try:
+        return cached(key, 600, lambda: build_advisory(lat, lon, date_norm, include_gfw=include_gfw))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"advisory failed: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+
+
+# ── Phase-4: GeoJSON layers ──
+
+@app.get("/api/v1/layers")
+def get_layers(
+    bbox: str | None = Query(None, description="minLon,minLat,maxLon,maxLat"),
+    types: str | None = Query(None, description="Comma list: official_pfz,cyclone,port,eez"),
+) -> dict[str, Any]:
+    bbox_t = None
+    if bbox:
+        try:
+            parts = [float(x) for x in bbox.split(",")]
+            assert len(parts) == 4
+            bbox_t = (parts[0], parts[1], parts[2], parts[3])
+        except (ValueError, AssertionError):
+            raise HTTPException(status_code=400, detail="bbox must be minLon,minLat,maxLon,maxLat")
+    type_list = [t.strip() for t in types.split(",") if t.strip()] if types else None
+    return layers_mod.get_layers(bbox=bbox_t, types=type_list)
+
+
+# ── Phase-4: alerts ──
+
+@app.get("/api/v1/alerts")
+async def get_alerts(
+    since: str | None = Query(None, description="ISO timestamp — only alerts issued after this"),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
+) -> dict[str, Any]:
+    """Current alerts. If lat+lon given, first evaluate REAL conditions
+    there (waves/wind/rain thresholds + active JTWC cyclones) and mint
+    fresh alerts for anything that crosses a threshold."""
+    newly: list[dict[str, Any]] = []
+    if lat is not None and lon is not None:
+        newly = await asyncio.to_thread(alerts_mod.evaluate, lat, lon)
+        for a in newly:
+            await alerts_mod.publish(a)
+    return {
+        "alerts": alerts_mod.list_alerts(since),
+        "count": len(alerts_mod.list_alerts(since)),
+        "newly_evaluated": newly,
+    }
+
+
+@app.post("/api/v1/alerts/simulate")
+async def simulate_alert(payload: dict[str, Any]) -> dict[str, Any]:
+    """Create a clearly-labelled DEMO alert (simulated=true, 🧪 DEMO prefix)
+    so the disaster-drill flow can be shown without faking real data,
+    and push it to all connected WebSocket clients."""
+    kind = str(payload.get("type", "cyclone"))
+    lat = float(payload.get("lat", 20.9))
+    lon = float(payload.get("lon", 70.37))
+    try:
+        alert = alerts_mod.simulate(kind, lat, lon)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await alerts_mod.publish(alert)
+    return {"created": alert, "note": "Simulated alert — marked simulated=true for demos/drills."}
+
+
+# ── Phase-4: chat (HTTP one-shot; WS below streams live) ──
+
+@app.post("/api/v1/chat")
+async def chat_once(payload: dict[str, Any]) -> dict[str, Any]:
+    """Rule-based assistant (no LLM yet). Same events as the WebSocket,
+    delivered as one JSON document — this is the HTTP fallback path."""
+    message = str(payload.get("message", "")).strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="message is required")
+    try:
+        lat = float(payload.get("lat"))
+        lon = float(payload.get("lon"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="lat and lon are required numbers")
+    _validate_date(payload.get("date"))
+    try:
+        return await asyncio.to_thread(
+            chat_mod.answer_once,
+            message, lat, lon, payload.get("date"),
+            bool(payload.get("include_gfw", False)),
+            payload.get("lang"),
+        )
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"chat failed: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+
+
+# ── Phase-4: feedback (stored, not dropped) ──
+
+@app.post("/api/v1/feedback")
+def post_feedback(payload: dict[str, Any]) -> dict[str, Any]:
+    """Persist fisher feedback to data/feedback.jsonl (one JSON per line)."""
+    records_dir = PROJECT_ROOT / "data"
+    records_dir.mkdir(exist_ok=True)
+    from datetime import datetime, timezone
+    record = {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "payload": payload,
+    }
+    with open(records_dir / "feedback.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return {"stored": True, "record": record}
+
+
+# ── Phase-4: WebSocket chat trace + alert push ──
+
+@app.websocket("/ws/chat")
+async def ws_chat(ws: WebSocket) -> None:
+    """Blueprint contract:
+      client → {"type":"chat.user_message","message":str,"lat":f,"lon":f,"lang":?}
+      server → chat.routing → chat.agent_step×N → chat.token×N → chat.final
+      server → alert.push (any time, when an alert is minted)
+    """
+    await ws.accept()
+    push_q = alerts_mod.subscribe()
+
+    async def _publisher() -> None:
+        try:
+            while True:
+                ev = await push_q.get()
+                await ws.send_json(ev)
+        except Exception:  # noqa: BLE001
+            pass
+
+    pub_task = asyncio.create_task(_publisher())
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                await ws.send_json({"type": "chat.error", "payload": {"error": "invalid JSON"}})
+                continue
+
+            if msg.get("type") != "chat.user_message":
+                if msg.get("type") == "ping":
+                    await ws.send_json({"type": "pong"})
+                continue
+
+            try:
+                message = str(msg.get("message", "")).strip()
+                lat = float(msg.get("lat"))
+                lon = float(msg.get("lon"))
+                if not message:
+                    raise ValueError("empty message")
+            except (TypeError, ValueError):
+                await ws.send_json({"type": "chat.error",
+                                    "payload": {"error": "need message, lat, lon"}})
+                continue
+
+            date = msg.get("date")
+            include_gfw = bool(msg.get("include_gfw", False))
+            lang = msg.get("lang")
+
+            loop = asyncio.get_running_loop()
+            ev_q: asyncio.Queue = asyncio.Queue()
+            done = object()
+
+            def _produce() -> None:
+                try:
+                    for ev in chat_mod.stream_events(
+                        message, lat, lon, date, include_gfw, lang,
+                    ):
+                        loop.call_soon_threadsafe(ev_q.put_nowait, ev)
+                except Exception as e:  # noqa: BLE001
+                    loop.call_soon_threadsafe(ev_q.put_nowait, {
+                        "type": "chat.error",
+                        "payload": {"error": f"{type(e).__name__}: {e}"},
+                    })
+                finally:
+                    loop.call_soon_threadsafe(ev_q.put_nowait, done)
+
+            worker = asyncio.create_task(asyncio.to_thread(_produce))
+            while True:
+                ev = await ev_q.get()
+                if ev is done:
+                    break
+                await ws.send_json(ev)
+                if ev.get("type") == "chat.token":
+                    await asyncio.sleep(0.03)  # token pacing for the UI
+            await worker
+    except WebSocketDisconnect:
+        pass
+    finally:
+        alerts_mod.unsubscribe(push_q)
+        pub_task.cancel()
+
+
+# ── Startup cache warm-up ──
+# First-touch of INCOIS PFZ WFS (~5 s), JTWC (~3 s) and the default
+# advisory (~60 s, Gujarat demo zone) would otherwise slow down the
+# judge's very first click. Fire them in background threads so the
+# endpoint answers from warm cache instead.
+@app.on_event("startup")
+def _warm_caches() -> None:
+    import threading
+
+    def _warm() -> None:
+        try:
+            from pipeline import incois_pfz, jtwc
+            incois_pfz.get_lines()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            jtwc.get_active_cyclones()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            build_advisory(20.9, 70.37)  # Veraval / Gujarat demo zone
+        except Exception:  # noqa: BLE001
+            pass
+
+    threading.Thread(target=_warm, daemon=True, name="cache-warmer").start()
 
 
 if __name__ == "__main__":

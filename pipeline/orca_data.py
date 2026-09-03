@@ -174,23 +174,40 @@ def zone_snapshot(
         snap["data_sources_failed"].append(err or "Open-Meteo: no data")
 
     # 2) NOAA ERDDAP chlorophyll
+    # VIIRS data runs on a ~3-day processing lag, so "today" (and usually
+    # the last 2 days) have no files yet. Try the requested date first;
+    # if it has nothing, step back 3 days and surface chlorophyll_date so
+    # the caller/UI can show the data's true age. Never invent a value.
     try:
         noaa_fn = _get_noaa()
-        chl, err = _safe(
-            noaa_fn, lat, lon, chl_date,
-            default=None, label="NOAA ERDDAP",
-        )
-        if chl and not err and chl.get("value") is not None:
-            snap["chlorophyll"] = chl.get("value")
-            snap["chlorophyll_unit"] = chl.get("units", "mg/m^3")
-            snap["chlorophyll_source"] = chl.get("source", "NOAA ERDDAP DINEOF")
-            # Also surface the box stats so users can see the spatial variance
-            if chl.get("box_min") is not None:
-                snap["chlorophyll_box_min"] = chl["box_min"]
-                snap["chlorophyll_box_max"] = chl["box_max"]
-            snap["data_sources_used"].append("NOAA ERDDAP (chlorophyll)")
-        else:
-            snap["data_sources_failed"].append(err or "NOAA: no data")
+        got_noaa = False
+        last_err = None
+        for attempt_date, shift_note in ((chl_date, None), (
+                (date.fromisoformat(target_date) - timedelta(days=3)).isoformat(), "-3d")):
+            chl, err = _safe(
+                noaa_fn, lat, lon, attempt_date,
+                default=None, label="NOAA ERDDAP",
+            )
+            if chl and not err and chl.get("value") is not None:
+                snap["chlorophyll"] = chl.get("value")
+                snap["chlorophyll_unit"] = chl.get("units", "mg/m^3")
+                snap["chlorophyll_source"] = chl.get("source", "NOAA ERDDAP DINEOF")
+                snap["chlorophyll_date"] = attempt_date
+                if shift_note:
+                    snap["chlorophyll_note"] = (
+                        f"Requested date had no product yet (satellite lag); "
+                        f"showing {attempt_date} analysis instead."
+                    )
+                # Also surface the box stats so users can see the spatial variance
+                if chl.get("box_min") is not None:
+                    snap["chlorophyll_box_min"] = chl["box_min"]
+                    snap["chlorophyll_box_max"] = chl["box_max"]
+                snap["data_sources_used"].append(f"NOAA ERDDAP (chlorophyll, {attempt_date})")
+                got_noaa = True
+                break
+            last_err = err or "NOAA: no data"
+        if not got_noaa:
+            snap["data_sources_failed"].append(last_err or "NOAA: no data")
     except ImportError as e:
         snap["data_sources_failed"].append(f"NOAA: import error: {e}")
 
@@ -312,6 +329,34 @@ def _pfz_score(snap: dict[str, Any]) -> float | None:
     if weights == 0:
         return None
     return round(min(1.0, max(0.0, score / weights)), 2)
+
+
+def zone_snapshot_cached(
+    lat: float,
+    lon: float,
+    target_date: str | None = None,
+    radius_deg: float = DEFAULT_RADIUS_DEG,
+    include_gfw: bool = True,
+    ttl_sec: float = 600.0,
+) -> dict[str, Any]:
+    """zone_snapshot with a 10-minute cache per 0.05° cell.
+
+    The advisory card, chat trace and reason endpoint all need the same
+    snapshot; without a cache each of them paid the full ~60–90 s
+    multi-source fetch. Cached, the second caller gets an instant answer
+    (which is what makes the 30-second demo flow possible). Cached
+    values are immutable-by-convention — callers must not mutate.
+    """
+    from pipeline.ttlcache import cached
+    # Normalize: None and "today" must map to the SAME cache key or
+    # the advisory (passes None) and the chat trace (passes today's
+    # string) would each pay a separate 60–90 s fetch for identical data.
+    if target_date is None:
+        target_date = date.today().isoformat()
+    key = f"snapshot:{lat:.2f}:{lon:.2f}:{target_date}:{include_gfw}:{radius_deg}"
+    return cached(key, ttl_sec, lambda: zone_snapshot(
+        lat, lon, target_date, radius_deg=radius_deg, include_gfw=include_gfw,
+    ))
 
 
 def grid_snapshot(

@@ -1,0 +1,254 @@
+"""Deterministic safety advisory — the "Can I go out today?" card.
+
+NO LLM. Every number comes from a live data source, every rule is a
+published small-craft threshold, every verdict traceable to its reason.
+
+Data woven together for one lat/lon:
+  1. zone_snapshot        (SST, chlorophyll — existing ORCA pipeline)
+  2. point forecast       (waves / wind / gusts / rain, next 72 h)
+  3. INCOIS official PFZ  (nearest advisory line, distance + bearing)
+  4. JTWC cyclones        (active tropical systems, distance)
+
+Verdicts:
+  go       → no reason at caution level or higher
+  caution  → at least one caution-level reason, no no-go reason
+  no_go    → at least one no-go reason
+
+Rules (small-craft practice, WMO/IMD conventions):
+  no_go    active cyclone within 300 km, or gale-force gusts ≥ 34 kn
+           (WMO gale warning), or waves ≥ 4 m, or ≥ 64.5 mm rain day
+           (IMD "heavy rain" threshold)
+  caution  cyclone 300–800 km, winds 20–34 kn, gusts 28–34 kn,
+           waves 2.5–4 m, swell ≥ 2.5 m, rain 35–64.5 mm day
+  info     bloom-level chlorophyll (> 8 mg/m³) health note; PFZ context
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from pipeline import forecast as fc
+from pipeline import incois_pfz, jtwc
+from pipeline.orca_data import zone_snapshot_cached
+
+# Validity of one advisory — ocean forecasts stale fast; re-issue after this.
+ADVISORY_TTL_HOURS = 3
+
+
+def _deg_to_compass(deg: float | None) -> str | None:
+    if deg is None:
+        return None
+    dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+            "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+    return dirs[int((deg + 11.25) // 22.5) % 16]
+
+
+def build_advisory(
+    lat: float,
+    lon: float,
+    target_date: str | None = None,
+    include_gfw: bool = False,
+) -> dict[str, Any]:
+    """Compose the full advisory card for one point.
+
+    include_gfw=False by default: GFW takes 30+ s and isn't needed for a
+    safety verdict. The chat PFZ flow can flip it on ("deep mode").
+    """
+    started = datetime.now(timezone.utc)
+    sources_used: list[str] = []
+    sources_failed: list[str] = []
+    reasons: list[dict[str, Any]] = []
+
+    def reason(severity: str, code: str, msg: str):
+        reasons.append({"severity": severity, "code": code, "msg": msg})
+
+    # ── 1. Snapshot (SST + chlorophyll; GFW off in fast mode) ──
+    snap: dict[str, Any] = {}
+    try:
+        snap = zone_snapshot_cached(lat, lon, target_date, include_gfw=include_gfw)
+        sources_used += snap.get("data_sources_used", [])
+        sources_failed += snap.get("data_sources_failed", [])
+    except Exception as e:  # noqa: BLE001
+        sources_failed.append(f"zone snapshot: {type(e).__name__}: {e}")
+
+    # ── 2. Hourly forecast + safe window ──
+    try:
+        point_fc = fc.get_point_forecast(lat, lon)
+        sources_used.append(point_fc["source"])
+        safe_window = fc.find_safe_window(point_fc)
+    except Exception as e:  # noqa: BLE001
+        point_fc = {}
+        safe_window = {"found": False, "note": "Forecast fetch failed."}
+        sources_failed.append(f"point forecast: {type(e).__name__}: {e}")
+
+    now_f = point_fc.get("now", {}) or {}
+    n24 = point_fc.get("next24h", {}) or {}
+    n48 = point_fc.get("next48h", {}) or {}
+
+    wave_now = now_f.get("wave_height_m")
+    swell_now = now_f.get("swell_height_m")
+    wind_now = now_f.get("wind_kn")
+    gust_now = now_f.get("gust_kn")
+    current_kn = now_f.get("current_kn")
+    sst_c = snap.get("sst_mean") if snap.get("sst_mean") is not None else snap.get("sst_max")
+    chl = snap.get("chlorophyll")
+
+    # ── 3. Cyclones (JTWC) ──
+    cyclone_dist_km: float | None = None
+    cyclone_note = "Cyclone status not checked."
+    try:
+        cyc = jtwc.nearest_cyclone(lat, lon)
+        if cyc.get("found"):
+            c = cyc["cyclone"]
+            cyclone_dist_km = cyc["distance_km"]
+            nm = round(cyclone_dist_km / 1.852)
+            label = c.get("name") or c["designation"]
+            inten = c.get("intensity") or "tropical system"
+            wind = f"{c['max_wind_kt']} kn" if c.get("max_wind_kt") else "? kn"
+            cyclone_note = (
+                f"Active {inten} '{label}' {nm} NM away "
+                f"({_deg_to_compass(cyc['bearing_deg'])}), winds {wind}."
+            )
+            if cyclone_dist_km < 300:
+                reason("no_go", "cyclone_near", f"🌀 {cyclone_note}")
+            elif cyclone_dist_km < 800:
+                reason("caution", "cyclone_region", f"🌀 {cyclone_note}")
+            else:
+                reason("info", "cyclone_far", f"🌀 {cyclone_note}")
+        else:
+            cyclone_note = cyc.get("note", "No active tropical cyclone in the region.")
+            if cyc.get("checked"):
+                reason("info", "no_cyclone", f"✅ {cyclone_note}")
+            else:
+                reason("info", "cyclone_check_failed", f"⚠️ {cyclone_note}")
+    except Exception as e:  # noqa: BLE001
+        cyclone_note = f"Cyclone check failed: {type(e).__name__}"
+        reason("info", "cyclone_check_failed", "Could not verify cyclone status — check IMD before departure.")
+
+    # ── 4. Sea-state rules (current conditions + 48 h outlook) ──
+    wave_outlook = n48.get("wave_max_m") if n48.get("wave_max_m") is not None else wave_now
+    if wave_now is not None:
+        if wave_now >= 4.0 or (wave_outlook or 0) >= 4.0:
+            reason("no_go", "high_waves",
+                   f"🌊 Waves {wave_now:.1f} m now, up to {(wave_outlook or wave_now):.1f} m in 48 h "
+                   "— beyond safe small-craft limits (≥ 4 m).")
+        elif wave_now >= 2.5 or (wave_outlook or 0) >= 2.5:
+            reason("caution", "waves_elevated",
+                   f"🌊 Waves {wave_now:.1f} m (peak {(wave_outlook or wave_now):.1f} m) — "
+                   "rough for small boats; stay alert.")
+        else:
+            reason("info", "waves_calm", f"🌊 Waves {wave_now:.1f} m — manageable.")
+
+    if swell_now is not None and swell_now >= 2.5:
+        reason("caution", "swell_high", f"〰️ Swell {swell_now:.1f} m — long-period rollers make beaching risky.")
+
+    wind_outlook = n48.get("wind_max_kn") if n48.get("wind_max_kn") is not None else wind_now
+    gust_outlook = n48.get("gust_max_kn") if n48.get("gust_max_kn") is not None else gust_now
+    if gust_outlook is not None and gust_outlook >= 34:
+        reason("no_go", "gale_gusts",
+               f"💨 Gale-force gusts forecast (up to {gust_outlook:.0f} kn ≥ WMO 34 kn gale warning).")
+    elif wind_outlook is not None and wind_outlook >= 20:
+        reason("caution", "wind_strong",
+               f"💨 Wind up to {wind_outlook:.0f} kn (gusts {(gust_outlook or 0):.0f} kn) — "
+               "fresh-to-strong breeze; tiring and rough for small craft.")
+    elif wind_now is not None:
+        reason("info", "wind_ok", f"💨 Wind {wind_now:.0f} kn — comfortable.")
+
+    if n24.get("rain_total_mm") is not None:
+        rain24 = n24["rain_total_mm"]
+        if rain24 >= 64.5:
+            reason("no_go", "heavy_rain",
+                   f"🌧️ {rain24:.0f} mm rain expected in 24 h — IMD 'heavy rain' class; "
+                   "visibility and safe navigation compromised.")
+        elif rain24 >= 35:
+            reason("caution", "rain_moderate",
+                   f"🌧️ {rain24:.0f} mm rain expected in 24 h — poor visibility at times.")
+
+    if chl is not None and chl > 8:
+        reason("caution", "bloom_level_chl",
+               f"🦠 Chlorophyll {chl:.1f} mg/m³ — bloom-level; possible low-oxygen / HAB water, "
+               "avoid fish from this patch until it clears.")
+
+    # ── 5. Official INCOIS PFZ proximity ──
+    nearest_pfz_km: float | None = None
+    pfz_info: dict[str, Any] = {"found": False}
+    try:
+        pfz = incois_pfz.nearest_pfz(lat, lon)
+        if pfz.get("found"):
+            nearest_pfz_km = pfz["distance_km"]
+            nm = pfz["distance_nm"]
+            pfz_info = pfz
+            sector = pfz.get("sector_name") or "coastal"
+            compass = _deg_to_compass(pfz.get("bearing_deg"))
+            reason("info", "official_pfz",
+                   f"🎣 Official INCOIS PFZ ({sector} advisory, {pfz.get('advisory_date')}): "
+                   f"{nm} NM {compass} of you (~{pfz['distance_km']:.0f} km).")
+        else:
+            pfz_info = pfz
+            reason("info", "no_official_pfz", pfz.get("note", "No official PFZ line near this point today."))
+    except Exception as e:  # noqa: BLE001
+        reason("info", "pfz_check_failed", f"Official PFZ advisory unavailable right now ({type(e).__name__}).")
+
+    # ── Verdict ──
+    sevs = {r["severity"] for r in reasons}
+    if "no_go" in sevs:
+        verdict = "no_go"
+    elif "caution" in sevs:
+        verdict = "caution"
+    else:
+        verdict = "go"
+
+    vt = {
+        "go": {
+            "icon": "✅", "color": "green",
+            "headline_en": "GO — conditions look workable.",
+            "headline_hi": "JA SAKTE HAIN — haalat theek hain.",
+        },
+        "caution": {
+            "icon": "⚠️", "color": "amber",
+            "headline_en": "CAUTION — go only with care.",
+            "headline_hi": "SAVDHANI KE SAATH — dhyan se jaiye.",
+        },
+        "no_go": {
+            "icon": "⛔", "color": "red",
+            "headline_en": "NO-GO — stay on land today.",
+            "headline_hi": "MAT JAIYE — aaj zameen par rahiye.",
+        },
+    }[verdict]
+
+    valid_until = (started + timedelta(hours=ADVISORY_TTL_HOURS)).isoformat(timespec="seconds")
+    return {
+        "type": "advisory",
+        "lat": lat,
+        "lon": lon,
+        "verdict": verdict,
+        **vt,
+        "headline": vt["headline_en"],
+        "reasons": reasons,
+        "variables": {
+            "wave_height_m": wave_now,
+            "swell_m": swell_now,
+            "wind_kts": wind_now,
+            "gust_kts": gust_now,
+            "sst_c": sst_c,
+            "current_kn": current_kn,
+            "current_dir": _deg_to_compass(now_f.get("current_dir_deg")),
+            "chlorophyll_mg_m3": chl,
+            "cyclone_dist_km": cyclone_dist_km,
+            "cyclone_note": cyclone_note,
+            "nearest_pfz_km": nearest_pfz_km,
+            "nearest_pfz_nm": pfz_info.get("distance_nm"),
+            "nearest_pfz_bearing": _deg_to_compass(pfz_info.get("bearing_deg")),
+            "pfz_advisory_date": pfz_info.get("advisory_date"),
+        },
+        "outlook_48h": n48,
+        "safe_window": safe_window,
+        "sources": sources_used,
+        "sources_failed": sources_failed,
+        "generated_at": started.isoformat(timespec="seconds"),
+        "valid_until": valid_until,
+        "disclaimer": (
+            "Advisory only — final judgement rests with the skipper. "
+            "Cross-check with the latest INCOIS/IMD bulletin before sailing."
+        ),
+    }

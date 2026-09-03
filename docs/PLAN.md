@@ -99,7 +99,7 @@ Idea submission deadline: **20 September 2026**
   - `GET /api/v1/grid?min_lat=&max_lat=&min_lon=&max_lon=&step=` → grid of ZoneSnapshots
   - `GET /api/v1/zone/reason?query=` → multi-agent reasoning
 - [ ] CORS for Next.js dev server
-- [ ] Reuse the 6 agents from `mvp-prototype` (planner, weather, ocean, GIS, risk, reasoner)
+- [ ] Reuse the 10 agents (ocean, satellite, weather, gis, fisheries, marine_ecology, marine_risk, anomaly, validation + ORCA reasoning) — all implemented in `pipeline/agents/`
 - [ ] `/datasets` endpoint showing what data was used per answer
 
 ### Milestone 4 — Next.js web app (week 4–6)

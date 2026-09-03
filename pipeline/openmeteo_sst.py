@@ -61,14 +61,31 @@ ARCHIVE_API_URL = "https://archive-api.open-meteo.com/v1/archive"
 DAILY_VARS = "sea_surface_temperature_max,sea_surface_temperature_min,wave_height_max"
 
 
-def _request(url: str, timeout: int = 30) -> dict | None:
-    """Make a GET request to Open-Meteo. Returns parsed JSON."""
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "ORCA-Marine-Intelligence/1.0"},
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+def _request(url: str, timeout: int = 30, retries: int = 3) -> dict | None:
+    """Make a GET request to Open-Meteo. Returns parsed JSON.
+
+    The free API rate-limits (HTTP 429) when our own test suite or grid
+    queries fire many calls in a burst. Retry with backoff on 429 only —
+    genuine robustness for the app, not just for tests.
+    """
+    import time as _time
+
+    for attempt in range(retries + 1):
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "ORCA-Marine-Intelligence/1.0"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < retries:
+                wait = 2 * (2 ** attempt)  # 2 s, 4 s, 8 s
+                print(f"[OpenMeteo] 429 rate-limited — retry in {wait}s "
+                      f"({attempt + 1}/{retries})", file=sys.stderr)
+                _time.sleep(wait)
+                continue
+            raise
 
 
 def get_sst_at_point(
@@ -234,10 +251,17 @@ def get_sst_grid(
         file=sys.stderr,
     )
 
-    # Open-Meteo accepts comma-separated lists
+    # Open-Meteo multi-location semantics: comma-separated latitude and
+    # longitude lists are ZIP-PAIRED, not cross-multiplied — i.e.
+    #   latitude=18,19&longitude=72,74 → (18,72) and (19,74) only.
+    # To get a genuine 2-D grid we must enumerate every (lat, lon) pair
+    # and repeat each coordinate at its pair position. (Found the hard
+    # way: the old code sent the raw lists and got back 5 diagonal
+    # points instead of a 5×5 grid.)
+    pairs = [(la, lo) for la in lats for lo in lons]
     params = {
-        "latitude": ",".join(f"{x:.4f}" for x in lats),
-        "longitude": ",".join(f"{x:.4f}" for x in lons),
+        "latitude": ",".join(f"{la:.4f}" for la, _lo in pairs),
+        "longitude": ",".join(f"{lo:.4f}" for _la, lo in pairs),
         "daily": DAILY_VARS,
         "start_date": start_date,
         "end_date": end_date,

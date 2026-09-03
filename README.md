@@ -81,7 +81,7 @@ export GFW_API_TOKEN="your-token"       # get one at globalfishingwatch.org
 .
 ├── pipeline/                 # Python data layer + agents
 │   ├── orca_data.py          # unified ZoneSnapshot (5 sources → 1 dict)
-│   ├── reasoner.py           # orchestrates 6 agents
+│   ├── reasoner.py           # orchestrates the 10 agents
 │   ├── agents/               # one file per agent
 │   ├── erddap_chl.py         # NOAA chlorophyll adapter
 │   ├── openmeteo_sst.py      # SST + waves adapter
