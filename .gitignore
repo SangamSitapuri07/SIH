@@ -1,0 +1,28 @@
+.venv/
+**/.venv/
+**/__pycache__/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store
+.env
+.env.local
+
+# Local data we don't want to commit (large NetCDF / HDF5 files)
+data/raw/
+data/cache/
+*.nc
+*.h5
+*.hdf5
+*.tif
+*.tiff
+
+# Pipeline venv
+.pipeline-venv/
+web/node_modules/
+web/.next/
+web/out/
