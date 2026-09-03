@@ -33,6 +33,12 @@ from pipeline.agents import run_all
 
 RISK_ORDER = {"low": 0, "unknown": 1, "moderate": 2, "high": 3, "critical": 4}
 
+# The validation agent is META: it rates how much DATA we have, not how
+# dangerous the sea is. Mixing its "moderate" (some sources failed) into
+# the environmental risk made the UI scream MODERATE on a calm sea
+# whenever a remote source timed out — wrong message to a fisherman.
+META_AGENTS = {"validation"}
+
 
 def _max_risk(risks: list[str]) -> str:
     if not risks:
@@ -51,9 +57,23 @@ def reason(
     """
     agents = run_all(snap, include=include_agents)
 
-    # Aggregate risks
-    risks = [a.get("risk_level", "unknown") for a in agents]
-    overall = _max_risk(risks)
+    # Aggregate risks — from agents that actually measured the sea.
+    # "unknown" (input data missing) is NOT a risk level: a calm sea with
+    # a dead satellite feed is still a calm sea. We track data coverage
+    # separately so the UI can be honest about confidence.
+    env_agents = [a for a in agents if a.get("agent") not in META_AGENTS]
+    known_risks = [
+        a.get("risk_level", "unknown") for a in env_agents
+        if a.get("risk_level", "unknown") != "unknown"
+    ]
+    overall = _max_risk(known_risks) if known_risks else "unknown"
+
+    data_coverage = {
+        "known": len(known_risks),
+        "total": len(env_agents),
+        "sources_failed": len(snap.get("data_sources_failed", [])),
+    }
+    limited = data_coverage["known"] < data_coverage["total"]
 
     # Get key agent signals
     sat = next((a for a in agents if a["agent"] == "satellite"), {})
@@ -98,7 +118,14 @@ def reason(
         else:
             rec = "✅ Conditions OK but no strong fishing signal — try known grounds."
     else:
-        rec = "❓ Insufficient data for a clear recommendation."
+        rec = "❓ Insufficient live data for a clear call — the sea itself may be fine, we just can't see it right now. Check sources below."
+
+    # Honest confidence note: risk came only from agents with real inputs.
+    if limited and overall != "unknown":
+        rec += (
+            f" (Confidence: {data_coverage['known']}/{data_coverage['total']} "
+            f"agents had live data — {data_coverage['sources_failed']} source(s) unreachable.)"
+        )
 
     return {
         "zone": {
@@ -110,6 +137,7 @@ def reason(
         "overall_risk": overall,
         "summary": summary,
         "recommendation": rec,
+        "data_coverage": data_coverage,
         "data_sources_used": snap.get("data_sources_used", []),
         "data_sources_failed": snap.get("data_sources_failed", []),
         "fetched_at": snap.get("fetched_at"),

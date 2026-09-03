@@ -113,7 +113,7 @@ export default function Home() {
             </div>
           </div>
           <div className="bg-gray-50 border-l overflow-hidden">
-            <InsightPanel insight={insight} loading={insightLoading} zoneName={zone.name} />
+            <InsightPanel insight={insight} loading={insightLoading} zoneName={zone.name} lang={lang} />
           </div>
         </div>
       </div>

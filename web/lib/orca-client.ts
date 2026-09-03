@@ -60,6 +60,7 @@ export interface OrcaInsight {
   recommendation: string;
   data_sources_used: string[];
   data_sources_failed: string[];
+  data_coverage?: { known: number; total: number; sources_failed: number };
   fetched_at: string;
 }
 
