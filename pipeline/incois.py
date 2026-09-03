@@ -140,21 +140,38 @@ def np_isnan(arr):
         return [math.isnan(x) for x in arr]
 
 
+# INCOIS OPeNDAP is DISABLED by default (honest reasoning):
+#   1. In every session so far it either timed out or returned nothing.
+#   2. On a network where it DOES connect (Indian networks reach
+#      las.incois.gov.in far better than our sandbox), the naive
+#      ds[var].values below pulls the ENTIRE global OCM-2 array into RAM
+#      (GBs) and OOM-killed the backend mid-request on a laptop —
+#      that is the crash seen on 2026-09-03 with ECONNRESET/ECONNREFUSED.
+#   3. It would only ever be a backup — NOAA ERDDAP is the primary and
+#      MOSDAC is the Indian 🇮🇳 source.
+# Set ORCA_INCOIS_OPENDAP=1 to force-enable the (still flaky) endpoint.
+OPENDAP_DISABLED_REASON = (
+    "disabled by default — remote OPeNDAP + full-array load can crash/OOM "
+    "the backend; set ORCA_INCOIS_OPENDAP=1 to force-enable (flaky anyway)"
+)
+
+
 def get_chlorophyll(
     lat: float,
     lon: float,
     date: str | datetime = "2026-08-15",
     timeout_sec: float = 6.0,
 ) -> dict[str, Any] | None:
-    """Try to fetch chlorophyll from INCOIS. Returns dict with 'value'
-    on success, or dict with 'error' on failure (the caller can decide
-    whether to fall back to other sources).
+    """Chlorophyll from INCOIS only when explicitly enabled.
 
-    NOTE: INCOIS OPeNDAP is unreliable. We try once, briefly, then
-    give up. Other sources (NOAA, ESA OC-CCI) are the primary
-    chlorophyll providers. The Indian 🇮🇳 primary source is MOSDAC
-    (pipeline/mosdac_auth.py) which requires credentials.
+    Default: returns an honest error immediately. NOAA ERDDAP is the
+    primary global source; MOSDAC (pipeline/mosdac_auth.py) is the
+    Indian 🇮🇳 one. INCOIS's OPeNDAP has never served us a successful
+    query and its full-array load can crash the process.
     """
+    import os
+    if os.environ.get("ORCA_INCOIS_OPENDAP", "0") != "1":
+        return {"error": OPENDAP_DISABLED_REASON, "source": SOURCE_LABEL}
     return _try_opendap_chl(timeout_sec=timeout_sec)
 
 
@@ -178,6 +195,8 @@ def status() -> dict[str, Any]:
         "opendap_known_issue": "Server is frequently slow/unresponsive",
         "erddap_url": INCOIS_ERDDAP_URL,
         "erddap_datasets": "15 griddap datasets, none for chlorophyll",
+        "opendap_enabled": False,
+        "opendap_enable_hint": "export ORCA_INCOIS_OPENDAP=1 to try the flaky endpoint (crashed a laptop once — see docstring)",
         "pfz_url": INCOIS_PFZ_URL,
         "pfz_format": "HTML + images (not machine-readable)",
         "recommendation": "Use MOSDAC for Indian 🇮🇳 chlorophyll (requires creds). "

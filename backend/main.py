@@ -550,6 +550,17 @@ async def ws_chat(ws: WebSocket) -> None:
         pub_task.cancel()
 
 
+# ── Pre-import heavy native libs on the MAIN thread ──
+# numpy/xarray do one-time native init at import; two worker threads
+# hitting that init simultaneously (parallel source gather) has crashed
+# a Windows laptop hard. Import once here so workers only ever touch
+# already-initialised modules. Optional deps — absence is fine.
+try:
+    import numpy  # noqa: F401
+    import xarray  # noqa: F401
+except ImportError:
+    pass
+
 # ── Startup cache warm-up ──
 # First-touch of INCOIS PFZ WFS (~5 s), JTWC (~3 s) and the default
 # advisory (~60 s, Gujarat demo zone) would otherwise slow down the
