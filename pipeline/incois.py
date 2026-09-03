@@ -4,31 +4,31 @@ INCOIS publishes Indian Ocean chlorophyll from OCEANSAT-2 OCM and
 Oceansat-3 OCM-3, plus daily Potential Fishing Zone (PFZ) advisories
 for 586 fish landing centers along the Indian coast.
 
-INTEGRATION STATUS (as of 2026-09-03, after exhaustive testing):
-  - OPeNDAP THREDDS server (las.incois.gov.in):  unreliable, often
-    returns 30+ second timeouts. We try it first, but don't block on it.
-  - ERDDAP server (erddap.incois.gov.in):  WORKING but has NO chlorophyll
-    dataset — only AMSR-E SST (stale, last updated 2011), ASCAT winds,
-    ARGO floats, OISST. So we don't use it for chlorophyll.
-  - PFZ advisory:  only available as image + text on
-    https://www.incois.gov.in/MarineFisheries/PfzAdvisory
-    (no machine-readable JSON or CSV endpoint — would need OCR).
+INTEGRATION STATUS (2026-09-04):
+  - OPeNDAP THREDDS (las.incois.gov.in):  USED, but as a SAFE point-query
+    backup only. History lesson: the first version loaded the ENTIRE
+    global OCM-2 array into RAM (GBs) and OOM-crashed the backend on the
+    user's laptop mid-request. The current version asks the OPeNDAP
+    server for a tiny ~0.6° hyperslab (KBs over the wire, not GBs), so
+    memory risk is gone. The server itself is still often slow or down
+    from outside India — hence "backup": it only runs when NOAA and
+    OC-CCI BOTH failed, never in the hot path.
+  - PFZ advisory:  we use the WORKING official feed (GeoServer WFS,
+    pipeline/incois_pfz.py) — that's the INCOIS product fishers
+    actually use daily.
+  - ERDDAP (erddap.incois.gov.in):  NO chlorophyll dataset — AMSR-E SST
+    (stale 2011), ASCAT winds, ARGO, OISST only.
 
-So the INCOIS adapter's current role is "try OPeNDAP once, fall back to
-a clear 'unavailable' so other sources are used." This is honest
-behavior — we don't fake Indian data.
-
-If you have MOSDAC creds (pipeline/mosdac_auth.py), use that instead —
-MOSDAC serves the raw Oceansat-3 OCM-3 L4 NetCDF directly.
+Nothing here is faked: if INCOIS OPeNDAP fails, the caller shows the
+real error and falls back to NOAA / OC-CCI / MOSDAC (creds) instead.
 """
 from __future__ import annotations
 
-import math
-from datetime import datetime
+import os
 from typing import Any
 
 
-# Best-known INCOIS OCM-2 OPeNDAP URL (may be flaky)
+# INCOIS OCM-2 OPeNDAP URL (flaky server — we only point-query it now)
 INCOIS_OPENDAP_BASE = (
     "http://las.incois.gov.in/thredds/id-b36be55868/"
     "data_home_las_datasets_oceancolour_Oceansat2-OCM.nc.jnl"
@@ -44,36 +44,45 @@ INCOIS_ERDDAP_URL = "https://erddap.incois.gov.in/erddap/"
 SOURCE_LABEL = "INCOIS"
 
 
-def _try_opendap_chl(timeout_sec: float = 6.0) -> dict[str, Any] | None:
-    """Try the INCOIS OPeNDAP server for chlorophyll. Returns dict or None.
+def _opendap_enabled() -> bool:
+    """OPeNDAP backup is ON by default now that it's a safe hyperslab
+    point-query (the GBs-into-RAM crash path is gone). Set
+    ORCA_INCOIS_OPENDAP=0 to disable completely."""
+    return os.environ.get("ORCA_INCOIS_OPENDAP", "1") != "0"
 
-    Uses SIGALRM on Unix to hard-cap the time. The INCOIS server is
-    flaky, so this will return None (and an error message) most of the
-    time. The caller is expected to gracefully fall back to other
-    sources.
+
+def _try_opendap_chl(
+    lat: float,
+    lon: float,
+    timeout_sec: float = 12.0,
+    box_deg: float = 0.3,
+) -> dict[str, Any] | None:
+    """Point-query INCOIS OPeNDAP for chlorophyll near (lat, lon).
+
+    CRASH-SAFE by construction: we subset server-side with .sel() so
+    OPeNDAP transfers only the small hyperslab (~0.6° box ≈ a few KB),
+    never the multi-GB global grid. (The 2026-09-03 laptop crash was
+    `ds[var].values` on the FULL array — that code is deleted.)
+
+    Hard-capped at timeout_sec via SIGALRM when on the main thread; in
+    worker threads the caller's future timeout abandons us (the
+    leftover socket closes harmlessly).
     """
     try:
+        import numpy as np
         import xarray as xr
     except ImportError:
-        return {
-            "error": "xarray not installed (pip install xarray netCDF4)",
-            "source": SOURCE_LABEL,
-        }
+        return {"error": "xarray/netCDF4 not installed", "source": SOURCE_LABEL}
 
     import signal
     import threading
 
-    class TimeoutError_(Exception):  # noqa: N801
+    class _Timeout(Exception):
         pass
 
     def _alarm_handler(signum, frame):
-        raise TimeoutError_(f"INCOIS OPeNDAP timed out after {timeout_sec}s")
+        raise _Timeout(f"INCOIS OPeNDAP timed out after {timeout_sec:.0f}s")
 
-    # SIGALRM only works in the main thread. zone_snapshot() calls this
-    # inside a ThreadPoolExecutor worker thread, where signal.signal()
-    # raises "ValueError: signal only works in main thread of the main
-    # interpreter". In worker threads we skip the alarm — the caller's
-    # future.result(timeout=...) already caps our runtime.
     old_handler = None
     on_main_thread = threading.current_thread() is threading.main_thread()
     if on_main_thread and hasattr(signal, "SIGALRM"):
@@ -82,11 +91,10 @@ def _try_opendap_chl(timeout_sec: float = 6.0) -> dict[str, Any] | None:
 
     try:
         with xr.open_dataset(INCOIS_OPENDAP_BASE, engine="netcdf4") as ds:
-            # Get chlorophyll var (try several names)
             var_name = None
-            for candidate in ("CHL", "chl", "chlor_a", "chlorophyll", "chlorophyll-a"):
-                if candidate in ds.data_vars:
-                    var_name = candidate
+            for cand in ("CHL", "chl", "chlor_a", "chlorophyll", "chlorophyll-a"):
+                if cand in ds.data_vars:
+                    var_name = cand
                     break
             if var_name is None:
                 return {
@@ -94,91 +102,82 @@ def _try_opendap_chl(timeout_sec: float = 6.0) -> dict[str, Any] | None:
                     "source": SOURCE_LABEL,
                 }
 
-            lats = ds.coords.get("lat", ds.coords.get("latitude"))
-            lons = ds.coords.get("lon", ds.coords.get("longitude"))
-            if lats is None or lons is None:
+            lat_name = "lat" if "lat" in ds.coords else "latitude"
+            lon_name = "lon" if "lon" in ds.coords else "longitude"
+            if lat_name not in ds.coords or lon_name not in ds.coords:
+                return {"error": "INCOIS dataset missing lat/lon coords", "source": SOURCE_LABEL}
+
+            # Respect coordinate direction (ascending vs descending) or
+            # .sel() with a (lo, hi) slice returns an EMPTY selection.
+            lat_vals = ds.coords[lat_name].values
+            lon_vals = ds.coords[lon_name].values
+            lat_desc = len(lat_vals) > 1 and lat_vals[0] > lat_vals[-1]
+            lon_desc = len(lon_vals) > 1 and lon_vals[0] > lon_vals[-1]
+            lat_slice = (slice(lat + box_deg, lat - box_deg) if lat_desc
+                         else slice(lat - box_deg, lat + box_deg))
+            lon_slice = (slice(lon + box_deg, lon - box_deg) if lon_desc
+                         else slice(lon - box_deg, lon + box_deg))
+
+            # THE SAFE SUBSET — OPeNDAP hyperslab, KBs on the wire.
+            subset = ds[var_name].sel({lat_name: lat_slice, lon_name: lon_slice})
+            arr = np.asarray(subset.values, dtype="float64").ravel()
+            arr = arr[np.isfinite(arr)]
+            if arr.size == 0:
                 return {
-                    "error": "INCOIS dataset missing lat/lon coords",
+                    "error": f"INCOIS subset around ({lat:.2f},{lon:.2f}) had no valid cells",
                     "source": SOURCE_LABEL,
                 }
-
-            # Just return the global mean as a fallback if we got this far
-            arr = ds[var_name].values
-            if hasattr(arr, "flatten"):
-                flat = arr.flatten()
-                flat = flat[~np_isnan(flat)]
-                if len(flat) == 0:
-                    return {"error": "INCOIS dataset is all NaN", "source": SOURCE_LABEL}
-                return {
-                    "value": float(flat.mean()),
-                    "units": ds[var_name].attrs.get("units", "mg m^-3"),
-                    "source": SOURCE_LABEL + " OCM-2 (OPeNDAP global mean)",
-                    "note": "OPeNDAP returned a global mean; "
-                            "we did not point-query due to server latency",
-                }
-            return {"error": "INCOIS dataset not an array", "source": SOURCE_LABEL}
-    except TimeoutError_ as e:
+            return {
+                "value": float(arr.mean()),
+                "units": ds[var_name].attrs.get("units", "mg m^-3"),
+                "n_cells": int(arr.size),
+                "lat": lat,
+                "lon": lon,
+                "box_deg": box_deg,
+                "source": "INCOIS OCM-2 (OPeNDAP point subset)",
+                "note": f"safe hyperslab ~{2 * box_deg:.1f}° box, {arr.size} cells — "
+                        "not the full global grid",
+            }
+    except _Timeout as e:
         return {"error": str(e), "source": SOURCE_LABEL}
-    except Exception as exc:  # noqa: BLE001
-        err = str(exc)
-        if "NetCDF" in err or "OPeNDAP" in err or "I/O" in err or "404" in err:
-            err = f"INCOIS server unreachable: {type(exc).__name__}"
-        return {"error": err, "source": SOURCE_LABEL, "pfz_url": INCOIS_PFZ_URL}
+    except Exception as e:  # noqa: BLE001
+        return {
+            "error": f"INCOIS OPeNDAP: {type(e).__name__}: {str(e)[:100]}",
+            "source": SOURCE_LABEL,
+        }
     finally:
         if old_handler is not None and hasattr(signal, "SIGALRM"):
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, old_handler)
 
 
-def np_isnan(arr):
-    """Tiny helper to avoid pulling in numpy if not needed."""
-    try:
-        import numpy as np
-        return np.isnan(arr)
-    except ImportError:
-        import math
-        return [math.isnan(x) for x in arr]
-
-
-# INCOIS OPeNDAP is DISABLED by default (honest reasoning):
-#   1. In every session so far it either timed out or returned nothing.
-#   2. On a network where it DOES connect (Indian networks reach
-#      las.incois.gov.in far better than our sandbox), the naive
-#      ds[var].values below pulls the ENTIRE global OCM-2 array into RAM
-#      (GBs) and OOM-killed the backend mid-request on a laptop —
-#      that is the crash seen on 2026-09-03 with ECONNRESET/ECONNREFUSED.
-#   3. It would only ever be a backup — NOAA ERDDAP is the primary and
-#      MOSDAC is the Indian 🇮🇳 source.
-# Set ORCA_INCOIS_OPENDAP=1 to force-enable the (still flaky) endpoint.
-OPENDAP_DISABLED_REASON = (
-    "disabled by default — remote OPeNDAP + full-array load can crash/OOM "
-    "the backend; set ORCA_INCOIS_OPENDAP=1 to force-enable (flaky anyway)"
-)
-
-
 def get_chlorophyll(
     lat: float,
     lon: float,
-    date: str | datetime = "2026-08-15",
-    timeout_sec: float = 6.0,
+    date: str | None = "2026-08-15",
+    timeout_sec: float = 12.0,
 ) -> dict[str, Any] | None:
-    """Chlorophyll from INCOIS only when explicitly enabled.
+    """Chlorophyll from INCOIS — safe point-query, backup role.
 
-    Default: returns an honest error immediately. NOAA ERDDAP is the
-    primary global source; MOSDAC (pipeline/mosdac_auth.py) is the
-    Indian 🇮🇳 one. INCOIS's OPeNDAP has never served us a successful
-    query and its full-array load can crash the process.
+    Called ONLY when NOAA ERDDAP and ESA OC-CCI both failed (the caller,
+    pipeline/orca_data.py, decides). Returns an honest error dict when
+    the flaky server doesn't answer — we never invent a value.
+    `date` is accepted for interface parity; the OCM-2 OPeNDAP archive
+    is effectively a climatological grid, so the returned value is a
+    spatial mean around the point, flagged in `note`.
     """
-    import os
-    if os.environ.get("ORCA_INCOIS_OPENDAP", "0") != "1":
-        return {"error": OPENDAP_DISABLED_REASON, "source": SOURCE_LABEL}
-    return _try_opendap_chl(timeout_sec=timeout_sec)
+    if not _opendap_enabled():
+        return {
+            "error": "INCOIS OPeNDAP disabled via ORCA_INCOIS_OPENDAP=0",
+            "source": SOURCE_LABEL,
+        }
+    return _try_opendap_chl(lat, lon, timeout_sec=timeout_sec)
 
 
 def get_sst(
     lat: float,
     lon: float,
-    date: str | datetime = "2026-08-15",
+    date: str | None = "2026-08-15",
 ) -> dict[str, Any] | None:
     """INCOIS doesn't expose machine-readable SST. Use Open-Meteo instead."""
     return {
@@ -192,14 +191,18 @@ def status() -> dict[str, Any]:
     """Return the current INCOIS integration status (for debugging)."""
     return {
         "opendap_url": INCOIS_OPENDAP_BASE,
-        "opendap_known_issue": "Server is frequently slow/unresponsive",
+        "opendap_mode": "safe point-hyperslab (~0.6° box) — no full-array RAM load",
+        "opendap_enabled_by_default": True,
+        "opendap_disable_hint": "export ORCA_INCOIS_OPENDAP=0 to disable the backup query",
+        "opendap_known_issue": "Server is frequently slow/down from outside India — used as backup only",
         "erddap_url": INCOIS_ERDDAP_URL,
         "erddap_datasets": "15 griddap datasets, none for chlorophyll",
-        "opendap_enabled": False,
-        "opendap_enable_hint": "export ORCA_INCOIS_OPENDAP=1 to try the flaky endpoint (crashed a laptop once — see docstring)",
         "pfz_url": INCOIS_PFZ_URL,
-        "pfz_format": "HTML + images (not machine-readable)",
-        "recommendation": "Use MOSDAC for Indian 🇮🇳 chlorophyll (requires creds). "
-                          "Use NOAA ERDDAP for global chlorophyll (no creds). "
-                          "Use ESA OC-CCI for climate-quality cross-check (no creds).",
+        "pfz_note": "PFZ lines come from the WORKING INCOIS GeoServer WFS (pipeline/incois_pfz.py)",
+        "recommendation": (
+            "Primary chlorophyll: NOAA ERDDAP (global NRT). Cross-check: ESA OC-CCI. "
+            "Indian Ocean 🇮🇳: MOSDAC OCM-3 with credentials. INCOIS OPeNDAP stays a "
+            "safe point-subset backup (server itself is flaky); the WORKING INCOIS "
+            "product we rely on is the daily official PFZ WFS feed."
+        ),
     }

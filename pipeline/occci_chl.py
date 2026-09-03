@@ -71,78 +71,92 @@ def get_chlorophyll(
     date: str | datetime,
     max_age_days: int = 7,
 ) -> dict[str, Any] | None:
-    """Fetch ESA OC-CCI chlorophyll for (lat, lon) on date.
+    """Fetch ESA OC-CCI chlorophyll for (lat, lon).
+
+    Strategy change (reliability): query [last] — the server's freshest
+    available day — instead of a specific date. Asking for "today" made
+    the (US-hosted, India-slow) server answer with HTTP 400 or a read
+    timeout on fresh dates that aren't ingested yet; [last] always
+    resolves. The true timestamp of the data is read back from the
+    response rows and surfaced in `date` — no invented freshness.
 
     Returns nearest cell (not box mean — chlorophyll is highly
     non-linear spatially, esp. near coasts).
     """
-    last_err = None
-    dates_to_try = [date] if date is not None else []
-    if date is None:
-        from datetime import date as date_cls, timedelta
-        today = date_cls.today()
-        dates_to_try = [
-            (today - timedelta(days=d)).isoformat()
-            for d in range(1, max_age_days)
-        ]
+    # Per-day in-process cache: OC-CCI is a climate dataset (changes
+    # slowly) but its public ERDDAP can take ~54 s when loaded — repeat
+    # clicks for the same point must never pay that twice.
+    from pipeline.ttlcache import cached
+    return cached(
+        f"occci_chl:{lat:.2f},{lon:.2f}",
+        43_200,  # 12 h
+        lambda: _query_occci(lat, lon),
+    )
 
-    for try_date in dates_to_try:
-        url = build_query_url(lat, lon, try_date, radius_deg=0.05)
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "ORCA/1.0"})
-            with urllib.request.urlopen(req, timeout=8) as r:
-                data = json.loads(r.read().decode("utf-8"))
-            rows = data.get("table", {}).get("rows", [])
-            if not rows:
-                last_err = "empty response"
+
+def _query_occci(lat: float, lon: float) -> dict[str, Any]:
+    # Percent-encode the square brackets: Python's urllib sends them RAW
+    # (unlike curl), and this server 400s on raw brackets. (Found after
+    # a live side-by-side: curl %5B = 200, urllib raw [ = HTTP 400.)
+    url = (
+        f"{ERDDAP_BASE}.json?chlor_a"
+        "%5B(last)%5D"
+        f"%5B({lat - 0.05:.4f}):1:({lat + 0.05:.4f})%5D"
+        f"%5B({lon - 0.05:.4f}):1:({lon + 0.05:.4f})%5D"
+    )
+    try:
+        # 22 s: this shared public ERDDAP often needs 20-55 s; the job is
+        # capped at 25 s by the parallel gather, so size the socket just
+        # under that. Old 8 s cap killed nearly every attempt from India.
+        req = urllib.request.Request(url, headers={"User-Agent": "ORCA/1.0"})
+        with urllib.request.urlopen(req, timeout=22) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        rows = data.get("table", {}).get("rows", [])
+        if not rows:
+            return {"error": "OC-CCI cross-check: empty response (NOAA primary is used)", "source": SOURCE_LABEL}
+
+        # Find nearest cell with a valid value
+        nearest = None
+        nearest_dist = float("inf")
+        n_vals = 0
+        min_v = float("inf")
+        max_v = -float("inf")
+        actual_time = None
+        for row in rows:
+            v = row[3]  # chlor_a is column index 3
+            if v is None:
                 continue
-
-            # Find nearest cell with a valid value
-            nearest = None
-            nearest_dist = float("inf")
-            n_vals = 0
-            min_v = float("inf")
-            max_v = -float("inf")
-            actual_time = None
-            for row in rows:
-                v = row[3]  # chlor_a is column index 3
-                if v is None:
-                    continue
-                n_vals += 1
-                if actual_time is None:
-                    actual_time = row[0]
-                min_v = min(min_v, v)
-                max_v = max(max_v, v)
-                cell_lat = row[1]
-                cell_lon = row[2]
-                d = math.hypot(cell_lat - lat, cell_lon - lon)
-                if d < nearest_dist:
-                    nearest_dist = d
-                    nearest = v
-            if nearest is None:
-                last_err = "no valid values"
-                continue
-            return {
-                "value": nearest,
-                "box_min": min_v if n_vals else None,
-                "box_max": max_v if n_vals else None,
-                "n_samples": n_vals,
-                "units": "mg m^-3",
-                "lat": lat,
-                "lon": lon,
-                "distance_deg": round(nearest_dist, 4),
-                "source": SOURCE_LABEL,
-                "date": (actual_time or str(try_date))[:10],
-                "log10": math.log10(nearest) if nearest > 0 else None,
-            }
-        except urllib.error.HTTPError as e:
-            last_err = f"HTTP {e.code}"
-            continue
-        except Exception as e:  # noqa: BLE001
-            last_err = f"{type(e).__name__}: {e}"[:120]
-            continue
-
-    return {
-        "error": f"OC-CCI failed: {last_err}",
-        "source": SOURCE_LABEL,
-    }
+            n_vals += 1
+            if actual_time is None:
+                actual_time = row[0]
+            min_v = min(min_v, v)
+            max_v = max(max_v, v)
+            cell_lat = row[1]
+            cell_lon = row[2]
+            d = math.hypot(cell_lat - lat, cell_lon - lon)
+            if d < nearest_dist:
+                nearest_dist = d
+                nearest = v
+        if nearest is None:
+            return {"error": "OC-CCI cross-check: no valid values in box (NOAA primary is used)", "source": SOURCE_LABEL}
+        return {
+            "value": nearest,
+            "box_min": min_v if n_vals else None,
+            "box_max": max_v if n_vals else None,
+            "n_samples": n_vals,
+            "units": "mg m^-3",
+            "lat": lat,
+            "lon": lon,
+            "distance_deg": round(nearest_dist, 4),
+            "source": SOURCE_LABEL,
+            "date": (actual_time or "latest")[:10],
+            "log10": math.log10(nearest) if nearest > 0 else None,
+        }
+    except Exception as e:  # noqa: BLE001
+        # The comet.nefsc ERDDAP is shared by the whole world and often
+        # needs ~54 s — say so plainly instead of a naked TimeoutError.
+        why = "server slow" if "timed out" in str(e).lower() or "Timeout" in type(e).__name__ else f"{type(e).__name__}: {e}"
+        return {
+            "error": f"OC-CCI cross-check unavailable ({why}) — NOAA primary is used"[:180],
+            "source": SOURCE_LABEL,
+        }

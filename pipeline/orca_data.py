@@ -198,7 +198,7 @@ def zone_snapshot(
     # /reason + /advisory for the same point at the same moment — parallel
     # fetching plus single-flight caching (ttlcache) is what keeps the
     # Next.js dev proxy from resetting the connection on slow networks.
-    noaa_fn = occci_fn = incois_fn = None
+    noaa_fn = occci_fn = None
     try:
         noaa_fn = _get_noaa()
     except ImportError as e:
@@ -207,10 +207,6 @@ def zone_snapshot(
         occci_fn = _get_occci()
     except ImportError as e:
         snap["data_sources_failed"].append(f"OC-CCI: import error: {e}")
-    try:
-        incois_fn = _get_incois()
-    except ImportError as e:
-        snap["data_sources_failed"].append(f"INCOIS: import error: {e}")
 
     jobs: dict[str, tuple] = {
         "openmeteo": (get_sst_at_point, (lat, lon, gfw_start, gfw_end), {}, "Open-Meteo"),
@@ -218,9 +214,7 @@ def zone_snapshot(
     if noaa_fn is not None:
         jobs["noaa"] = (noaa_fn, (lat, lon, chl_date), {}, "NOAA ERDDAP")
     if occci_fn is not None:
-        jobs["occci"] = (occci_fn, (lat, lon, chl_date), {}, "ESA OC-CCI")
-    if incois_fn is not None:
-        jobs["incois"] = (incois_fn, (lat, lon, chl_date), {}, "INCOIS LAS")
+        jobs["occci"] = (occci_fn, (lat, lon, chl_date), {}, "ESA OC-CCI", 25.0)  # slow shared server
 
     # GFW runs INSIDE the same parallel gather (they're slow paid-report
     # POSTs — 35 s budget each) instead of a serial block after it.
@@ -293,29 +287,54 @@ def zone_snapshot(
     elif noaa_fn is not None:
         snap["data_sources_failed"].append(err_noaa or "NOAA: no data")
 
-    # 2b) ESA OC-CCI cross-validation (independent corroboration)
+    # 2b) ESA OC-CCI cross-validation — and SECOND fallback: when NOAA
+    # has nothing but OC-CCI does, promote it to the primary chlorophyll
+    # (honest, independent dataset) before resorting to INCOIS.
     if occci_fn is not None:
         occci, err = results.get("occci", (None, "ESA OC-CCI: not run"))
         if occci and not err and occci.get("value") is not None:
             snap["chlorophyll_occci"] = occci.get("value")
             snap["chlorophyll_occci_source"] = occci.get("source", "ESA OC-CCI")
-            snap["data_sources_used"].append("ESA OC-CCI (chlorophyll cross-check)")
+            if "chlorophyll" not in snap:
+                snap["chlorophyll"] = occci.get("value")
+                snap["chlorophyll_unit"] = occci.get("units", "mg/m^3")
+                snap["chlorophyll_source"] = occci.get("source", "ESA OC-CCI")
+                snap["chlorophyll_date"] = occci.get("date")
+                snap["chlorophyll_note"] = "NOAA unavailable; showing ESA OC-CCI latest-analysis instead."
+                snap["data_sources_used"].append("ESA OC-CCI (chlorophyll, fallback primary)")
+            else:
+                snap["data_sources_used"].append("ESA OC-CCI (chlorophyll cross-check)")
         else:
             snap["data_sources_failed"].append(err or "OC-CCI: no data")
 
-    # 3) INCOIS backup chlorophyll
-    if incois_fn is not None:
-        incois_chl, err = results.get("incois", (None, "INCOIS LAS: not run"))
-        if incois_chl and not err and incois_chl.get("value") is not None:
-            # Only use INCOIS if NOAA failed (NOAA is more recent)
-            if "chlorophyll" not in snap:
+    # 3) INCOIS backup chlorophyll — CONDITIONAL: only queried when both
+    # NOAA and OC-CCI failed, so the flaky server never sits in the hot
+    # path (and never shows as "failed" noise when it wasn't even used).
+    # Since 2026-09-04 the query itself is crash-safe (server-side
+    # hyperslab subset, KBs on the wire — the GBs-into-RAM path is gone).
+    if "chlorophyll" not in snap:
+        try:
+            incois_fn = _get_incois()
+        except ImportError as e:
+            incois_fn = None
+            incois_imp_err = e
+        if incois_fn is not None:
+            incois_chl, err = _safe(
+                incois_fn, lat, lon, chl_date,
+                default=None, label="INCOIS LAS", timeout=15,
+            )
+            if incois_chl and not err and incois_chl.get("value") is not None:
                 snap["chlorophyll"] = incois_chl.get("value")
                 snap["chlorophyll_unit"] = incois_chl.get("units", "mg/m^3")
                 snap["chlorophyll_source"] = incois_chl.get("source", "INCOIS LAS")
                 snap["chlorophyll_date"] = chl_date
-            snap["data_sources_used"].append("INCOIS LAS (backup chlorophyll)")
+                if incois_chl.get("note"):
+                    snap["chlorophyll_note"] = incois_chl["note"]
+                snap["data_sources_used"].append("INCOIS LAS (backup chlorophyll)")
+            else:
+                snap["data_sources_failed"].append(err or "INCOIS: no data")
         else:
-            snap["data_sources_failed"].append(err or "INCOIS: no data")
+            snap["data_sources_failed"].append(f"INCOIS: import error: {incois_imp_err}")
 
     # 4) GFW fishing effort + fleet composition (fetched in the parallel
     # gather above — just map the results here)
