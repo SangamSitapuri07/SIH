@@ -19,7 +19,7 @@ def get(path, params=None):
     try:
         # Cold-tap multi-source fetches (NOAA + OC-CCI + INCOIS + Open-Meteo,
         # with lag-retry) can take ~90 s before the 10-min cache fills.
-        with urllib.request.urlopen(url, timeout=240) as r:
+        with urllib.request.urlopen(url, timeout=600) as r:
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")

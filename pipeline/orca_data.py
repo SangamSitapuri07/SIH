@@ -397,9 +397,9 @@ def grid_snapshot(
     points = []
     for la in lats:
         for lo in lons:
-            snap = zone_snapshot(
+            snap = zone_snapshot_cached(
                 la, lo, target_date,
-                window_days=30, radius_deg=step_deg,
+                radius_deg=step_deg,
                 include_gfw=include_gfw,
             )
             points.append(snap)
