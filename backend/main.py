@@ -423,16 +423,18 @@ def get_reason(
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
     date: str | None = Query(None),
-    include_gfw: bool = Query(True),
+    include_gfw: bool | None = Query(None, description="GFW deep data. Omit = auto (on when token configured); true/false = force"),
     agents: str | None = Query(None, description="Comma-separated agent IDs (default: all)"),
 ) -> dict[str, Any]:
     _validate_date(date)
     agent_list = [a.strip() for a in agents.split(",") if a.strip()] if agents else None
 
+    gfw = _gfw_default(include_gfw)
+
     def _run() -> dict[str, Any]:
         # Cached snapshot: /reason, /advisory and chat for the same point
         # share one live fetch instead of each paying the full cost.
-        snap = zone_snapshot_cached(lat, lon, date, include_gfw=include_gfw)
+        snap = zone_snapshot_cached(lat, lon, date, include_gfw=gfw)
         insight = reason(snap, include_agents=agent_list)
         insight["snapshot"] = snap
         return insight
@@ -452,16 +454,17 @@ def get_advisory(
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
     date: str | None = Query(None),
-    include_gfw: bool = Query(False, description="Deep mode — adds fleet data (slower)"),
+    include_gfw: bool | None = Query(None, description="GFW deep data. Omit = auto (on when token configured); true/false = force"),
 ) -> dict[str, Any]:
     """GO / CAUTION / NO-GO advisory card. Deterministic, no LLM.
     Cached 10 min per 0.01° cell so the 30-second demo flow is instant."""
+    gfw = _gfw_default(include_gfw)
     _validate_date(date)
     date_norm = date or date_cls.today().isoformat()
-    key = f"advisory:{lat:.2f}:{lon:.2f}:{date_norm}:{include_gfw}"
+    key = f"advisory:{lat:.2f}:{lon:.2f}:{date_norm}:{gfw}"
     try:
         return _with_deadline(
-            lambda: cached(key, 600, lambda: build_advisory(lat, lon, date_norm, include_gfw=include_gfw)),
+            lambda: cached(key, 600, lambda: build_advisory(lat, lon, date_norm, include_gfw=gfw)),
             95, "advisory",
         )
     except HTTPException:

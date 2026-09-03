@@ -245,28 +245,45 @@ async function apiPost<T>(path: string, body: unknown, timeoutMs = 220_000): Pro
   return res.json();
 }
 
-// ── GFW deep-data switch ──────────────────────────────────────────
-// Off by default = fast map clicks. When the user flips "Real fishing
-// data (GFW)" in Settings, insight + advisory include REAL Global
-// Fishing Watch effort/fleet (needs GFW_API_TOKEN in the backend .env).
+// ── GFW deep-data switch (tri-state) ──────────────────────────────
+// localStorage "orca.gfwDeep": "1" = force ON, "0" = force OFF,
+// unset = AUTO — the backend decides from its .env: token present →
+// real fishing data even on map clicks; no token → stays fast.
+// (Needs GFW_API_TOKEN in the backend .env.)
 
-export function gfwDeepEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try { return localStorage.getItem("orca.gfwDeep") === "1"; } catch { return false; }
+export function gfwDeepParam(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const v = localStorage.getItem("orca.gfwDeep");
+    return v === "1" ? "true" : v === "0" ? "false" : null;
+  } catch { return null; }
 }
 
-export function setGfwDeep(v: boolean): void {
-  try { localStorage.setItem("orca.gfwDeep", v ? "1" : "0"); } catch { /* private mode */ }
+export function gfwDeepStored(): boolean | null {
+  const p = gfwDeepParam();
+  return p === "true" ? true : p === "false" ? false : null;
+}
+
+export function setGfwDeep(v: boolean | null): void {
+  try {
+    if (v === null) localStorage.removeItem("orca.gfwDeep");
+    else localStorage.setItem("orca.gfwDeep", v ? "1" : "0");
+  } catch { /* private mode */ }
+}
+
+function gfwQuery(): string {
+  const p = gfwDeepParam();
+  return p === null ? "" : `&include_gfw=${p}`; // omit → backend AUTO
 }
 
 export const fetchInsight = (lat: number, lon: number, date?: string) =>
   apiGet<OrcaInsight>(
-    `/api/v1/reason?lat=${lat}&lon=${lon}${date ? `&date=${date}` : ""}&include_gfw=${gfwDeepEnabled()}`,
+    `/api/v1/reason?lat=${lat}&lon=${lon}${date ? `&date=${date}` : ""}${gfwQuery()}`,
     220_000
   );
 
 export const fetchAdvisory = (lat: number, lon: number) =>
-  apiGet<Advisory>(`/api/v1/advisory?lat=${lat}&lon=${lon}&include_gfw=${gfwDeepEnabled()}`, 120_000);
+  apiGet<Advisory>(`/api/v1/advisory?lat=${lat}&lon=${lon}${gfwQuery()}`, 120_000);
 
 export interface LayersResponse {
   type: "FeatureCollection";

@@ -79,6 +79,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     gfw_toggle: "Include real vessel + fishing-effort data in analysis (slower, needs token)",
     gfw_note: "Token found — with this on, map clicks and advisories include REAL Global Fishing Watch data: how many hours boats actually fished there, which flags, which gear. Ask-ORCA chat uses it automatically.",
     gfw_no_token: "No token found in the backend .env — add GFW_API_TOKEN to .env and restart the backend. Chat queries upgrade automatically once it's there.",
+    gfw_auto_note: "AUTO mode: backend has a real GFW token, so map clicks and advisories already include live fishing data. Untick to force fast mode (no GFW calls).",
   },
   hi: {
     tab_map: "🗺️ नक्शा",
@@ -156,6 +157,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     gfw_toggle: "विश्लेषण में असली नाव + मछली-प्रयास डेटा शामिल करें (थोड़ा धीमा, token चाहिए)",
     gfw_note: "Token मिल गया — इसे ON करने से नक्शा-क्लिक और सलाह में REAL Global Fishing Watch डेटा आएगा: वहाँ असल में कितने घंटे नावों ने मछली पकड़ी, किस देश के झंडे, कौन-सा gear। 'ओर्का से पूछें' chat इसे अपने आप इस्तेमाल करता है।",
     gfw_no_token: "Backend के .env में token नहीं मिला — .env में GFW_API_TOKEN जोड़ें और backend दोबारा चालू करें। Token आते ही chat अपने आप upgrade हो जाएगा।",
+    gfw_auto_note: "AUTO mode: backend के पास असली GFW token है, इसलिए नक्शा-क्लिक और सलाह में पहले से ही लाइव मछली डेटा शामिल है। तेज़ mode चाहिए तो यह checkbox हटा दें (GFW calls नहीं होंगे)।",
   },
 };
 

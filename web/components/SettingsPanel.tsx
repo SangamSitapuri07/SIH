@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DemoZone, INDIAN_COASTAL_ZONES, postFeedback, wsUrl, fetchHealth, gfwDeepEnabled, setGfwDeep } from "@/lib/orca-client";
+import { DemoZone, INDIAN_COASTAL_ZONES, postFeedback, wsUrl, fetchHealth, gfwDeepStored, setGfwDeep } from "@/lib/orca-client";
 import { t, Lang, LANGS } from "@/lib/i18n";
 
 interface Health {
@@ -24,13 +24,13 @@ export default function SettingsPanel({
   setLang: (l: Lang) => void;
 }) {
   const [health, setHealth] = useState<Health | null>(null);
-  const [gfwDeep, setGfwDeepState] = useState(false);
+  const [gfwStored, setGfwStoredState] = useState<boolean | null>(null);
   const [fb, setFb] = useState("");
   const [fbDone, setFbDone] = useState(false);
   const [wsState, setWsState] = useState("checking…");
 
   useEffect(() => {
-    setGfwDeepState(gfwDeepEnabled());
+    setGfwStoredState(gfwDeepStored());
     fetchHealth()
       .then(setHealth)
       .catch(() => setHealth(null));
@@ -106,9 +106,9 @@ export default function SettingsPanel({
           <input
             type="checkbox"
             className="mt-0.5"
-            checked={gfwDeep}
+            checked={gfwStored ?? Boolean((health as any)?.credentials?.gfw_token_configured)}
             onChange={(e) => {
-              setGfwDeepState(e.target.checked);
+              setGfwStoredState(e.target.checked);
               setGfwDeep(e.target.checked);
             }}
           />
@@ -117,7 +117,9 @@ export default function SettingsPanel({
         <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
           {health && (health as any).credentials?.gfw_token_configured === false
             ? `⚠️ ${t(lang, "gfw_no_token")}`
-            : t(lang, "gfw_note")}
+            : gfwStored === null
+              ? `🤖 ${t(lang, "gfw_auto_note")}`
+              : t(lang, "gfw_note")}
         </p>
       </section>
 

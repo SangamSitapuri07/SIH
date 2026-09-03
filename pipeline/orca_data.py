@@ -302,8 +302,11 @@ def zone_snapshot(
             effort_fn = _get_gfw_effort()
             effort, err = _safe(
                 effort_fn, lat, lon, gfw_start, gfw_end, radius_deg,
-                default=None, label="GFW fishing effort",
+                default=None, label="GFW fishing effort", timeout=35,  # paid report POST, slower
             )
+            if effort and not err and "error" in effort:
+                err = f"GFW effort: {effort['error']}"  # token invalid/expired/quota — surface it honestly
+                effort = None
             if effort and not err:
                 hours = effort.get("hours")
                 if hours is not None:
@@ -323,8 +326,11 @@ def zone_snapshot(
             fleet_fn = _get_gfw_fleet()
             fleet, err = _safe(
                 fleet_fn, lat, lon, radius_deg, gfw_start, gfw_end,
-                default=None, label="GFW fleet",
+                default=None, label="GFW fleet", timeout=35,  # paid report POST, slower
             )
+            if fleet and not err and "error" in fleet:
+                err = f"GFW fleet: {fleet['error']}"
+                fleet = None
             if fleet and not err and "by_flag" in fleet:
                 snap["vessel_count"] = fleet.get("vessel_count")
                 snap["fleet_by_flag"] = fleet.get("by_flag", {})
