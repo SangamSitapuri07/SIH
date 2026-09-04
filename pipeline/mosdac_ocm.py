@@ -413,7 +413,7 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
     bbox = f"{lon - POINT_BBOX_DEG},{lat - POINT_BBOX_DEG},{lon + POINT_BBOX_DEG},{lat + POINT_BBOX_DEG}"
     try:
         data = mosdac_auth.search(DATASET, start=start.isoformat(),
-                                  end=end.isoformat(), bbox=bbox, count="10")
+                                  end=end.isoformat(), bbox=bbox, count="40")
     except Exception as e:  # noqa: BLE001
         return _fail(f"search: {type(e).__name__}: {str(e)[:80]}")
 
@@ -561,7 +561,7 @@ def _selftest() -> int:
     try:
         t_s = time.time()
         data = mosdac_auth.search(DATASET, start=start.isoformat(),
-                                  end=end.isoformat(), bbox=bbox, count="10")
+                                  end=end.isoformat(), bbox=bbox, count="40")
         recs = _records(data)
         print(f"     ✅ {len(recs)} granule(s) found ({data.get('totalResults', '?')} total, {time.time()-t_s:.1f}s)")
         if "--debug" in sys.argv and recs:
