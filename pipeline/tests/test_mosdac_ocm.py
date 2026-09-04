@@ -302,6 +302,56 @@ def test_live_chain_purges_truncated_cache_file(tmp_path, monkeypatch):
     assert "truncated cached granule purged" in res["error"]
 
 
+def test_gate_purges_poisoned_cache_and_redownloads(tmp_path, monkeypatch):
+    """The REAL laptop case: parser.parse never raises, so the chain-level
+    hook can't be relied on — the GATE must catch a signature-valid but
+    open-failing HDF5 (eof 15 MB vs stored_eof 60.5 MB) and heal."""
+    monkeypatch.setattr(mosdac_ocm, "GRANULE_DIR", tmp_path)
+    bad = tmp_path / "mosdac_444.h5"
+    bad.write_bytes(b"\x89HDF\r\n\x1a\n" + b"\x00" * 100)  # looks HDF5, won't open
+    resp = _FakeResp([b"fresh-granule-bytes"])
+    path, err, secs = mosdac_ocm._download_granule(_FakeSession(resp), 444)
+    assert err is None
+    assert path.read_bytes() == b"fresh-granule-bytes"  # healed via fresh download
+    assert secs > 0  # download really happened (not a poisoned cache hit)
+
+
+def test_gate_never_judges_non_hdf5_files(tmp_path, monkeypatch):
+    """Churn-safety: a classic netCDF-3 (or any non-HDF5) file must NOT be
+    deleted by the gate — otherwise every click would re-download."""
+    monkeypatch.setattr(mosdac_ocm, "GRANULE_DIR", tmp_path)
+    f = tmp_path / "mosdac_445.nc3"
+    f.write_bytes(b"CDF\x01" + b"\x00" * 50)
+    assert mosdac_ocm._cache_entry_poisoned(f) is False
+    assert f.exists()
+
+
+def test_gate_serves_healthy_hdf5_without_download(tmp_path, monkeypatch):
+    monkeypatch.setattr(mosdac_ocm, "GRANULE_DIR", tmp_path)
+    h5py = __import__("h5py")
+    f = tmp_path / "mosdac_446.h5"
+    with h5py.File(f, "w") as h:
+        h.create_dataset("x", data=[1, 2, 3])
+
+    class _Boom:
+        def get(self, *a, **k):
+            raise AssertionError("download called for a HEALTHY cache entry")
+
+    path, err, secs = mosdac_ocm._download_granule(_Boom(), 446)
+    assert err is None and path == f and secs == 0.0
+
+
+def test_server_polite_midclose_is_rejected(tmp_path, monkeypatch):
+    """If the server ENDs the stream politely at 15 MB of a 60 MB file (no
+    exception), the publish-verify must catch the truncated granule."""
+    monkeypatch.setattr(mosdac_ocm, "GRANULE_DIR", tmp_path)
+    body = b"\x89HDF\r\n\x1a\n" + b"\x00" * 100  # truncated HDF5 content
+    resp = _FakeResp([body])  # stream ends cleanly → no exception
+    path, err, _ = mosdac_ocm._download_granule(_FakeSession(resp), 447)
+    assert path is None and "truncated" in err.lower()
+    assert not (tmp_path / "mosdac_447.h5").exists()
+
+
 def test_records_date_from_dcdate():
     """Real apios shape seen 2026-09-04: title is the numeric id; date
     lives in dcDate/updated."""

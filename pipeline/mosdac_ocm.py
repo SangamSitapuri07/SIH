@@ -176,6 +176,45 @@ def _purge_old_granules() -> None:
             pass
 
 
+def _silence_hdf5_diag() -> None:
+    """Stop the HDF5 C layer from spewing raw HDF5-DIAG stacks to stderr.
+    We handle EVERY open failure in Python and report honest one-line
+    reasons — the C stack is pure console noise (a poisoned-cache open was
+    printing a 20-line stack on every alerts tick/prewarm click)."""
+    try:
+        import h5py
+        h5py.h5e.set_auto(h5py.h5e.H5E_DEFAULT, None, None)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _cache_entry_poisoned(path: Path) -> bool:
+    """Integrity gate for same-day cache hits.
+
+    A granule interrupted mid-download keeps its HDF5 signature but fails
+    to open — the superblock records a stored_eof beyond the real size
+    (seen live on the laptop: eof=15 MB vs stored_eof=60.5 MB). And
+    parser.parse() NEVER raises ("fills warnings and returns"), so the
+    poison surfaced downstream as a misleading 'no valid pixel' + endless
+    console noise. Judge it AT THE GATE instead: HDF5-signature file that
+    h5py cannot open = corrupt → purge → fresh download. Non-HDF5 files
+    (e.g. classic netCDF-3) are NOT judged here — the parser decides."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(8)
+    except OSError:
+        return False
+    if not head.startswith(b"\x89HDF"):
+        return False  # not HDF5-family — leave it to the parser, no churn
+    _silence_hdf5_diag()
+    try:
+        import h5py
+        with h5py.File(path, "r"):
+            return False  # opens fine → healthy cache entry
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def _find_cached_granule(rec_id: Any) -> Path | None:
     if GRANULE_DIR.exists():
         for f in GRANULE_DIR.glob(f"mosdac_{rec_id}*"):
@@ -196,7 +235,17 @@ def _download_granule(session, rec_id: Any) -> tuple[Path | None, str | None, fl
     started = time.time()
     hit = _find_cached_granule(rec_id)
     if hit is not None:
-        return hit, None, 0.0
+        if not _cache_entry_poisoned(hit):
+            return hit, None, 0.0
+        # poisoned cache (e.g. interrupted download from before the atomic
+        # -publish fix) — purge on the spot and fall through to a FRESH
+        # download. This is the gate-layer heal; the parser can never see
+        # a corrupt file again (parser.parse never raises, so a downstream
+        # hook could not be relied upon).
+        try:
+            hit.unlink()
+        except OSError:
+            pass
 
     _purge_old_granules()
     GRANULE_DIR.mkdir(parents=True, exist_ok=True)
@@ -236,6 +285,16 @@ def _download_granule(session, rec_id: Any) -> tuple[Path | None, str | None, fl
         # laptop backend log (HDF5 'truncated file: eof=15MB, stored_eof=
         # 60.5MB') — a partial file kept being served from cache all day.
         tmp.replace(dest)
+        # A server that CLOSES POLITELY mid-file (no exception) would
+        # otherwise publish a truncated "complete" granule — re-verify the
+        # just-downloaded file once at the gate (few 100 ms, once per file
+        # per day) and reject honesty instead of poisoning the cache.
+        if _cache_entry_poisoned(dest):
+            try:
+                dest.unlink()
+            except OSError:
+                pass
+            return None, "download completed but file fails HDF5 open — server truncated it; try again", time.time() - started
         return dest, None, time.time() - started
     except Exception as e:  # noqa: BLE001
         if tmp is not None:
