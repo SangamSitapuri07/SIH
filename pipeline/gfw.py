@@ -314,6 +314,8 @@ def get_fishing_effort(
 
     try:
         data = _make_request(url, tok, method="POST", body=body, timeout=60)
+        global _LAST_RAW
+        _LAST_RAW = data  # debug self-test only — parser verification
         # Real GFW response shape (from docs):
         # {
         #   "total": 497.88,
@@ -603,6 +605,20 @@ def _selftest() -> int:
         return 1
     print(f"[GFW self-test] ✅ effort: {effort.get('hours')} fishing hours, "
           f"{effort.get('vessel_ids')} vessels in 30 days")
+
+    if "--debug" in sys.argv:
+        print("[GFW self-test] ── RAW effort response (token never shown) ──")
+        raw_txt = json.dumps(_LAST_RAW, indent=2, default=str)
+        print(raw_txt[:3500])
+        print("[GFW self-test] ── end raw (paste this whole block back) ──")
+
+    hours = effort.get("hours") or 0
+    if hours < 5:
+        print("[GFW self-test] ⓘ context: GFW data comes from vessel AIS beacons.")
+        print("                India's small artisanal boats mostly have NO AIS →")
+        print("                nearshore counts run LOW by design; offshore/industrial")
+        print("                vessels (trawlers, longliners) show up much better.")
+        print("                SW monsoon (Jun-Aug) also keeps fleets in harbour.")
 
     try:
         fleet = get_fishing_vessels_in_region(
