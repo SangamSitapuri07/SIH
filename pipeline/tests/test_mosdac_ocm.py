@@ -115,3 +115,50 @@ def test_live_chain_login_error_is_honest(monkeypatch):
     res = mosdac_ocm._live_chain(20.9, 70.37)
     assert "login" in res["error"]
     assert "401" in res["error"]
+
+
+# ── swath direct-reader on a SYNTHETIC HDF5 granule ────────────────────
+
+def test_extract_chl_h5_swath_2d(tmp_path):
+    """Simulates an EOS-06 OCM-3 L2C LAC file: 2D lat/lon inside groups,
+    land-masked near the point, one valid pixel a few cells away."""
+    h5py = __import__("h5py")
+    import numpy as np
+    p = tmp_path / "fake_ocm3.h5"
+    with h5py.File(p, "w") as f:
+        lats, lons = np.meshgrid(np.linspace(20.0, 21.0, 20),
+                                 np.linspace(70.0, 71.0, 20), indexing="ij")
+        f.create_dataset("navigation_data/latitude", data=lats)
+        f.create_dataset("navigation_data/longitude", data=lons)
+        chl = np.full((20, 20), -32767.0)
+        chl[14, 5] = 0.83  # one valid clear-water pixel
+        d = f.create_dataset("geophysical_data/chlor_a", data=chl)
+        d.attrs["_FillValue"] = -32767.0
+        d.attrs["units"] = "mg m^-3"
+    res = mosdac_ocm._extract_chl_h5(str(p), 20.5, 70.5)
+    assert res is not None and abs(res["value"] - 0.83) < 1e-6
+    assert res["distance_deg"] < 0.4
+    assert "mg" in res["units"]
+
+
+def test_extract_chl_h5_all_masked_returns_none(tmp_path):
+    h5py = __import__("h5py")
+    import numpy as np
+    p = tmp_path / "masked.h5"
+    with h5py.File(p, "w") as f:
+        lats, lons = np.meshgrid(np.linspace(20.0, 21.0, 12),
+                                 np.linspace(70.0, 71.0, 12), indexing="ij")
+        f.create_dataset("geolocation/lat", data=lats)
+        f.create_dataset("geolocation/lon", data=lons)
+        f.create_dataset("geophysical_data/chl", data=np.full((12, 12), -999.0))
+    assert mosdac_ocm._extract_chl_h5(str(p), 20.5, 70.5) is None
+
+
+def test_records_date_from_dcdate():
+    """Real apios shape seen 2026-09-04: title is the numeric id; date
+    lives in dcDate/updated."""
+    j = {"records": [{"id": 18352886,
+                      "dcDate": "2026-09-03T10:15:00Z",
+                      "updated": "2026-09-03T11:00:00Z"}]}
+    recs = mosdac_ocm._records(j)
+    assert recs[0]["date"] == "2026-09-03"

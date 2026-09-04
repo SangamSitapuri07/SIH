@@ -125,8 +125,13 @@ def _records(search_json: dict) -> list[dict[str, Any]]:
             continue
         rid = r.get("id") or r.get("recordId") or r.get("fileId") or r.get("fid")
         title = r.get("title") or r.get("fileName") or r.get("filename") or str(rid)
+        # Live-verified 2026-09-04: MOSDAC apios `title` is just the
+        # numeric id — the REAL granule date lives in dcDate / updated /
+        # summary. Try the title first, then those fields.
+        date_src = " ".join(str(r.get(k, "")) for k in ("dcDate", "updated", "published", "summary"))
+        d = granule_date(str(title)) or granule_date(date_src)
         if rid is not None:
-            out.append({"id": rid, "title": str(title), "date": granule_date(str(title)), "raw": r})
+            out.append({"id": rid, "title": str(title), "date": d, "raw": r})
     return out
 
 
@@ -199,7 +204,142 @@ def _download_granule(session, rec_id: Any) -> tuple[Path | None, str | None, fl
         return None, f"{type(e).__name__}: {str(e)[:120]}", time.time() - started
 
 
-# ── main entry ────────────────────────────────────────────────────────
+# ── swath-aware direct reader (L2C LAC files) ─────────────────────────
+# EOS-06 OCM-3 L2C LAC files are SWATH products: lat/lon are 2D grids
+# tucked inside HDF5 groups (e.g. navigation_data/latitude), not root
+# coordinates. The generic xarray extractor can't see those, so when it
+# comes back empty we read the file directly with h5py.
+
+_CHL_NAME_RE = re.compile(r"chlor|chl", re.I)
+
+
+def _norm_lon_arr(lons, ref_lon):
+    """Bring longitudes close to ref_lon by trying 0-360 convention."""
+    import numpy as np
+    l = np.asarray(lons, dtype="float64")
+    if np.nanmin(l) >= 0 and ref_lon < 0:
+        return l, ref_lon + 360
+    return l, ref_lon
+
+
+def _extract_chl_h5(path, lat: float, lon: float, max_ring: int = 20) -> dict[str, Any] | None:
+    """Best-effort direct chlorophyll extraction from a MOSDAC HDF5 file.
+
+    Returns None with no exception when the structure is unreadable —
+    the caller reports the honest 'no valid pixel' line. Set
+    _extract_chl_h5.last_debug for structure details."""
+    import math
+
+    import h5py
+    import numpy as np
+
+    dbg: dict[str, Any] = {"tried": []}
+    _extract_chl_h5.last_debug = dbg
+
+    with h5py.File(path, "r") as f:
+        listing: list[str] = []
+        f.visititems(lambda name, obj: listing.append(name)
+                     if isinstance(obj, h5py.Dataset) else None)
+
+    chl_name = next((n for n in listing if _CHL_NAME_RE.search(n.split("/")[-1])), None)
+    if chl_name is None:
+        dbg["tried"].append(f"no chlor var in {listing[:12]}")
+        return None
+
+    base = chl_name.rsplit("/", 1)[0] if "/" in chl_name else ""
+    root = base.split("/")[0] if base else ""
+    lat_cands = [n for n in listing if re.search(r"(^|/)(lat|latitude)$", n, re.I)]
+    lon_cands = [n for n in listing if re.search(r"(^|/)(lon|longitude)$", n, re.I)]
+    # prefer coords near the chlor group
+    lat_cands.sort(key=lambda n: 0 if (root and n.startswith(root)) else 1)
+    lon_cands.sort(key=lambda n: 0 if (root and n.startswith(root)) else 1)
+    if not lat_cands or not lon_cands:
+        dbg["tried"].append("no lat/lon datasets anywhere in file")
+        return None
+
+    for ln in lat_cands[:2]:
+        for xn in lon_cands[:2]:
+            try:
+                with h5py.File(path, "r") as f:
+                    lats = np.asarray(f[ln][()], dtype="float64")
+                    lons = np.asarray(f[xn][()], dtype="float64")
+                    chl = np.asarray(f[chl_name][()], dtype="float64")
+                    attrs = dict(f[chl_name].attrs)
+            except Exception as e:  # noqa: BLE001
+                dbg["tried"].append(f"read {ln}/{xn}: {type(e).__name__}")
+                continue
+            if chl.ndim == 3:
+                chl = chl[0]
+            if chl.ndim != 2:
+                dbg["tried"].append(f"chl shape {chl.shape} unexpected")
+                continue
+            lons, ref_lon = _norm_lon_arr(lons, lon)
+
+            if lats.ndim == 2 and lats.shape == chl.shape:
+                dist2 = (lats - lat) ** 2 + (lons - ref_lon) ** 2
+                i0, j0 = np.unravel_index(np.nanargmin(dist2), dist2.shape)
+                cell_lat = lambda i, j: lats[i, j]   # noqa: E731
+                cell_lon = lambda i, j: lons[i, j]   # noqa: E731
+            elif lats.ndim == 1 and lons.ndim == 1 \
+                    and lats.shape[0] == chl.shape[0] and lons.shape[0] == chl.shape[1]:
+                i0 = int(np.argmin(np.abs(lats - lat)))
+                j0 = int(np.argmin(np.abs(lons - ref_lon)))
+                cell_lat = lambda i, j: lats[i]      # noqa: E731
+                cell_lon = lambda i, j: lons[j]      # noqa: E731
+            else:
+                dbg["tried"].append(f"coord shapes {lats.shape}/{lons.shape} vs chl {chl.shape}")
+                continue
+
+            # fill values: attrs of the chl dataset + usual sentinels
+            fills = {9999.0, -32767.0, -9999.0, 1e30, -1e30, -999.0}
+            for k in ("_FillValue", "missing_value", "fill_value"):
+                if k in attrs:
+                    try:
+                        fills.add(float(np.asarray(attrs[k]).flat[0]))
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            def _ok(v: float) -> bool:
+                if not np.isfinite(v) or v <= 0:
+                    return False
+                return not any(abs(v - fv) < 1e-3 or (fv != 0 and abs(v/fv - 1) < 1e-9) for fv in fills)
+
+            best = None
+            best_d = float("inf")
+            for r in range(0, max_ring + 1):
+                improved = False
+                rng = range(-r, r + 1)
+                for di in rng:
+                    for dj in rng:
+                        if max(abs(di), abs(dj)) != r:
+                            continue
+                        i, j = i0 + di, j0 + dj
+                        if not (0 <= i < chl.shape[0] and 0 <= j < chl.shape[1]):
+                            continue
+                        v = float(chl[i, j])
+                        if not _ok(v):
+                            continue
+                        d = math.hypot(cell_lat(i, j) - lat, cell_lon(i, j) - lon)
+                        if d < best_d:
+                            best, best_d = v, d
+                            improved = True
+                if best is not None and r >= 2:
+                    break  # good enough — nearest-ish valid cell found
+                if not improved and r > 6 and best is None:
+                    continue
+            if best is None:
+                dbg["tried"].append(f"all fill/masked within {max_ring} cells of point")
+                continue
+            # values like 0.01-30 sane; big numbers (e.g. scaled ints) sane-check
+            if best > 1000:
+                dbg["tried"].append(f"value {best} looks unscaled")
+                continue
+            return {
+                "value": best,
+                "distance_deg": round(best_d, 4),
+                "units": str(attrs.get("units", b"mg m^-3")).strip("b'\" ") or "mg m^-3",
+            }
+    return None
 
 def get_chlorophyll(lat: float, lon: float, date: str | None = None) -> dict[str, Any]:
     """LIVE MOSDAC OCM-3 chlorophyll at (lat, lon).
@@ -270,8 +410,24 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
         except Exception as e:  # noqa: BLE001
             tried.append(f"{rec['id']}: parse {type(e).__name__}")
             continue
+        via = "xarray"
         if val is None or val.get("value") is None:
-            tried.append(f"{rec['id']}: no valid pixel near point")
+            # L2C LAC files are swath products (2D lat/lon inside HDF5
+            # groups) — the generic extractor can't see those; read the
+            # file directly before giving up on it.
+            try:
+                direct = _extract_chl_h5(path, lat, lon)
+            except Exception:  # noqa: BLE001
+                direct = None
+            if direct is not None and direct.get("value") is not None:
+                val = direct
+                via = "direct-swath"
+        if val is None or val.get("value") is None:
+            msg = f"{rec['id']}: no valid pixel near point"
+            dbgd = getattr(_extract_chl_h5, "last_debug", None)
+            if dbgd and dbgd.get("tried"):
+                msg += f" [direct-reader: {dbgd['tried'][-1][:90]}]"
+            tried.append(msg)
             continue
         return {
             "value": val["value"],
@@ -285,7 +441,8 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
             "live_download_s": round(dl_secs, 1) if dl_secs else None,
             "note": (f"ISRO EOS-06 OCM-3 (1 km), granule dated {rec['date'] or 'latest'} "
                      f"— pulled LIVE from MOSDAC on click"
-                     + (f" ({dl_secs:.0f}s download)" if dl_secs else " (today's granule already fetched)")),
+                     + (f" ({dl_secs:.0f}s download)" if dl_secs else " (today's granule already fetched)")
+                     + (f", read via {via}" if via == "direct-swath" else "")),
         }
 
     return _fail("; or ".join(tried) if tried else "no usable granule")
@@ -335,6 +492,23 @@ def _selftest() -> int:
         print("  MOSDAC LIVE pipeline READY — agents will show ISRO data on clicks. 🇮🇳")
         return 0
     print(f"     X live chain failed: {res.get('error')}")
+    if "--debug" in sys.argv:
+        dbgd = getattr(_extract_chl_h5, "last_debug", None) or {}
+        print("     --debug direct-reader attempts:", dbgd.get("tried"))
+        # dump the granule's actual structure so the fix can be exact
+        try:
+            import h5py
+            files = sorted(GRANULE_DIR.glob("mosdac_*"), key=lambda p: -p.stat().st_mtime)
+            if files:
+                print(f"     --debug structure of {files[0].name}:")
+                with h5py.File(files[0], "r") as f:
+                    names: list[str] = []
+                    f.visititems(lambda n, o: names.append(
+                        f"{n}  shape={getattr(o, 'shape', '')}"))
+                for n in names[:40]:
+                    print("       ", n)
+        except Exception as e:  # noqa: BLE001
+            print("     --debug structure dump failed:", e)
     print("       (server busy or no fresh granule yet — agents will show this")
     print("        honest message and keep using NOAA primary. Re-run later.)")
     return 1
