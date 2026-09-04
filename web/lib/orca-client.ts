@@ -183,7 +183,15 @@ const BASE_KEY = "orca.apiBase";
 function candidateBases(): string[] {
   if (typeof window === "undefined") return [""]; // SSR: relative proxy
   const remembered = sessionStorage.getItem(BASE_KEY);
-  if (remembered != null) return [remembered];
+  // `if (remembered != null)` used to also treat "" (the PROXY base) as a
+  // valid permanent choice — so after ONE backend-restart blip the whole
+  // session got STUCK on the flaky Next dev proxy: fast calls kept
+  // working (health/alerts/layers) but every SLOW one (/reason, /advisory
+  // — proxy RSTs long replies on Windows) 500'd, and the 500 counted as a
+  // "real answer" that re-remembered the proxy. Live on the laptop
+  // 2026-09-04 (Visakhapatnam). Now: empty/proxy is NEVER considered
+  // remembered — direct is retried on every call (costs ~ms when down).
+  if (remembered) return [remembered];
   const h = location.hostname;
   if (h === "localhost" || h === "127.0.0.1") {
     // Direct backend first (bypasses the flaky dev proxy), proxy as backup
@@ -206,7 +214,13 @@ async function apiFetch(path: string, init: RequestInit): Promise<Response> {
   for (const base of bases) {
     try {
       const res = await fetch(base + path, { cache: "no-store", ...init });
-      if (typeof window !== "undefined") {
+      // Only remember a DIRECT (non-empty) base as the session route. The
+      // proxy path may be USED as a fallback, but must never become the
+      // permanent route: the proxy's 500s are real HTTP answers, and
+      // re-remembering "" here was exactly how the session got pinned to
+      // the broken proxy (every later call skipped the healthy direct
+      // backend). Proxy fallback stays a per-call decision now.
+      if (typeof window !== "undefined" && base) {
         try { sessionStorage.setItem(BASE_KEY, base); } catch { /* private mode */ }
       }
       return res;
