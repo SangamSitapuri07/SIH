@@ -187,6 +187,55 @@ def build_advisory(
                "(typical: 0.5-2.5 kn) — could be a shallow coastal grid-cell reading. "
                "Verify against INCOIS current advisories before planning drift sets.")
 
+    # ── 4b. Sky-condition rules (daily WMO code + rain chance) ──
+    # Review round-6 EXTERNAL finding: this card used to decide purely
+    # from wind + waves, so a verified thunderstorm-with-hail day (WMO 96,
+    # 85% rain chance) still rendered "✅ GO" with NO storm bullet — while
+    # the Weather agent and Marine Risk panels both flagged MODERATE for
+    # the same point. The two most user-facing surfaces must never
+    # disagree on whether it is safe to go out. The daily WMO weather
+    # code and precipitation probability now feed real verdict floors.
+    daily_wx: dict[str, Any] = {}
+    try:
+        # Lazy import (avoids any agents<->advisory import cycle); the
+        # helper is ttlcache-cached, so a reason+advisory pair = 1 call.
+        from pipeline.agents import weather as _wx_agent
+        daily_wx = _wx_agent.get_daily_summary(lat, lon, target_date) or {}
+        if daily_wx.get("wx_code") is not None:
+            sources_used.append("Open-Meteo daily (WMO sky condition)")
+    except Exception as e:  # noqa: BLE001
+        sources_failed.append(f"daily sky condition: {type(e).__name__}: {e}")
+    wx_code = daily_wx.get("wx_code")
+    rain_chance = daily_wx.get("precip_probability_max")
+    rain_txt = (f" (rain chance {rain_chance:.0f}%)"
+                if rain_chance is not None else "")
+    storm_blocked = False
+    if wx_code == 99:
+        storm_blocked = True
+        reason("no_go", "hail_storm_severe",
+               f"⛈️ Severe thunderstorm with HEAVY HAIL (WMO 99) expected today{rain_txt} — "
+               "hail squalls can injure crew and punch holes in small craft. Stay on land.")
+    elif wx_code == 96:
+        storm_blocked = True
+        reason("caution", "hail_storm",
+               f"⛈️ Thunderstorm with HAIL (WMO 96) expected today{rain_txt} — hail and "
+               "sudden squalls are dangerous for small open boats; delay departure or "
+               "stay close to shelter.")
+    elif wx_code == 95:
+        storm_blocked = True
+        reason("caution", "thunderstorm",
+               f"⛈️ Thunderstorm expected today (WMO 95){rain_txt} — lightning + sudden "
+               "squall risk on open water; watch the sky and be ready to head back.")
+    elif wx_code in (65, 66, 67, 82):
+        storm_blocked = True
+        reason("caution", "heavy_rain_code",
+               f"🌧️ Heavy rain/showers dominant today (WMO {wx_code}){rain_txt} — poor "
+               "visibility and possible lightning; keep trips short and shore-side.")
+    if not storm_blocked and rain_chance is not None and rain_chance >= 70:
+        reason("info", "rain_chance_high",
+               f"🌧️ Rain chance is high today ({rain_chance:.0f}%) — visibility may drop "
+               "in bursts; protect electronics and plan for squalls.")
+
     if n24.get("rain_total_mm") is not None:
         rain24 = n24["rain_total_mm"]
         if rain24 >= 64.5:

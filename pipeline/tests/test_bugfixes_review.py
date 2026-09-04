@@ -231,12 +231,21 @@ def test_weather_light_gusts_stay_calm(monkeypatch):
 
 # ── Bug #1 (advisory card twin): gust band 28-34 kn must be CAUTION ────
 
-def _patch_advisory_world(monkeypatch, *, gust_kn, wind_kn=10):
-    """Neutral sea everywhere; only wind/gust varies."""
+def _patch_advisory_world(monkeypatch, *, gust_kn, wind_kn=10, wx_daily=None):
+    """Neutral sea everywhere; only wind/gust varies.
+
+    wx_daily: dict for pipeline.agents.weather.get_daily_summary — keeps
+    the sky-condition rules deterministic (default: benign overcast)."""
     from pipeline import advisory
+    from pipeline.agents import weather as wx_agent
     import pipeline.jtwc as jtwc
     import pipeline.ttlcache as ttlcache
     ttlcache.clear()
+    monkeypatch.setattr(
+        wx_agent, "get_daily_summary",
+        lambda *a, **k: wx_daily if wx_daily is not None else
+        {"wx_code": 2, "precip_probability_max": 10.0,
+         "precipitation_sum": 0.0, "wind_max_ms": 4.0, "gust_max_ms": 6.0})
     monkeypatch.setattr(
         advisory, "zone_snapshot_cached",
         lambda *a, **k: {"lat": 13.0, "lon": 80.0, "sst_mean": 28.5,
@@ -362,6 +371,65 @@ def test_advisory_flags_unusually_strong_current(monkeypatch):
     res = advisory.build_advisory(15.16, 82.09)
     codes = [r["code"] for r in res["reasons"]]
     assert "current_strong" in codes
+
+
+# ── Review round-6: advisory must see the sky, not just wind/waves ─────
+# External reviewer: 15.42N/81.85E had a VERIFIED thunderstorm-with-hail
+# day (WMO 96, 85% rain chance). Weather agent + Marine Risk both said
+# MODERATE, but the Advisory card said "✅ GO" with no storm bullet —
+# opposite safety verdicts on the two most user-facing surfaces.
+
+def test_advisory_thunderstorm_hail_forces_caution_not_go(monkeypatch):
+    advisory = _patch_advisory_world(
+        monkeypatch, gust_kn=14, wind_kn=11,
+        wx_daily={"wx_code": 96, "precip_probability_max": 85.0,
+                  "precipitation_sum": 12.0})
+    res = advisory.build_advisory(15.42, 81.85)
+    assert res["verdict"] == "caution", res["reasons"]
+    blob = " ".join(r["msg"] for r in res["reasons"])
+    assert "HAIL" in blob and "WMO 96" in blob and "85%" in blob
+
+
+def test_advisory_heavy_hail_forces_no_go(monkeypatch):
+    advisory = _patch_advisory_world(
+        monkeypatch, gust_kn=14, wind_kn=11,
+        wx_daily={"wx_code": 99, "precip_probability_max": 90.0})
+    res = advisory.build_advisory(15.42, 81.85)
+    assert res["verdict"] == "no_go", res["reasons"]
+    assert "HEAVY HAIL" in " ".join(r["msg"] for r in res["reasons"])
+
+
+def test_advisory_plain_thunderstorm_forces_caution(monkeypatch):
+    advisory = _patch_advisory_world(
+        monkeypatch, gust_kn=14, wind_kn=11,
+        wx_daily={"wx_code": 95, "precip_probability_max": 80.0})
+    res = advisory.build_advisory(15.42, 81.85)
+    assert res["verdict"] == "caution"
+    assert "Thunderstorm" in " ".join(r["msg"] for r in res["reasons"])
+
+
+def test_advisory_high_rain_chance_gets_bullet_without_changing_go(monkeypatch):
+    """85% rain chance alone (no storm code) → still GO, but the 'why'
+    list must now MENTION the rain — the old card never did."""
+    advisory = _patch_advisory_world(
+        monkeypatch, gust_kn=14, wind_kn=11,
+        wx_daily={"wx_code": 2, "precip_probability_max": 85.0})
+    res = advisory.build_advisory(15.42, 81.85)
+    assert res["verdict"] == "go"
+    blob = " ".join(r["msg"] for r in res["reasons"])
+    assert "Rain chance is high today (85%)" in blob
+
+
+def test_advisory_storm_beats_calm_wind_and_waves(monkeypatch):
+    """Storm floor works even when every marine number looks perfect —
+    the exact disagreement the reviewer screenshotted."""
+    advisory = _patch_advisory_world(
+        monkeypatch, gust_kn=10, wind_kn=8,
+        wx_daily={"wx_code": 96, "precip_probability_max": 85.0})
+    res = advisory.build_advisory(15.42, 81.85)
+    assert res["verdict"] == "caution"
+    codes = [r["code"] for r in res["reasons"]]
+    assert "hail_storm" in codes and "waves_calm" in codes and "wind_ok" in codes
 
 
 # ── Centralized risk-tag rule (review round 4) ─────────────────────────

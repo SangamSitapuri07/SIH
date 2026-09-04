@@ -41,7 +41,7 @@ def _fetch(lat: float, lon: float, start_date: str, end_date: str) -> dict:
     params = {
         "latitude": f"{lat:.4f}",
         "longitude": f"{lon:.4f}",
-        "daily": "wind_speed_10m_max,wind_gusts_10m_max,precipitation_sum,weather_code,temperature_2m_max,temperature_2m_min",
+        "daily": "wind_speed_10m_max,wind_gusts_10m_max,precipitation_sum,weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
         "start_date": start_date,
         "end_date": end_date,
         "timezone": "auto",
@@ -52,6 +52,41 @@ def _fetch(lat: float, lon: float, start_date: str, end_date: str) -> dict:
     req = urllib.request.Request(url, headers={"User-Agent": "ORCA/1.0"})
     with urllib.request.urlopen(req, timeout=8) as r:  # 8s: keep the 10-agent run snappy on slow links
         return json.loads(r.read().decode("utf-8"))
+
+
+def get_daily_summary(lat: float, lon: float,
+                      target_date: str | None = None) -> dict[str, Any]:
+    """Compact daily sky-condition summary (WMO code + precipitation).
+
+    Shared by analyze() and pipeline.advisory so the SKIPPER-FACING
+    GO/CAUTION/NO-GO verdict sees the same thunderstorm/hail signals the
+    agent panel shows. Review round-6: the advisory used to look only at
+    wind + waves, so a verified thunderstorm-with-hail day still rendered
+    "GO" with no storm bullet. Cached (same key as analyze) — a
+    reason()+advisory() pair costs ONE live call.
+    """
+    if target_date is None:
+        from datetime import datetime, timezone
+        target_date = datetime.now(timezone.utc).date().isoformat()
+    from pipeline.ttlcache import cached
+    data = cached(
+        f"wx:{lat:.2f},{lon:.2f}:{target_date}",
+        3600,
+        lambda: _fetch(lat, lon, target_date, target_date),
+    ) or {}
+    d = data.get("daily") or {}
+
+    def _0(key: str):
+        v = d.get(key) or [None]
+        return v[0] if v else None
+
+    return {
+        "wx_code": _0("weather_code"),
+        "precipitation_sum": _0("precipitation_sum"),
+        "precip_probability_max": _0("precipitation_probability_max"),
+        "wind_max_ms": _0("wind_speed_10m_max"),
+        "gust_max_ms": _0("wind_gusts_10m_max"),
+    }
 
 
 def analyze(snap: dict[str, Any]) -> dict[str, Any]:
