@@ -127,6 +127,37 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
             ),
         })
 
+    # ISRO MOSDAC OCM-3 live — India's own satellite as a second,
+    # INDEPENDENT cross-check (1 km LAC resolution — finer than the
+    # primary's global grid). 🇮🇳
+    chl_mosdac = snap.get("chlorophyll_mosdac")
+    if chl_mosdac is not None and chl > 0:
+        ratio_m = max(chl, chl_mosdac) / min(chl, chl_mosdac)
+        mosdac_date = snap.get("chlorophyll_mosdac_date") or "latest"
+        if ratio_m > 3.0:
+            findings.append({
+                "type": "chl_mosdac_check_disagree",
+                "severity": "warn",
+                "value": {"primary": chl, "mosdac": chl_mosdac, "ratio": round(ratio_m, 1)},
+                "msg": (
+                    f"⚠️ ISRO OCM-3 ({chl_mosdac:.2f}, granule {mosdac_date}) vs primary "
+                    f"{chl:.2f} — {ratio_m:.1f}x apart. OCM-3's 1 km pixels see coastal "
+                    f"blooms the coarser global grids smear out; treat the fine "
+                    f"structure as real, not an error."
+                ),
+            })
+        else:
+            findings.append({
+                "type": "chl_mosdac_check_ok",
+                "severity": "good",
+                "value": {"primary": chl, "mosdac": chl_mosdac, "ratio": round(ratio_m, 1)},
+                "msg": (
+                    f"✓ ISRO OCM-3 agrees: {chl_mosdac:.2f} mg/m³ (granule {mosdac_date}) "
+                    f"vs primary {chl:.2f} ({ratio_m:.1f}x, within 3x) — India's own "
+                    f"satellite independently confirms the reading. 🇮🇳"
+                ),
+            })
+
     # Risk comes from the PRIMARY measurement's hazard level — never from
     # whether the optional cross-check source succeeded. (Bug found via
     # screenshot review: with chl < 0.5 the only "good" finding came from

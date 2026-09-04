@@ -27,3 +27,4 @@ web/node_modules/
 web/.next/
 web/out/
 logs/
+data/mosdac_granules/

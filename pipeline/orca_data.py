@@ -75,6 +75,14 @@ def _get_occci():
     from pipeline import occci_chl
     return occci_chl.get_chlorophyll
 
+def _get_mosdac_or_none():
+    """ISRO MOSDAC live getter — None when disabled/creds absent, so the
+    source simply doesn't enter the gather (AUTO pattern like GFW)."""
+    from pipeline import mosdac_ocm
+    if not mosdac_ocm.mosdac_enabled():
+        return None
+    return mosdac_ocm.get_chlorophyll
+
 def _get_gfw_effort():
     from pipeline import gfw
     return gfw.get_fishing_effort
@@ -207,6 +215,11 @@ def zone_snapshot(
         occci_fn = _get_occci()
     except ImportError as e:
         snap["data_sources_failed"].append(f"OC-CCI: import error: {e}")
+    mosdac_fn = None
+    try:
+        mosdac_fn = _get_mosdac_or_none()
+    except ImportError as e:
+        snap["data_sources_failed"].append(f"MOSDAC OCM-3: import error: {e}")
 
     jobs: dict[str, tuple] = {
         "openmeteo": (get_sst_at_point, (lat, lon, gfw_start, gfw_end), {}, "Open-Meteo"),
@@ -215,6 +228,11 @@ def zone_snapshot(
         jobs["noaa"] = (noaa_fn, (lat, lon, chl_date), {}, "NOAA ERDDAP")
     if occci_fn is not None:
         jobs["occci"] = (occci_fn, (lat, lon, chl_date), {}, "ESA OC-CCI", 25.0)  # slow shared server
+    if mosdac_fn is not None:
+        # ISRO live chain (login + search + granule download + extract) —
+        # own budget, fits inside the 110 s route deadline; same-day
+        # granule cache makes later clicks instant.
+        jobs["mosdac"] = (mosdac_fn, (lat, lon, chl_date), {}, "ISRO MOSDAC OCM-3", 90.0)
 
     # GFW runs INSIDE the same parallel gather (they're slow paid-report
     # POSTs — 35 s budget each) instead of a serial block after it.
@@ -307,6 +325,23 @@ def zone_snapshot(
         else:
             snap["data_sources_failed"].append(
                 err or (occci or {}).get("error") or "OC-CCI: no data"
+            )
+
+    # 2c) ISRO MOSDAC OCM-3 live — desi third source. Cross-check role
+    # like OC-CCI; never masks NOAA as primary, but its presence lets the
+    # satellite agent do a NOAA vs ESA vs ISRO three-way comparison. 🇮🇳
+    if mosdac_fn is not None:
+        mosdac, merr = results.get("mosdac", (None, "MOSDAC OCM-3: not run"))
+        if mosdac and not merr and mosdac.get("value") is not None:
+            snap["chlorophyll_mosdac"] = mosdac.get("value")
+            snap["chlorophyll_mosdac_source"] = mosdac.get("source", "ISRO MOSDAC")
+            snap["chlorophyll_mosdac_date"] = mosdac.get("date")
+            if mosdac.get("note"):
+                snap["chlorophyll_mosdac_note"] = mosdac["note"]
+            snap["data_sources_used"].append("ISRO MOSDAC OCM-3 (chlorophyll, live 🇮🇳)")
+        else:
+            snap["data_sources_failed"].append(
+                merr or (mosdac or {}).get("error") or "MOSDAC OCM-3: no data"
             )
 
     # 3) INCOIS backup chlorophyll — CONDITIONAL: only queried when both
