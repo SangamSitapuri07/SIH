@@ -143,23 +143,49 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
         px_km = snap.get("chlorophyll_mosdac_pixel_km")
         ring_med = snap.get("chlorophyll_mosdac_ring_median")
         ring_n = snap.get("chlorophyll_mosdac_ring_valid")
+        area_med = snap.get("chlorophyll_mosdac_area_median")
+        cdom_v = snap.get("chlorophyll_mosdac_cdom_value")
+        cdom_u = snap.get("chlorophyll_mosdac_cdom_units")
         forensics = ""
         if ring_med is not None and ring_n:
             med_vs_mosdac = max(ring_med, chl_mosdac) / max(min(ring_med, chl_mosdac), 1e-9)
             patch_real = med_vs_mosdac <= 2.0  # neighbourhood agrees with the pixel
             where = f" ≈{px_km:g} km from the exact point" if px_km is not None else ""
             if patch_real:
-                forensics = (
-                    f" Pixel forensics: OCM-3's whole ~3 km neighbourhood"
-                    f"{where} reads high too (~{ring_med:.2f}) — the granule reports a "
-                    f"real local patch, not one bad pixel."
-                )
+                if (area_med is not None and ring_med
+                        and max(area_med, ring_med) / max(min(area_med, ring_med), 1e-9) <= 2.0):
+                    forensics = (
+                        f" Pixel forensics: the granule reads UNIFORMLY high here — the "
+                        f"~3 km neighbourhood{where} reads ~{ring_med:.2f} and even the wider "
+                        f"~80-pixel area reads ~{area_med:.2f}. That rules OUT fine coastal "
+                        f"structure: a granule-level offset/bias in this pass is more likely "
+                        f"than a real bloom."
+                    )
+                else:
+                    forensics = (
+                        f" Pixel forensics: OCM-3's whole ~3 km neighbourhood{where} reads "
+                        f"high too (~{ring_med:.2f})"
+                    )
+                    if (area_med is not None and chl > 0
+                            and max(area_med, chl) / min(area_med, chl) <= 3.0):
+                        forensics += (
+                            f", while the wider ~80-pixel area reads normal (~{area_med:.2f}) "
+                            f"— OCM-3 may genuinely be resolving a small sharp patch here."
+                        )
+                    else:
+                        forensics += " — the granule reports a real local patch, not one bad pixel."
             else:
                 forensics = (
                     f" Pixel forensics: the chosen pixel{where} reads {chl_mosdac:.2f} "
                     f"while its own ~3 km neighbourhood reads ~{ring_med:.2f} — a lone "
                     f"HOT pixel, the classic cloud-contamination signature."
                 )
+        if cdom_v is not None:
+            _u = f" {cdom_u}" if cdom_u else ""
+            forensics += (
+                f" OCM-3 also reports CDOM={cdom_v:g}{_u} at this pixel — CDOM-rich "
+                f"(case-2) water makes satellite chlorophyll algorithms disagree."
+            )
 
         if ratio_m <= 3.0:
             findings.append({

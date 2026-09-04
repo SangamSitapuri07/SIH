@@ -101,6 +101,51 @@ def test_satellite_mosdac_large_gap_real_patch_detected():
     assert "mosdac.gov.in" in out[0]["msg"]
 
 
+def test_satellite_mosdac_uniform_area_rules_out_fine_structure():
+    """The 10.12N/80.62E case: ring high AND wider area uniformly high →
+    NOT fine structure; granule-level offset named as likelier."""
+    snap = {
+        "chlorophyll": 0.35, "chlorophyll_source": "NOAA",
+        "chlorophyll_occci": 0.26,
+        "chlorophyll_mosdac": 3.0, "chlorophyll_mosdac_date": "2026-09-03",
+        "chlorophyll_mosdac_ring_valid": 289, "chlorophyll_mosdac_ring_median": 3.0,
+        "chlorophyll_mosdac_area_median": 3.0,
+    }
+    msg = [f["msg"] for f in satellite.analyze(snap)["findings"]
+           if f["type"] == "chl_mosdac_check_outlier"][0]
+    assert "rules OUT fine coastal structure" in msg
+    assert "granule-level offset" in msg
+
+
+def test_satellite_mosdac_sharp_patch_area_normal_is_genuine_structure():
+    """Ring high but wider area normal → fine structure is GENUINELY
+    plausible (the only case where the resolution story survives)."""
+    snap = {
+        "chlorophyll": 0.35, "chlorophyll_source": "NOAA",
+        "chlorophyll_occci": 0.26,
+        "chlorophyll_mosdac": 2.9, "chlorophyll_mosdac_date": "2026-09-03",
+        "chlorophyll_mosdac_ring_valid": 289, "chlorophyll_mosdac_ring_median": 2.6,
+        "chlorophyll_mosdac_area_median": 0.40,
+    }
+    msg = [f["msg"] for f in satellite.analyze(snap)["findings"]
+           if f["type"] == "chl_mosdac_check_outlier"][0]
+    assert "wider ~80-pixel area reads normal" in msg
+    assert "small sharp patch" in msg
+
+
+def test_satellite_mosdac_cdom_case2_note():
+    """CDOM readout at the pixel is surfaced as case-2 water evidence."""
+    snap = {
+        "chlorophyll": 0.35, "chlorophyll_source": "NOAA",
+        "chlorophyll_mosdac": 3.0, "chlorophyll_mosdac_date": "2026-09-03",
+        "chlorophyll_mosdac_ring_valid": 289, "chlorophyll_mosdac_ring_median": 2.8,
+        "chlorophyll_mosdac_cdom_value": 0.42, "chlorophyll_mosdac_cdom_units": "m^-1",
+    }
+    msg = [f["msg"] for f in satellite.analyze(snap)["findings"]
+           if f["type"] == "chl_mosdac_check_outlier"][0]
+    assert "CDOM=0.42 m^-1" in msg and "case-2" in msg
+
+
 # ── Bug #2: marine risk must ESCALATE on the warning it quotes ────────
 
 def _ocean_with_wave_caution():

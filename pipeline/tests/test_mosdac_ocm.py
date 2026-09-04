@@ -169,6 +169,35 @@ def test_extract_chl_h5_pixel_forensics(tmp_path):
     assert abs(res["ring_median"] - 0.40) < 1e-6  # …and it reads LOW → hot pixel
 
 
+def test_extract_chl_h5_flat_field_area_and_cdom(tmp_path):
+    """Review round-5b: the 10.12N/80.62E granule read ~3.0 UNIFORMLY over
+    its 3 km neighbourhood. The extractor must now (a) report ring spread
+    (std≈0 exposes the flatness), (b) report the wider ~±40-pixel area
+    median — the decisive test that rules out 'fine coastal structure' —
+    and (c) sample the CDOM band at the same pixel (case-2 water flag)."""
+    h5py = __import__("h5py")
+    import numpy as np
+    p = tmp_path / "flat_high.h5"
+    n = 120  # big enough for the ±40-pixel area box
+    with h5py.File(p, "w") as f:
+        lats, lons = np.meshgrid(np.linspace(10.0, 10.3, n),
+                                 np.linspace(80.5, 80.8, n), indexing="ij")
+        f.create_dataset("latitude", data=lats)
+        f.create_dataset("longitude", data=lons)
+        f.create_dataset("CHL", data=np.full((n, n), 3.0))      # uniformly high
+        cd = f.create_dataset("CDOM", data=np.full((n, n), 0.42))
+        cd.attrs["unit"] = "m^-1"
+    res = mosdac_ocm._extract_chl_h5(str(p), 10.15, 80.65)
+    assert res is not None
+    assert abs(res["value"] - 3.0) < 1e-6
+    assert res["pixel_km"] < 2.0                 # exact pixel, no drift
+    assert res["ring_valid"] == 289              # 17x17 neighbourhood, all valid
+    assert res["ring_std"] < 1e-6                # suspiciously flat
+    assert res["area_median"] == 3.0             # wider area uniformly high too
+    assert res["area_valid"] > 3000
+    assert abs(res["cdom_value"] - 0.42) < 1e-6 and res["cdom_units"] == "m^-1"
+
+
 def test_extract_chl_h5_all_masked_returns_none(tmp_path):
     h5py = __import__("h5py")
     import numpy as np

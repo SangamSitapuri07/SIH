@@ -345,6 +345,7 @@ def _extract_chl_h5(path, lat: float, lon: float, max_ring: int = 40) -> dict[st
             best = None
             best_d = float("inf")
             best_ring = 0
+            best_ij = None
             # PIXEL FORENSICS: valid cells within ~ring 8 (~3 km at 360 m)
             # of the point — their median tells whether the chosen pixel is
             # a lone HOT pixel (cloud-contamination suspect) or part of a
@@ -369,6 +370,7 @@ def _extract_chl_h5(path, lat: float, lon: float, max_ring: int = 40) -> dict[st
                         d = math.hypot(cell_lat(i, j) - lat, cell_lon(i, j) - lon)
                         if d < best_d:
                             best, best_d, best_ring = rv, d, r
+                            best_ij = (i, j)
                 if best is not None and r >= max(best_ring, 8):
                     break  # nearest valid found AND full ~3 km neighbourhood scanned
             if best is None:
@@ -379,15 +381,81 @@ def _extract_chl_h5(path, lat: float, lon: float, max_ring: int = 40) -> dict[st
                 continue
             ring_median = float(np.median(neighbour_vals)) if neighbour_vals else None
             pixel_km = round(best_d * 111.0, 1)  # deg → km (approx, diagnostic only)
+            ring_std = round(float(np.std(neighbour_vals)), 4) if neighbour_vals else None
+
+            # WIDER-AREA context (~±40-pixel box): the decisive test for
+            # "fine coastal structure". A real fine-scale bloom is HIGH HERE
+            # but NORMAL 15 km away. If the wider area is uniformly high
+            # too, a granule-level offset/bias is the likelier explanation.
+            area_median = None
+            area_valid = 0
+            i_lo, i_hi = max(0, i0 - 40), min(chl.shape[0], i0 + 41)
+            j_lo, j_hi = max(0, j0 - 40), min(chl.shape[1], j0 + 41)
+            box = chl[i_lo:i_hi, j_lo:j_hi]
+            b = box[np.isfinite(box)]
+            b = b[b > 0]
+            for fv in fills:
+                b = b[np.abs(b - fv) >= 1e-3]
+            if b.size:
+                b = b * scale + offset
+                if is_log:
+                    b = 10 ** b
+                b = b[np.isfinite(b) & (b > 0)]
+            if b.size:
+                area_median = round(float(np.median(b)), 4)
+                area_valid = int(b.size)
+
+            # CDOM at the SAME pixel (root-level band in L2C OC files) —
+            # high CDOM marks optically complex case-2 water (river
+            # runoff), where band-ratio chlorophyll algorithms disagree.
+            cdom_val = cdom_units = None
+            cdom_name = next((n for n in listing
+                              if n.split("/")[-1].lower() == "cdom"), None)
+            if cdom_name is not None and best_ij is not None:
+                try:
+                    bi, bj = best_ij
+                    with h5py.File(path, "r") as f:
+                        ds = f[cdom_name]
+                        cattrs = dict(ds.attrs)
+                        cv = float(ds[0, bi, bj] if ds.ndim == 3 else ds[bi, bj])
+                    cfills = set()
+                    for k in ("_FillValue", "missing_value", "fill_value"):
+                        if k in cattrs:
+                            try:
+                                cfills.add(float(np.asarray(cattrs[k]).flat[0]))
+                            except Exception:  # noqa: BLE001
+                                pass
+                    cs = float(np.asarray(cattrs["scale_factor"]).flat[0]) \
+                        if "scale_factor" in cattrs else 1.0
+                    co = float(np.asarray(cattrs["add_offset"]).flat[0]) \
+                        if "add_offset" in cattrs else 0.0
+                    if np.isfinite(cv) and not any(abs(cv - fv) < 1e-3 or
+                                                   (fv != 0 and abs(cv / fv - 1) < 1e-9)
+                                                   for fv in cfills):
+                        cdom_val = round(cv * cs + co, 5)
+                        cdom_units = str(cattrs.get("unit", cattrs.get("units", b""))).strip("b'\" ") or None
+                except Exception:  # noqa: BLE001
+                    pass
+
             dbg["pixel_km"] = pixel_km
             dbg["ring_valid"] = len(neighbour_vals)
             dbg["ring_median"] = ring_median
+            dbg["ring_std"] = ring_std
+            dbg["area_median"] = area_median
+            dbg["cdom_value"] = cdom_val
             return {
                 "value": best,
                 "distance_deg": round(best_d, 4),
                 "pixel_km": pixel_km,
                 "ring_valid": len(neighbour_vals),
                 "ring_median": round(ring_median, 4) if ring_median is not None else None,
+                "ring_min": round(min(neighbour_vals), 4) if neighbour_vals else None,
+                "ring_max": round(max(neighbour_vals), 4) if neighbour_vals else None,
+                "ring_std": ring_std,
+                "area_median": area_median,
+                "area_valid": area_valid,
+                "cdom_value": cdom_val,
+                "cdom_units": cdom_units,
                 "units": ("mg m^-3" if is_log else units_raw) or "mg m^-3",
             }
     return None
@@ -411,8 +479,13 @@ def get_chlorophyll(lat: float, lon: float, date: str | None = None) -> dict[str
     )
 
 
+_LAST_TRIED: list[str] = []       # per-candidate skip reasons of last chain run
+_LAST_USED_PATH: str | None = None  # granule file that yielded the last value
+
+
 def _live_chain(lat: float, lon: float) -> dict[str, Any]:
     t0 = time.time()
+    _LAST_TRIED.clear()
 
     def _fail(why: str) -> dict[str, Any]:
         return {
@@ -464,12 +537,14 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
 
     # 3) live download + 4) extract — try newest → older until one parses
     tried: list[str] = []
+    skipped_info: list[dict[str, Any]] = []  # {date, why} per failed candidate
     for rec in candidates:
         if time.time() - t0 > JOB_BUDGET_SEC - 15:
             return _fail("time budget exhausted mid-download (slow link)")
         path, derr, dl_secs = _download_granule(session, rec["id"])
         if path is None:
             tried.append(f"{rec['id']}: {derr}")
+            skipped_info.append({"date": rec["date"], "why": str(derr)})
             continue
         try:
             from pipeline import extractors, parser
@@ -477,6 +552,7 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
             val = extractors.extract_chlorophyll(pf, lat, lon)
         except Exception as e:  # noqa: BLE001
             tried.append(f"{rec['id']}: parse {type(e).__name__}")
+            skipped_info.append({"date": rec["date"], "why": f"parse {type(e).__name__}"})
             continue
         via = "xarray"
         if val is None or val.get("value") is None:
@@ -496,7 +572,18 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
             if dbgd and dbgd.get("tried"):
                 msg += f" [direct-reader: {dbgd['tried'][-1][:90]}]"
             tried.append(msg)
+            skipped_info.append({"date": rec["date"], "why": "no valid pixel near point"})
             continue
+        # transparency: if a NEWER covering granule exists but was unusable,
+        # say so — the date of the value shown is never silently stale.
+        _LAST_TRIED[:] = tried
+        _LAST_USED_PATH = str(path)
+        newer = [s for s in skipped_info
+                 if s.get("date") and rec["date"] and s["date"] > rec["date"]]
+        newer_txt = ""
+        if newer:
+            newer_txt = (f" | newer {newer[0]['date']} granule unusable today "
+                         f"({str(newer[0]['why'])[:50]})")
         return {
             "value": val["value"],
             "units": val.get("units", "mg m^-3"),
@@ -507,6 +594,13 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
             "pixel_km": val.get("pixel_km"),
             "ring_valid": val.get("ring_valid"),
             "ring_median": val.get("ring_median"),
+            "ring_min": val.get("ring_min"),
+            "ring_max": val.get("ring_max"),
+            "ring_std": val.get("ring_std"),
+            "area_median": val.get("area_median"),
+            "area_valid": val.get("area_valid"),
+            "cdom_value": val.get("cdom_value"),
+            "cdom_units": val.get("cdom_units"),
             "source": SOURCE_LABEL,
             "granule": rec["title"][:80],
             "date": rec["date"] or "latest per MOSDAC search",
@@ -514,7 +608,8 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
             "note": (f"ISRO EOS-06 OCM-3 (1 km), granule dated {rec['date'] or 'latest'} "
                      f"— pulled LIVE from MOSDAC on click"
                      + (f" ({dl_secs:.0f}s download)" if dl_secs else " (today's granule already fetched)")
-                     + (f", read via {via}" if via == "direct-swath" else "")),
+                     + (f", read via {via}" if via == "direct-swath" else "")
+                     + newer_txt),
         }
 
     msg = "; or ".join(tried) if tried else "no usable granule"
@@ -606,12 +701,28 @@ def _selftest() -> int:
         print(f"     ✅ chlorophyll {res['value']:.3f} {res.get('units')} at point")
         print(f"        granule: {res.get('granule')}")
         print(f"        granule date: {res.get('date')} | live download: {res.get('live_download_s') or 0}s | total: {dt:.1f}s")
+        print(f"        note: {res.get('note')}")
         if res.get("pixel_km") is not None:
             print(f"        pixel forensics: chosen pixel ~{res['pixel_km']} km from point; "
-                  f"{res.get('ring_valid')} pixel(s) within ~3 km read ~{res.get('ring_median')}")
-            print("        (if value looks off vs NOAA: pixel far away or lone HOT pixel vs")
-            print("         its neighbourhood = cloud-contamination suspect; whole patch high")
-            print("         = OCM-3 is seeing a real fine-scale bloom)")
+                  f"{res.get('ring_valid')} pixel(s) within ~3 km read ~{res.get('ring_median')}" +
+                  (f" (min {res.get('ring_min')}, max {res.get('ring_max')}, "
+                   f"std {res.get('ring_std')} — std≈0 = suspiciously flat)"
+                   if res.get("ring_std") is not None else ""))
+            if res.get("area_median") is not None:
+                print(f"        wider area (~±40-pixel box): {res.get('area_valid')} valid pixel(s), "
+                      f"median {res.get('area_median')}")
+            if res.get("cdom_value") is not None:
+                print(f"        CDOM at pixel: {res.get('cdom_value')} {res.get('cdom_units') or ''} "
+                      f"(high CDOM = optically complex case-2 water — chl algorithms disagree there)")
+            print("        (read this: pixel far from point = drift suspect; lone HOT pixel vs its")
+            print("         ~3 km neighbourhood = cloud-contamination suspect; wider-area median HIGH")
+            print("         like the pixel = granule-level offset, NOT fine structure; wider-area")
+            print("         normal = OCM-3 genuinely sees a small sharp patch)")
+        if "--debug" in sys.argv:
+            for t in _LAST_TRIED:
+                print(f"        --debug skipped candidate: {t}")
+            if _LAST_USED_PATH:
+                _debug_stats(_LAST_USED_PATH, lat, lon)
         print("  MOSDAC LIVE pipeline READY — agents will show ISRO data on clicks. 🇮🇳")
         return 0
     print(f"     X live chain failed: {res.get('error')}")
