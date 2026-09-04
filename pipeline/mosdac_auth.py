@@ -143,7 +143,12 @@ def refresh(session):
 
 
 def search(dataset_id, start=None, end=None, bbox=None, count="1"):
-    """Query the free OpenSearch endpoint (NO login needed). Returns parsed JSON."""
+    """Query the free OpenSearch endpoint (NO login needed). Returns parsed JSON.
+
+    NOTE (live 2026-09-04): boundingBox is sent under BOTH common param
+    names — the server ignored `boundingBox` for one dataset, so a
+    client-side boundbox check still happens downstream in mosdac_ocm.
+    """
     params = {"datasetId": dataset_id, "count": count}
     if start:
         params["startTime"] = start
@@ -151,6 +156,7 @@ def search(dataset_id, start=None, end=None, bbox=None, count="1"):
         params["endTime"] = end
     if bbox:
         params["boundingBox"] = bbox
+        params["bbox"] = bbox
     r = requests.get(SEARCH_URL, params=params, timeout=30)
     r.raise_for_status()
     return r.json()

@@ -162,3 +162,41 @@ def test_records_date_from_dcdate():
                       "updated": "2026-09-03T11:00:00Z"}]}
     recs = mosdac_ocm._records(j)
     assert recs[0]["date"] == "2026-09-03"
+
+
+# ── client-side coverage filter (the Maldives-scene lesson) ────────────
+
+def test_boundbox_contains_comma_format():
+    bb = "65.0,18.0,72.5,23.5"  # minLon,minLat,maxLon,maxLat
+    assert mosdac_ocm._boundbox_contains(bb, 20.9, 70.37) is True
+    assert mosdac_ocm._boundbox_contains(bb, 5.0, 60.0) is False
+    assert mosdac_ocm._boundbox_contains("", 20.9, 70.37) is None
+
+
+def test_boundbox_contains_wkt_polygon():
+    bb = "POLYGON((53.4 -0.1, 68.2 -0.1, 68.2 8.3, 53.4 8.3, 53.4 -0.1))"
+    assert mosdac_ocm._boundbox_contains(bb, 20.9, 70.37) is False
+    assert mosdac_ocm._boundbox_contains(bb, 4.0, 60.0) is True
+
+
+def test_live_chain_skips_non_covering_granules(monkeypatch):
+    """The 2026-09-04 bug: search returned south-of-India scenes for a
+    Veraval point. Non-covering records must be skipped BEFORE download;
+    with no covering candidates the error must say so honestly."""
+    monkeypatch.setenv("MOSDAC_USERNAME", "u")
+    monkeypatch.setenv("MOSDAC_PASSWORD", "p")
+    monkeypatch.setattr(mosdac_ocm, "_session", None)
+    monkeypatch.setattr(mosdac_ocm, "_session_time", 0.0)
+    monkeypatch.setattr(mosdac_auth, "login", lambda: object())
+    monkeypatch.setattr(
+        mosdac_auth, "search",
+        lambda *a, **k: {"totalResults": 2, "records": [
+            {"id": 1, "dcDate": "2026-09-04", "boundbox": "53.4,-0.1,68.2,8.3"},
+            {"id": 2, "dcDate": "2026-09-03", "boundbox": "53.4,-0.1,68.2,8.3"}]})
+    downloads = []
+    monkeypatch.setattr(
+        mosdac_ocm, "_download_granule",
+        lambda s, rid: downloads.append(rid) or (None, "should-not-be-called", 0.0))
+    res = mosdac_ocm._live_chain(20.9, 70.37)
+    assert downloads == [], "must NOT download granules that don't cover the point"
+    assert "NONE covers this point" in res["error"]

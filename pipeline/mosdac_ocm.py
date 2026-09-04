@@ -114,6 +114,29 @@ def granule_date(title: str) -> str | None:
     return None
 
 
+def _boundbox_contains(bbox_str: Any, lat: float, lon: float) -> bool | None:
+    """Does the record's boundbox contain (lat, lon)?
+
+    Live lesson 2026-09-04: MOSDAC's apios search IGNORES the boundingBox
+    filter and happily returns the newest granules from OTHER regions
+    (we got a Maldives/South-Arabian-Sea scene for a Veraval query).
+    So every record must be filtered client-side BEFORE spending a
+    download. Returns None when the field is missing/unparseable —
+    unknown is not excluded (we'd rather try than silently skip).
+    """
+    if not bbox_str:
+        return None
+    vals = [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", str(bbox_str))]
+    if len(vals) < 4:
+        return None
+    if len(vals) == 4:
+        # documented order: minLon, minLat, maxLon, maxLat
+        return vals[0] <= lon <= vals[2] and vals[1] <= lat <= vals[3]
+    # WKT polygon: alternating lon,lat pairs
+    xs, ys = vals[0::2], vals[1::2]
+    return min(xs) <= lon <= max(xs) and min(ys) <= lat <= max(ys)
+
+
 def _records(search_json: dict) -> list[dict[str, Any]]:
     """Extract records defensively — MOSDAC's apios JSON shape has varied
     between releases; we look for the common containers and id fields."""
@@ -131,7 +154,8 @@ def _records(search_json: dict) -> list[dict[str, Any]]:
         date_src = " ".join(str(r.get(k, "")) for k in ("dcDate", "updated", "published", "summary"))
         d = granule_date(str(title)) or granule_date(date_src)
         if rid is not None:
-            out.append({"id": rid, "title": str(title), "date": d, "raw": r})
+            out.append({"id": rid, "title": str(title), "date": d,
+                        "boundbox": r.get("boundbox"), "raw": r})
     return out
 
 
@@ -402,9 +426,26 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
     dated.sort(key=lambda r: r["date"], reverse=True)
     ordered = dated + [r for r in recs if not r["date"]]
 
+    # CLIENT-SIDE coverage filter — the search endpoint ignored our
+    # boundingBox today (it returned a south-of-India scene for a Gujarat
+    # point), so we verify each record's own boundbox before spending a
+    # download on it. Records with unknown boundboxes are kept as
+    # last-resort candidates.
+    covering = [r for r in ordered if _boundbox_contains(r.get("boundbox"), lat, lon) is True]
+    unknown_box = [r for r in ordered if _boundbox_contains(r.get("boundbox"), lat, lon) is None]
+    skipped = len(ordered) - len(covering) - len(unknown_box)
+    candidates = (covering + unknown_box)[:6]
+    if not candidates:
+        first = ordered[0].get("boundbox") if ordered else None
+        return _fail(
+            f"{len(recs)} granule(s) found but NONE covers this point "
+            f"(newest covers {first}) — OCM-3 LAC scenes follow satellite passes; "
+            f"this overpass was elsewhere. Retry later or pick a point under a recent pass"
+        )
+
     # 3) live download + 4) extract — try newest → older until one parses
     tried: list[str] = []
-    for rec in ordered[:3]:
+    for rec in candidates:
         if time.time() - t0 > JOB_BUDGET_SEC - 15:
             return _fail("time budget exhausted mid-download (slow link)")
         path, derr, dl_secs = _download_granule(session, rec["id"])
@@ -453,7 +494,10 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
                      + (f", read via {via}" if via == "direct-swath" else "")),
         }
 
-    return _fail("; or ".join(tried) if tried else "no usable granule")
+    msg = "; or ".join(tried) if tried else "no usable granule"
+    if skipped:
+        msg = f"{skipped} outside-area granule(s) skipped. " + msg
+    return _fail(msg)
 
 
 # ── self-test ─────────────────────────────────────────────────────────
@@ -523,8 +567,10 @@ def _selftest() -> int:
         if "--debug" in sys.argv and recs:
             print("     --debug first record keys:", sorted(recs[0]["raw"].keys()))
             print("     --debug id/title:", recs[0]["id"], "|", recs[0]["title"][:70])
-        for r in recs[:3]:
-            print(f"       - {r['title'][:60]}  (date: {r['date'] or '?'})")
+        for r in recs[:5]:
+            c = _boundbox_contains(r.get("boundbox"), lat, lon)
+            mark = "covers-point ✓" if c is True else ("OUTSIDE ✗" if c is False else "box unknown")
+            print(f"       - {r['title'][:40]}  (date: {r['date'] or '?'}, {mark})")
     except Exception as e:  # noqa: BLE001
         print(f"     X search failed: {type(e).__name__}: {e}")
         return 1
