@@ -33,6 +33,8 @@ import gzip
 import json
 import os
 import sys
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -93,6 +95,54 @@ _BROWSER_HEADERS = {
 def get_token() -> str | None:
     """Get the GFW API token from environment."""
     return os.environ.get("GFW_API_TOKEN")
+
+
+# ── Free-tier quota guard ─────────────────────────────────────────────
+# GFW's free API answers HTTP 429 (Too Many Requests) when hammered —
+# our 8-pin startup prewarm + rapid map clicks can trip it. Two defences:
+#   1. Success-only cache (6 h): fishing effort for a date window moves
+#      ~once a day, so repeat clicks must NOT burn fresh API calls.
+#   2. Global cooldown: after a 429 we pause ALL GFW calls for the
+#      server's Retry-After window and report the pause honestly,
+#      instead of spamming a server that already said "stop".
+_RATE_LIMIT_UNTIL = 0.0
+_result_cache: dict[str, tuple[float, dict]] = {}
+_cache_lock = threading.Lock()
+_GFW_CACHE_TTL_SEC = 6 * 3600  # 6 h
+
+
+def _rate_limit_remaining() -> float:
+    """Seconds of 429-cooldown left (0.0 = not rate-limited)."""
+    return max(0.0, _RATE_LIMIT_UNTIL - time.time())
+
+
+def _note_429(err: urllib.error.HTTPError) -> int:
+    """Record a 429 cooldown; returns the pause length in seconds."""
+    global _RATE_LIMIT_UNTIL
+    retry_after = None
+    try:
+        retry_after = err.headers.get("Retry-After") if err.headers else None
+    except Exception:
+        retry_after = None
+    wait = int(str(retry_after)) if retry_after and str(retry_after).isdigit() else 120
+    _RATE_LIMIT_UNTIL = time.time() + wait
+    return wait
+
+
+def _cache_get(key: str) -> dict | None:
+    with _cache_lock:
+        ent = _result_cache.get(key)
+        if ent is not None and ent[0] > time.time():
+            return ent[1]
+    return None
+
+
+def _cache_put_success(key: str, value: dict) -> None:
+    """Cache ONLY successful responses — never cache an error/quota dict."""
+    if not isinstance(value, dict) or "error" in value:
+        return
+    with _cache_lock:
+        _result_cache[key] = (time.time() + _GFW_CACHE_TTL_SEC, value)
 
 
 def _clamp_date_range(start_date: str, end_date: str) -> tuple[str, str]:
@@ -183,6 +233,26 @@ def get_fishing_effort(
             "note": "register at https://globalfishingwatch.org and set env var",
         }
 
+    # Quota guard — honest pause + 6 h success cache (only for the
+    # shared default-token path; explicit-token callers are one-offs).
+    cache_key: str | None = None
+    if token is None:
+        remaining = _rate_limit_remaining()
+        if remaining > 0:
+            return {
+                "error": (
+                    f"GFW quota hit earlier (HTTP 429) — auto-paused for "
+                    f"~{int(remaining)}s more; free-tier limit, not a bug. "
+                    f"Last good data is served from cache where available."
+                ),
+                "source": "GFW",
+                "rate_limited": True,
+            }
+        cache_key = f"gfw:effort:{lat:.2f},{lon:.2f},{radius_deg:.2f},{start_date},{end_date}"
+        hit = _cache_get(cache_key)
+        if hit is not None:
+            return {**hit, "cache": "hit (6h)"}
+
     actual_start, actual_end = _clamp_date_range(start_date, end_date)
     print(f"[GFW] Querying {actual_start} to {actual_end}", file=sys.stderr)
 
@@ -270,7 +340,7 @@ def get_fishing_effort(
                         elif isinstance(items, dict):
                             collect_vessels(items)
 
-        return {
+        result = {
             "hours": total_hours,
             "vessel_ids": len(all_vessel_ids),
             "vessel_id_sample": sorted(all_vessel_ids)[:3],
@@ -284,6 +354,9 @@ def get_fishing_effort(
             "bbox": bbox,
             "n_entries": len(entries),
         }
+        if cache_key is not None:
+            _cache_put_success(cache_key, result)
+        return result
     except urllib.error.HTTPError as e:
         body_text = ""
         try:
@@ -293,6 +366,17 @@ def get_fishing_effort(
             body_text = raw.decode("utf-8")[:500]
         except Exception:
             pass
+        if e.code == 429:
+            wait = _note_429(e)
+            return {
+                "error": (
+                    f"GFW free-tier quota reached (HTTP 429) — all GFW calls "
+                    f"auto-paused for {wait}s. Not a token problem; the last "
+                    f"good responses keep coming from the 6h cache."
+                ),
+                "source": "GFW",
+                "rate_limited": True,
+            }
         return {
             "error": f"HTTP {e.code}: {e.reason}",
             "details": body_text,
@@ -314,6 +398,24 @@ def get_fishing_vessels_in_region(
     tok = token or get_token()
     if not tok:
         return {"error": "GFW_API_TOKEN not set"}
+
+    # Same quota guard as get_fishing_effort (shared cooldown + cache).
+    cache_key: str | None = None
+    if token is None:
+        remaining = _rate_limit_remaining()
+        if remaining > 0:
+            return {
+                "error": (
+                    f"GFW quota hit earlier (HTTP 429) — auto-paused for "
+                    f"~{int(remaining)}s more; free-tier limit, not a bug."
+                ),
+                "source": "GFW",
+                "rate_limited": True,
+            }
+        cache_key = f"gfw:fleet:{lat:.2f},{lon:.2f},{radius_deg:.2f},{start_date},{end_date}"
+        hit = _cache_get(cache_key)
+        if hit is not None:
+            return {**hit, "cache": "hit (6h)"}
 
     if end_date is None:
         end_date = (date.today() - timedelta(days=GFW_LATEST_DELAY_DAYS)).isoformat()
@@ -398,7 +500,7 @@ def get_fishing_vessels_in_region(
                     elif isinstance(items, dict):
                         collect(items)
 
-        return {
+        result = {
             "vessel_count": len(all_vessel_ids) if all_vessel_ids else sum(by_flag.values()),
             "by_flag": by_flag,
             "by_gear": by_gear,
@@ -409,6 +511,9 @@ def get_fishing_vessels_in_region(
             "source": "Global Fishing Watch",
             "bbox": bbox,
         }
+        if cache_key is not None:
+            _cache_put_success(cache_key, result)
+        return result
     except urllib.error.HTTPError as e:
         body_text = ""
         try:
@@ -418,6 +523,16 @@ def get_fishing_vessels_in_region(
             body_text = raw.decode("utf-8")[:500]
         except Exception:
             pass
+        if e.code == 429:
+            wait = _note_429(e)
+            return {
+                "error": (
+                    f"GFW free-tier quota reached (HTTP 429) — all GFW calls "
+                    f"auto-paused for {wait}s. Not a token problem."
+                ),
+                "source": "GFW",
+                "rate_limited": True,
+            }
         return {
             "error": f"HTTP {e.code}: {e.reason}",
             "details": body_text,

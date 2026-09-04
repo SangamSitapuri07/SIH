@@ -305,7 +305,9 @@ def zone_snapshot(
             else:
                 snap["data_sources_used"].append("ESA OC-CCI (chlorophyll cross-check)")
         else:
-            snap["data_sources_failed"].append(err or "OC-CCI: no data")
+            snap["data_sources_failed"].append(
+                err or (occci or {}).get("error") or "OC-CCI: no data"
+            )
 
     # 3) INCOIS backup chlorophyll — CONDITIONAL: only queried when both
     # NOAA and OC-CCI failed, so the flaky server never sits in the hot
@@ -332,7 +334,9 @@ def zone_snapshot(
                     snap["chlorophyll_note"] = incois_chl["note"]
                 snap["data_sources_used"].append("INCOIS LAS (backup chlorophyll)")
             else:
-                snap["data_sources_failed"].append(err or "INCOIS: no data")
+                snap["data_sources_failed"].append(
+                    err or (incois_chl or {}).get("error") or "INCOIS: no data"
+                )
         else:
             snap["data_sources_failed"].append(f"INCOIS: import error: {incois_imp_err}")
 
