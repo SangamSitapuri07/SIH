@@ -135,16 +135,11 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
                     f"(short-term forecast unavailable) — {tail}"),
         })
 
-    # Risk level
-    severities = [f["severity"] for f in findings]
-    if "high" in severities or "critical" in severities:
-        risk = "high"
-    elif "warn" in severities:
-        risk = "moderate"
-    elif "good" in severities:
-        risk = "low"
-    else:
-        risk = "unknown"
+    # Risk level — CENTRAL shared rule: any real measurement (even all
+    # "info") is a LOW answer, not "no data".
+    from pipeline.agents import risk_from_findings
+    has_meas = any(v is not None for v in (sst_mean, sst_max, wave_max, wave_now, wave_peak))
+    risk = risk_from_findings(findings, has_data=has_meas)
 
     # Summary
     if not findings:

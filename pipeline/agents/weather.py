@@ -117,35 +117,39 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
     t_min = daily.get("temperature_2m_min", [None])[0]
     wx_code = daily.get("weather_code", [None])[0]
 
-    # Wind analysis (m/s, WMO thresholds)
+    # Wind analysis (m/s, WMO thresholds).
+    # NOTE: these are DAILY MAXIMA (wind_speed_10m_max / gusts_10m_max for
+    # today) — the advisory card shows the "right now" hourly value. Say
+    # so in every message, or a 8.4 m/s day-max next to a 7 kn now-tile
+    # reads as two contradictory readings (reviewer catch, 2026-09-05).
     if wind_max is not None:
         if wind_max >= 20:
             findings.append({
                 "type": "storm_warning",
                 "severity": "high",
                 "value": wind_max,
-                "msg": f"Storm-force winds {wind_max:.1f} m/s (Beaufort 9+). Stay on land.",
+                "msg": f"Storm-force winds {wind_max:.1f} m/s (max today, Beaufort 9+). Stay on land.",
             })
         elif wind_max >= 14:
             findings.append({
                 "type": "gale_warning",
                 "severity": "warn",
                 "value": wind_max,
-                "msg": f"Gale-force winds {wind_max:.1f} m/s (Beaufort 7-8). Small craft advisory.",
+                "msg": f"Gale-force winds {wind_max:.1f} m/s (max today, Beaufort 7-8). Small craft advisory.",
             })
         elif wind_max >= 10:
             findings.append({
                 "type": "fresh_breeze",
                 "severity": "warn",
                 "value": wind_max,
-                "msg": f"Fresh breeze {wind_max:.1f} m/s (Beaufort 5). Exercise caution.",
+                "msg": f"Fresh breeze {wind_max:.1f} m/s (max today, Beaufort 5). Exercise caution.",
             })
         elif wind_max >= 8:
             findings.append({
                 "type": "wind_moderate",
                 "severity": "info",
                 "value": wind_max,
-                "msg": f"Moderate breeze {wind_max:.1f} m/s (Beaufort 4-5).",
+                "msg": f"Moderate breeze {wind_max:.1f} m/s (max today, Beaufort 4-5).",
             })
         else:
             findings.append({
@@ -153,8 +157,8 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
                 "severity": "good",
                 "value": wind_max,
                 "msg": (
-                    f"Light winds {wind_max:.1f} m/s sustained"
-                    + (f" (gusts {gust_max:.1f} m/s)" if gust_max is not None else "")
+                    f"Light winds {wind_max:.1f} m/s sustained (max today"
+                    + (f", gusts {gust_max:.1f} m/s)" if gust_max is not None else ")")
                     + " — safe conditions."
                 ),
             })
@@ -188,7 +192,7 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
                 "type": "gusty",
                 "severity": "info",
                 "value": gust_max,
-                "msg": f"Wind gusts to {gust_max:.1f} m/s ({(gust_max/wind_max):.1f}× sustained).",
+                "msg": f"Wind gusts to {gust_max:.1f} m/s (max today, {(gust_max/wind_max):.1f}× sustained).",
             })
 
     # Precipitation
@@ -234,19 +238,20 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
             "type": "weather_condition",
             "severity": sev,
             "value": wx_code,
-            "msg": f"Conditions: {label}.",
+            # dominant code for the WHOLE day — a passing shower code can
+            # disagree with a mostly-sunny hour-by-hour view; the raw WMO
+            # code keeps it independently checkable.
+            "msg": f"Conditions: {label} (WMO {wx_code}, dominant for today).",
         })
 
-    # Risk
-    severities = [f["severity"] for f in findings]
-    if "high" in severities or "critical" in severities:
-        risk = "high"
-    elif "warn" in severities:
-        risk = "moderate"
-    elif "good" in severities:
-        risk = "low"
-    else:
-        risk = "unknown"
+    # Risk — CENTRAL rule (shared with every agent): real readings that
+    # are all informational mean "low", NEVER "unknown"/"no data".
+    # (Reviewer catch 2026-09-05: Weather showed wind/temp/conditions
+    # values right under a "no data" tag — same class as the Satellite
+    # bug, now fixed centrally so it can't resurface agent-by-agent.)
+    from pipeline.agents import risk_from_findings
+    has_wx = any(v is not None for v in (wind_max, gust_max, precip, t_max, wx_code))
+    risk = risk_from_findings(findings, has_data=has_wx)
 
     if risk == "high":
         summary = f"🌦️ Storm conditions — wind {wind_max} m/s, dangerous."

@@ -257,3 +257,46 @@ def test_advisory_flags_unusually_strong_current(monkeypatch):
     res = advisory.build_advisory(15.16, 82.09)
     codes = [r["code"] for r in res["reasons"]]
     assert "current_strong" in codes
+
+
+# ── Centralized risk-tag rule (review round 4) ─────────────────────────
+
+def test_central_rule_all_info_with_data_is_low():
+    from pipeline.agents import risk_from_findings
+    fs = [{"severity": "info"}, {"severity": "info"}]
+    assert risk_from_findings(fs, has_data=True) == "low"
+    assert risk_from_findings(fs, has_data=False) == "unknown"
+    assert risk_from_findings([{"severity": "warn"}], has_data=True) == "moderate"
+    assert risk_from_findings([{"severity": "high"}], has_data=True) == "high"
+
+
+def test_weather_all_info_day_is_low_not_no_data(monkeypatch, ):
+    """Reviewer's 9.08N/82.60E case: moderate breeze + light showers +
+    temp — all info-tier findings, yet the chip said 'no data'."""
+    import pipeline.ttlcache as ttlcache
+    ttlcache.clear()
+    from pipeline.agents import weather
+    fake = {
+        "daily": {
+            "wind_speed_10m_max": [8.4],
+            "wind_gusts_10m_max": [10.1],
+            "precipitation_sum": [5.6],
+            "weather_code": [80],  # light showers — info tier
+            "temperature_2m_max": [30.0],
+            "temperature_2m_min": [27.0],
+        }
+    }
+    monkeypatch.setattr(weather, "_fetch", lambda *a, **k: fake)
+    res = weather.analyze({"lat": 9.08, "lon": 82.60, "date": "2026-09-05"})
+    assert res["risk_level"] == "low", res
+    # and the daily-max value must be LABELLED as such
+    wind_f = next(f for f in res["findings"] if f["type"] == "wind_moderate")
+    assert "max today" in wind_f["msg"]
+    cond_f = next(f for f in res["findings"] if f["type"] == "weather_condition")
+    assert "WMO 80" in cond_f["msg"] and "dominant" in cond_f["msg"]
+
+
+def test_ocean_all_info_day_is_low_not_unknown():
+    from pipeline.agents import ocean
+    res = ocean.analyze({"sst_mean": 25.0})  # acceptable → info only
+    assert res["risk_level"] == "low"

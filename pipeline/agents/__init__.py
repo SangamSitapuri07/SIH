@@ -39,6 +39,33 @@ ALL_AGENTS = [
 AGENT_BUDGET_SEC = 75.0
 
 
+def risk_from_findings(findings: list[dict], has_data: bool) -> str:
+    """ONE shared rule for every agent's tag (centralized 2026-09-05).
+
+    Reason this exists: the same "no data" mislabel kept re-appearing
+    agent-by-agent — first Satellite (bug #3), then Weather — because
+    each agent derived its tag with its own ad-hoc severity counting,
+    and a day whose readings were all informational fell through to
+    "unknown" even though real live values were displayed below.
+
+    The single rule:
+      - has_data=False          -> "unknown"   (truly nothing measured)
+      - any severity high/crit  -> "high"
+      - any severity warn       -> "moderate"
+      - otherwise (data exists) -> "low"       (real readings, no hazard)
+    "info" findings with has_data=True mean we measured safe conditions;
+    that is a *good* answer, never "no data".
+    """
+    if not has_data:
+        return "unknown"
+    sevs = {f.get("severity") for f in findings}
+    if "critical" in sevs or "high" in sevs:
+        return "high"
+    if "warn" in sevs:
+        return "moderate"
+    return "low"
+
+
 def run_all(snap: dict, include: list[str] | None = None) -> list[dict]:
     """Run the requested agents (or all by default) and return their results.
 

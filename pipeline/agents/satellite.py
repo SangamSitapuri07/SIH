@@ -158,19 +158,11 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
                 ),
             })
 
-    # Risk comes from the PRIMARY measurement's hazard level — never from
-    # whether the optional cross-check source succeeded. (Bug found via
-    # screenshot review: with chl < 0.5 the only "good" finding came from
-    # the OC-CCI cross-check, so a cloud-masked cross-check silently
-    # flipped the tag to "unknown"/"no data" even though NOAA data was
-    # present and displayed.)
-    severities = [f["severity"] for f in findings]
-    if "high" in severities or "critical" in severities:
-        risk = "high"
-    elif "warn" in severities:
-        risk = "moderate"
-    else:
-        risk = "low"  # we HAVE a real chlorophyll value and it's not hazardous
+    # Risk — CENTRAL shared rule (agents.risk_from_findings). Tag comes
+    # from the PRIMARY measurement's hazard level — never from whether an
+    # optional cross-check source succeeded.
+    from pipeline.agents import risk_from_findings
+    risk = risk_from_findings(findings, has_data=True)  # chl is not None here
 
     n_good = sum(1 for f in findings if f["severity"] == "good")
     n_warn = sum(1 for f in findings if f["severity"] in ("warn", "high"))
