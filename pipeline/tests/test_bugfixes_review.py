@@ -41,6 +41,66 @@ def test_satellite_bloom_still_moderate():
     assert satellite.analyze(snap)["risk_level"] == "moderate"
 
 
+# ── Review round-5: large MOSDAC gaps must not hide behind the bloom story ──
+
+def test_satellite_mosdac_large_gap_flags_outlier_not_blanket_bloom():
+    """8.5x gap with NOAA+OC-CCI agreeing → OCM-3 named the outlier, value
+    NOT counted as confirmation, pixel forensics point at the lone hot
+    pixel. Blanket 'treat the fine structure as real' text is gone."""
+    snap = {
+        "chlorophyll": 0.35, "chlorophyll_source": "NOAA", "chlorophyll_unit": "mg/m^3",
+        "chlorophyll_date": "2026-09-01",
+        "chlorophyll_occci": 0.26,                     # agrees with primary (1.3x)
+        "chlorophyll_mosdac": 2.94,                    # 8.4x off
+        "chlorophyll_mosdac_date": "2026-09-03",
+        "chlorophyll_mosdac_pixel_km": 0.4,
+        "chlorophyll_mosdac_ring_valid": 120,
+        "chlorophyll_mosdac_ring_median": 0.41,        # neighbourhood sides with primary
+    }
+    res = satellite.analyze(snap)
+    out = [f for f in res["findings"] if f["type"] == "chl_mosdac_check_outlier"]
+    assert out, [f["type"] for f in res["findings"]]
+    msg = out[0]["msg"]
+    assert "outlier" in msg
+    assert "HOT pixel" in msg                        # forensics: one bad pixel
+    assert "Different dates" in msg                  # 09-01 vs 09-03 noted
+    assert "NOT counted as an independent confirmation" in msg
+    blob = " ".join(f["msg"] for f in res["findings"])
+    assert "treat the fine structure as real" not in blob  # old blanket text removed
+
+
+def test_satellite_mosdac_moderate_gap_keeps_resolution_story():
+    """3–5x gap: finer-resolution explanation stays, but labeled UNRESOLVED."""
+    snap = {
+        "chlorophyll": 0.35, "chlorophyll_source": "NOAA",
+        "chlorophyll_occci": 0.26,
+        "chlorophyll_mosdac": 1.4,                     # exactly 4.0x
+        "chlorophyll_mosdac_date": "2026-09-03",
+    }
+    res = satellite.analyze(snap)
+    d = [f for f in res["findings"] if f["type"] == "chl_mosdac_check_disagree"]
+    assert d, [f["type"] for f in res["findings"]]
+    assert "1 km" in d[0]["msg"] and "UNRESOLVED" in d[0]["msg"]
+
+
+def test_satellite_mosdac_large_gap_real_patch_detected():
+    """Same 8x gap, but the granule's own neighbourhood is high too →
+    forensics say 'real local patch' (not one bad pixel) — yet still an
+    outlier finding that asks for verification."""
+    snap = {
+        "chlorophyll": 0.35, "chlorophyll_source": "NOAA",
+        "chlorophyll_occci": 0.26,
+        "chlorophyll_mosdac": 2.94, "chlorophyll_mosdac_date": "2026-09-03",
+        "chlorophyll_mosdac_ring_valid": 120,
+        "chlorophyll_mosdac_ring_median": 2.6,         # whole patch high
+    }
+    res = satellite.analyze(snap)
+    out = [f for f in res["findings"] if f["type"] == "chl_mosdac_check_outlier"]
+    assert out, [f["type"] for f in res["findings"]]
+    assert "real local patch" in out[0]["msg"]
+    assert "mosdac.gov.in" in out[0]["msg"]
+
+
 # ── Bug #2: marine risk must ESCALATE on the warning it quotes ────────
 
 def _ocean_with_wave_caution():

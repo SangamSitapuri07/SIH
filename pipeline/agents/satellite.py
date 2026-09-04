@@ -134,27 +134,94 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
     if chl_mosdac is not None and chl > 0:
         ratio_m = max(chl, chl_mosdac) / min(chl, chl_mosdac)
         mosdac_date = snap.get("chlorophyll_mosdac_date") or "latest"
-        if ratio_m > 3.0:
-            findings.append({
-                "type": "chl_mosdac_check_disagree",
-                "severity": "warn",
-                "value": {"primary": chl, "mosdac": chl_mosdac, "ratio": round(ratio_m, 1)},
-                "msg": (
-                    f"⚠️ ISRO OCM-3 ({chl_mosdac:.2f}, granule {mosdac_date}) vs primary "
-                    f"{chl:.2f} — {ratio_m:.1f}x apart. OCM-3's 1 km pixels see coastal "
-                    f"blooms the coarser global grids smear out; treat the fine "
-                    f"structure as real, not an error."
-                ),
-            })
-        else:
+        v3 = {"primary": chl, "mosdac": chl_mosdac, "ratio": round(ratio_m, 1)}
+
+        # Pixel forensics from the direct-swath reader: how far the chosen
+        # pixel drifted and what its own ~3 km neighbourhood reads. This is
+        # the evidence that separates a REAL fine-scale bloom (whole patch
+        # high) from a lone HOT pixel (cloud-contamination suspect).
+        px_km = snap.get("chlorophyll_mosdac_pixel_km")
+        ring_med = snap.get("chlorophyll_mosdac_ring_median")
+        ring_n = snap.get("chlorophyll_mosdac_ring_valid")
+        forensics = ""
+        if ring_med is not None and ring_n:
+            med_vs_mosdac = max(ring_med, chl_mosdac) / max(min(ring_med, chl_mosdac), 1e-9)
+            patch_real = med_vs_mosdac <= 2.0  # neighbourhood agrees with the pixel
+            where = f" ≈{px_km:g} km from the exact point" if px_km is not None else ""
+            if patch_real:
+                forensics = (
+                    f" Pixel forensics: OCM-3's whole ~3 km neighbourhood"
+                    f"{where} reads high too (~{ring_med:.2f}) — the granule reports a "
+                    f"real local patch, not one bad pixel."
+                )
+            else:
+                forensics = (
+                    f" Pixel forensics: the chosen pixel{where} reads {chl_mosdac:.2f} "
+                    f"while its own ~3 km neighbourhood reads ~{ring_med:.2f} — a lone "
+                    f"HOT pixel, the classic cloud-contamination signature."
+                )
+
+        if ratio_m <= 3.0:
             findings.append({
                 "type": "chl_mosdac_check_ok",
                 "severity": "good",
-                "value": {"primary": chl, "mosdac": chl_mosdac, "ratio": round(ratio_m, 1)},
+                "value": v3,
                 "msg": (
                     f"✓ ISRO OCM-3 agrees: {chl_mosdac:.2f} mg/m³ (granule {mosdac_date}) "
                     f"vs primary {chl:.2f} ({ratio_m:.1f}x, within 3x) — India's own "
                     f"satellite independently confirms the reading. 🇮🇳"
+                ),
+            })
+        elif ratio_m <= 5.0:
+            # Moderate gap — the finer-resolution story is PLAUSIBLE here,
+            # but still a difference, not a confirmation.
+            findings.append({
+                "type": "chl_mosdac_check_disagree",
+                "severity": "warn",
+                "value": v3,
+                "msg": (
+                    f"⚠️ ISRO OCM-3 ({chl_mosdac:.2f}, granule {mosdac_date}) vs primary "
+                    f"{chl:.2f} — {ratio_m:.1f}x apart. Most likely OCM-3's 1 km pixels "
+                    f"are resolving coastal fine structure the global grids smear out — "
+                    f"but treat this as an UNRESOLVED difference, not a confirmation."
+                    + forensics
+                ),
+            })
+        else:
+            # LARGE gap (>5x) — do NOT hide behind the resolution story.
+            # Arbitrate with evidence: does the other independent source
+            # (OC-CCI) side with the primary? Do the granule's own
+            # neighbouring pixels back the value?
+            occci_arbiter = ""
+            if chl_occci is not None and min(chl, chl_occci) > 0:
+                ratio_o = max(chl, chl_occci) / min(chl, chl_occci)
+                if ratio_o <= 3.0:
+                    occci_arbiter = (
+                        f" NOAA and OC-CCI AGREE with each other "
+                        f"({chl:.2f} vs {chl_occci:.2f}, {ratio_o:.1f}x) — OCM-3 is "
+                        f"the outlier here."
+                    )
+            primary_date = snap.get("chlorophyll_date")
+            date_note = ""
+            if primary_date and mosdac_date != "latest" and primary_date != mosdac_date:
+                date_note = (
+                    f" Different dates may contribute (primary {primary_date} vs "
+                    f"OCM-3 {mosdac_date})."
+                )
+            findings.append({
+                "type": "chl_mosdac_check_outlier",
+                "severity": "warn",
+                "value": v3,
+                "msg": (
+                    f"⚠️ ISRO OCM-3 ({chl_mosdac:.2f}, granule {mosdac_date}) vs primary "
+                    f"{chl:.2f} — {ratio_m:.1f}x apart, too large to explain by "
+                    f"resolution alone."
+                    + (occci_arbiter or " No third source available to arbitrate.")
+                    + " Likely a cloud-contaminated or misregistered pixel in this "
+                      "granule, less likely a real bloom this sharp."
+                    + forensics + date_note
+                    + " Verify against the image on mosdac.gov.in before trusting "
+                      "this value; it is NOT counted as an independent confirmation."
                 ),
             })
 

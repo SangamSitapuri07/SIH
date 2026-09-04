@@ -344,6 +344,14 @@ def _extract_chl_h5(path, lat: float, lon: float, max_ring: int = 40) -> dict[st
 
             best = None
             best_d = float("inf")
+            best_ring = 0
+            # PIXEL FORENSICS: valid cells within ~ring 8 (~3 km at 360 m)
+            # of the point — their median tells whether the chosen pixel is
+            # a lone HOT pixel (cloud-contamination suspect) or part of a
+            # genuinely high local patch. Reviewer asked us to stop hiding
+            # 8x+ gaps behind a blanket "coastal bloom" story; this is the
+            # evidence layer for that decision.
+            neighbour_vals: list[float] = []
             for r in range(0, max_ring + 1):
                 for di in range(-r, r + 1):
                     for dj in range(-r, r + 1):
@@ -355,20 +363,31 @@ def _extract_chl_h5(path, lat: float, lon: float, max_ring: int = 40) -> dict[st
                         v = float(chl[i, j])
                         if not _ok(v):
                             continue
+                        rv = _real(v)
+                        if r <= 8:
+                            neighbour_vals.append(rv)
                         d = math.hypot(cell_lat(i, j) - lat, cell_lon(i, j) - lon)
                         if d < best_d:
-                            best, best_d = _real(v), d
-                if best is not None and r >= 2:
-                    break  # nearest-ish valid cell found
+                            best, best_d, best_ring = rv, d, r
+                if best is not None and r >= max(best_ring, 8):
+                    break  # nearest valid found AND full ~3 km neighbourhood scanned
             if best is None:
                 dbg["tried"].append(f"all fill/masked within {max_ring} cells of point")
                 continue
             if not (0.001 <= best <= 500):
                 dbg["tried"].append(f"value {best} implausible after scaling")
                 continue
+            ring_median = float(np.median(neighbour_vals)) if neighbour_vals else None
+            pixel_km = round(best_d * 111.0, 1)  # deg → km (approx, diagnostic only)
+            dbg["pixel_km"] = pixel_km
+            dbg["ring_valid"] = len(neighbour_vals)
+            dbg["ring_median"] = ring_median
             return {
                 "value": best,
                 "distance_deg": round(best_d, 4),
+                "pixel_km": pixel_km,
+                "ring_valid": len(neighbour_vals),
+                "ring_median": round(ring_median, 4) if ring_median is not None else None,
                 "units": ("mg m^-3" if is_log else units_raw) or "mg m^-3",
             }
     return None
@@ -484,6 +503,10 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
             "lat": lat,
             "lon": lon,
             "distance_deg": val.get("distance_deg"),
+            # pixel forensics (present when the direct-swath reader ran)
+            "pixel_km": val.get("pixel_km"),
+            "ring_valid": val.get("ring_valid"),
+            "ring_median": val.get("ring_median"),
             "source": SOURCE_LABEL,
             "granule": rec["title"][:80],
             "date": rec["date"] or "latest per MOSDAC search",
@@ -583,6 +606,12 @@ def _selftest() -> int:
         print(f"     ✅ chlorophyll {res['value']:.3f} {res.get('units')} at point")
         print(f"        granule: {res.get('granule')}")
         print(f"        granule date: {res.get('date')} | live download: {res.get('live_download_s') or 0}s | total: {dt:.1f}s")
+        if res.get("pixel_km") is not None:
+            print(f"        pixel forensics: chosen pixel ~{res['pixel_km']} km from point; "
+                  f"{res.get('ring_valid')} pixel(s) within ~3 km read ~{res.get('ring_median')}")
+            print("        (if value looks off vs NOAA: pixel far away or lone HOT pixel vs")
+            print("         its neighbourhood = cloud-contamination suspect; whole patch high")
+            print("         = OCM-3 is seeing a real fine-scale bloom)")
         print("  MOSDAC LIVE pipeline READY — agents will show ISRO data on clicks. 🇮🇳")
         return 0
     print(f"     X live chain failed: {res.get('error')}")

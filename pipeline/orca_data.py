@@ -338,6 +338,10 @@ def zone_snapshot(
             snap["chlorophyll_mosdac_date"] = mosdac.get("date")
             if mosdac.get("note"):
                 snap["chlorophyll_mosdac_note"] = mosdac["note"]
+            # pixel forensics for the satellite agent's skepticism tiers
+            for k in ("pixel_km", "ring_valid", "ring_median"):
+                if mosdac.get(k) is not None:
+                    snap[f"chlorophyll_mosdac_{k}"] = mosdac[k]
             snap["data_sources_used"].append("ISRO MOSDAC OCM-3 (chlorophyll, live 🇮🇳)")
         else:
             snap["data_sources_failed"].append(

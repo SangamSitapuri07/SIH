@@ -141,6 +141,34 @@ def test_extract_chl_h5_swath_2d(tmp_path):
     assert "mg" in res["units"]
 
 
+def test_extract_chl_h5_pixel_forensics(tmp_path):
+    """Review round-5 (2026-09-05): an 8x+ OCM-3-vs-NOAA gap must be
+    DIAGNOSABLE — the extractor reports how far the chosen pixel drifted
+    and what its own ~3 km neighbourhood reads, so the agent can tell a
+    lone HOT pixel (cloud-contamination suspect) from a genuinely high
+    patch. Grid reads 0.40 everywhere except one hot 3.20 pixel exactly
+    at the query point."""
+    h5py = __import__("h5py")
+    import numpy as np
+    p = tmp_path / "hot_pixel.h5"
+    n = 30
+    with h5py.File(p, "w") as f:
+        lats, lons = np.meshgrid(np.linspace(10.0, 10.3, n),
+                                 np.linspace(80.5, 80.8, n), indexing="ij")
+        f.create_dataset("latitude", data=lats)
+        f.create_dataset("longitude", data=lons)
+        chl = np.full((n, n), 0.40)
+        chl[15, 15] = 3.20  # lone hot pixel at the query point
+        f.create_dataset("CHL", data=chl)
+    # point maps exactly onto cell [15, 15] (step = 0.3/29)
+    res = mosdac_ocm._extract_chl_h5(str(p), 10.0 + 15 * 0.3 / 29, 80.5 + 15 * 0.3 / 29)
+    assert res is not None
+    assert abs(res["value"] - 3.20) < 1e-6        # the exact pixel is picked
+    assert res["pixel_km"] < 2.0                  # …right at the point
+    assert res["ring_valid"] > 100                # whole ~3 km neighbourhood valid
+    assert abs(res["ring_median"] - 0.40) < 1e-6  # …and it reads LOW → hot pixel
+
+
 def test_extract_chl_h5_all_masked_returns_none(tmp_path):
     h5py = __import__("h5py")
     import numpy as np
