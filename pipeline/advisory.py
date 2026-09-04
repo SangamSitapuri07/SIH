@@ -97,7 +97,9 @@ def build_advisory(
     cyclone_dist_km: float | None = None
     cyclone_note = "Cyclone status not checked."
     try:
-        cyc = jtwc.nearest_cyclone(lat, lon)
+        # Basin-filtered like alerts.evaluate — ORCA serves Indian
+        # waters; a far-away WPac typhoon must never tint the verdict.
+        cyc = jtwc.nearest_cyclone(lat, lon, basins=["io", "sh"])
         if cyc.get("found"):
             c = cyc["cyclone"]
             cyclone_dist_km = cyc["distance_km"]
@@ -151,8 +153,28 @@ def build_advisory(
         reason("caution", "wind_strong",
                f"💨 Wind up to {wind_outlook:.0f} kn (gusts {(gust_outlook or 0):.0f} kn) — "
                "fresh-to-strong breeze; tiring and rough for small craft.")
+    elif max(gust_now or 0, gust_outlook or 0) >= 28:
+        # The advisory's own policy header (and the UI tile's red-warn
+        # threshold) says gusts 28-34 kn = caution — but this branch was
+        # never implemented, so the tile glowed red next to a glowing
+        # "comfortable" text. Found via screenshot review (Chennai).
+        g = max(gust_now or 0, gust_outlook or 0)
+        reason("caution", "gusts_high",
+               f"💨 Gusts to {g:.0f} kn (28-34 kn band) — secure loose gear, "
+               "plan short trips; the sustained-wind number alone understates it.")
     elif wind_now is not None:
-        reason("info", "wind_ok", f"💨 Wind {wind_now:.0f} kn — comfortable.")
+        # Always quote BOTH numbers — a "comfortable" label next to an
+        # unmentioned 22 kn gust tile reads as a contradiction.
+        g = gust_now if gust_now is not None else gust_outlook
+        if g is not None and g >= 20:
+            reason("info", "wind_ok",
+                   f"💨 Wind {wind_now:.0f} kn sustained, gusts {g:.0f} kn — "
+                   "manageable; small boats should mind the gusts, not the average.")
+        elif g is not None:
+            reason("info", "wind_ok",
+                   f"💨 Wind {wind_now:.0f} kn, gusts {g:.0f} kn — comfortable.")
+        else:
+            reason("info", "wind_ok", f"💨 Wind {wind_now:.0f} kn — comfortable.")
 
     if n24.get("rain_total_mm") is not None:
         rain24 = n24["rain_total_mm"]

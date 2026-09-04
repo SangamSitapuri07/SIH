@@ -122,3 +122,59 @@ def test_weather_light_gusts_stay_calm(monkeypatch):
     monkeypatch.setattr(weather, "_fetch", lambda *a, **k: fake)
     res = weather.analyze({"lat": 13.08, "lon": 80.28, "date": "2026-09-04"})
     assert res["risk_level"] == "low"
+
+
+# ── Bug #1 (advisory card twin): gust band 28-34 kn must be CAUTION ────
+
+def _patch_advisory_world(monkeypatch, *, gust_kn, wind_kn=10):
+    """Neutral sea everywhere; only wind/gust varies."""
+    from pipeline import advisory
+    import pipeline.jtwc as jtwc
+    import pipeline.ttlcache as ttlcache
+    ttlcache.clear()
+    monkeypatch.setattr(
+        advisory, "zone_snapshot_cached",
+        lambda *a, **k: {"lat": 13.0, "lon": 80.0, "sst_mean": 28.5,
+                         "chlorophyll": 0.3,
+                         "data_sources_used": [], "data_sources_failed": []})
+    monkeypatch.setattr(
+        advisory.fc, "get_point_forecast",
+        lambda *a, **k: {
+            "source": "mock",
+            "now": {"wave_height_m": 0.8, "swell_height_m": 0.4,
+                    "wind_kn": wind_kn, "gust_kn": gust_kn, "current_kn": 0.5,
+                    "current_dir_deg": 90},
+            "next24h": {"wave_max_m": 0.9, "gust_max_kn": gust_kn,
+                        "rain_total_mm": 0.0},
+            "next48h": {"wave_max_m": 0.9, "wind_max_kn": wind_kn,
+                        "gust_max_kn": gust_kn},
+        })
+    monkeypatch.setattr(advisory.fc, "find_safe_window",
+                        lambda *a, **k: {"found": False, "note": "mock"})
+    monkeypatch.setattr(jtwc, "nearest_cyclone",
+                        lambda *a, **k: {"found": False, "checked": True,
+                                         "note": "No active tropical cyclone in the region right now."})
+    monkeypatch.setattr(advisory.incois_pfz, "nearest_pfz",
+                        lambda *a, **k: {"found": False})
+    return advisory
+
+
+def test_advisory_gusts_30kn_caution_not_comfortable(monkeypatch):
+    """Chennai case: 10 kn sustained + 30 kn gusts was labelled
+    'comfortable' while the UI tile glowed red-warn at >=28 kn."""
+    advisory = _patch_advisory_world(monkeypatch, gust_kn=30)
+    res = advisory.build_advisory(13.08, 80.28)
+    gust_reason = next(
+        (r for r in res["reasons"] if r["code"] == "gusts_high"), None)
+    assert gust_reason is not None, [r["code"] for r in res["reasons"]]
+    assert gust_reason["severity"] == "caution"
+    assert res["verdict"] == "caution"
+
+
+def test_advisory_quotes_gusts_even_when_calm(monkeypatch):
+    """Below the caution band the info line still quotes BOTH numbers."""
+    advisory = _patch_advisory_world(monkeypatch, gust_kn=22)
+    res = advisory.build_advisory(13.08, 80.28)
+    wind_reason = next(r for r in res["reasons"] if r["code"] == "wind_ok")
+    assert "gusts 22" in wind_reason["msg"]
+    assert "comfortable" not in wind_reason["msg"] or "sustained" in wind_reason["msg"]

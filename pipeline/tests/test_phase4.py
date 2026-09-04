@@ -179,7 +179,7 @@ def _patch_calm(monkeypatch):
         "advisory_date": "2026-09-03", "julian_day": "246",
         "source": "INCOIS PFZ Advisory (GeoServer WFS)",
     })
-    monkeypatch.setattr(jtwc, "nearest_cyclone", lambda lat, lon: {
+    monkeypatch.setattr(jtwc, "nearest_cyclone", lambda lat, lon, **k: {
         "checked": True, "found": False, "advisories_anywhere": 0,
         "errors": [], "source": "JTWC", "note": "No active tropical cyclone in the region right now.",
     })
@@ -198,7 +198,7 @@ def test_advisory_go_verdict(monkeypatch):
 
 def test_advisory_no_go_on_cyclone(monkeypatch):
     _patch_calm(monkeypatch)
-    monkeypatch.setattr(jtwc, "nearest_cyclone", lambda lat, lon: {
+    monkeypatch.setattr(jtwc, "nearest_cyclone", lambda lat, lon, **k: {
         "checked": True, "found": True, "distance_km": 210, "bearing_deg": 160,
         "cyclone": {"name": "Testya", "designation": "02A", "basin": "io",
                     "max_wind_kt": 65, "intensity": "Very Severe Cyclonic Storm",
@@ -228,7 +228,7 @@ def test_advisory_caution_on_waves(monkeypatch):
 def test_alerts_calm_point_no_alerts(monkeypatch):
     alerts_mod._store.clear()
     monkeypatch.setattr(fc, "get_point_forecast", lambda *a, **k: dict(FAKE_FORECAST))
-    monkeypatch.setattr(jtwc, "nearest_cyclone", lambda lat, lon: {
+    monkeypatch.setattr(jtwc, "nearest_cyclone", lambda lat, lon, **k: {
         "checked": True, "found": False, "advisories_anywhere": 0, "errors": [],
         "source": "JTWC", "note": "none"})
     made = alerts_mod.evaluate(20.9, 70.37)
@@ -241,7 +241,7 @@ def test_alerts_gale_warning(monkeypatch):
     windy = dict(FAKE_FORECAST)
     windy["next24h"] = {**FAKE_FORECAST["next24h"], "gust_max_kn": 38.0}
     monkeypatch.setattr(fc, "get_point_forecast", lambda *a, **k: windy)
-    monkeypatch.setattr(jtwc, "nearest_cyclone", lambda lat, lon: {
+    monkeypatch.setattr(jtwc, "nearest_cyclone", lambda lat, lon, **k: {
         "checked": True, "found": False, "advisories_anywhere": 0, "errors": [],
         "source": "JTWC", "note": "none"})
     made = alerts_mod.evaluate(20.9, 70.37)
