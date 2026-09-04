@@ -110,6 +110,23 @@ _result_cache: dict[str, tuple[float, dict]] = {}
 _cache_lock = threading.Lock()
 _GFW_CACHE_TTL_SEC = 6 * 3600  # 6 h
 
+# Burst throttle: GFW's free tier also rate-limits PER MINUTE. Serialising
+# real HTTP calls with a small gap makes the startup prewarm + rapid map
+# clicks structurally unable to trip the limiter. (Root cause of the
+# 2026-09-04 repeated-429 loop on the user's laptop: 8-pin prewarm fired
+# 16 report calls within ~30 s of every backend start.)
+_MIN_CALL_GAP_SEC = 4.0
+_last_call_ts = 0.0
+
+
+def _throttle() -> None:
+    global _last_call_ts
+    with _cache_lock:
+        wait = _MIN_CALL_GAP_SEC - (time.time() - _last_call_ts)
+        if wait > 0:
+            time.sleep(wait)
+        _last_call_ts = time.time()
+
 
 def _rate_limit_remaining() -> float:
     """Seconds of 429-cooldown left (0.0 = not rate-limited)."""
@@ -179,6 +196,7 @@ def _clamp_date_range(start_date: str, end_date: str) -> tuple[str, str]:
 def _make_request(url: str, tok: str, method: str = "GET",
                   body: dict | None = None, timeout: int = 60) -> dict | None:
     """Make a GFW API request with browser-like headers and return JSON."""
+    _throttle()  # free-tier per-minute limiter — smooth bursts, avoid 429s
     headers = {**_BROWSER_HEADERS, "Authorization": f"Bearer {tok}"}
     data = None
     if body is not None:

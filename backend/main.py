@@ -699,11 +699,18 @@ def _warm_caches() -> None:
         # cold fetch. Background daemon — requests are never blocked on it.
         # ORCA_PREWARM=0 disables (slow networks / metered connections).
         if _os.environ.get("ORCA_PREWARM", "1") == "1":
-            for z in INDIAN_COASTAL_ZONES:
+            # GFW free-tier quota is precious: only the first N pins warm
+            # WITH fishing data (default 3 ≈ 6 API calls); the rest warm
+            # climate-only and load GFW lazily on real clicks (then it's
+            # served from the 6 h cache). Override: ORCA_PREWARM_GFW_PINS.
+            try:
+                gfw_pins = max(0, int(_os.environ.get("ORCA_PREWARM_GFW_PINS", "3")))
+            except ValueError:
+                gfw_pins = 3
+            for i, z in enumerate(INDIAN_COASTAL_ZONES):
                 try:
-                    # honors AUTO: with a GFW token the pins warm WITH
-                    # real fishing data; without one they stay fast.
-                    zone_snapshot_cached(z["lat"], z["lon"], include_gfw=_gfw_default(None))
+                    want_gfw = bool(_gfw_default(None)) and i < gfw_pins
+                    zone_snapshot_cached(z["lat"], z["lon"], include_gfw=want_gfw)
                 except Exception:  # noqa: BLE001
                     pass
                 _time.sleep(3)
