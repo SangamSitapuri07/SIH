@@ -167,7 +167,10 @@ def _purge_old_granules() -> None:
     cutoff = time.time() - 26 * 3600
     for f in GRANULE_DIR.glob("mosdac_*"):
         try:
-            if f.stat().st_mtime < cutoff:
+            # .part debris = interrupted mid-download → never valid; drop
+            # immediately (not just after 26 h) so a fresh attempt today
+            # re-downloads instead of choking on the partial file.
+            if f.name.endswith(".part") or f.stat().st_mtime < cutoff:
                 f.unlink()
         except OSError:
             pass
@@ -176,6 +179,8 @@ def _purge_old_granules() -> None:
 def _find_cached_granule(rec_id: Any) -> Path | None:
     if GRANULE_DIR.exists():
         for f in GRANULE_DIR.glob(f"mosdac_{rec_id}*"):
+            if f.name.endswith(".part"):  # incomplete download — not cache
+                continue
             if f.stat().st_size > 0:
                 return f
     return None
@@ -196,6 +201,7 @@ def _download_granule(session, rec_id: Any) -> tuple[Path | None, str | None, fl
     _purge_old_granules()
     GRANULE_DIR.mkdir(parents=True, exist_ok=True)
 
+    tmp: Path | None = None
     try:
         import requests  # local: pipeline dep already
         r = session.get(mosdac_auth.DOWNLOAD_URL, params={"id": rec_id},
@@ -212,19 +218,31 @@ def _download_granule(session, rec_id: Any) -> tuple[Path | None, str | None, fl
         if "filename=" in cd:
             ext = Path(cd.split("filename=", 1)[1].strip('"').strip()).suffix or ".h5"
         dest = GRANULE_DIR / f"mosdac_{rec_id}{ext}"
+        tmp = dest.with_name(dest.name + ".part")  # write-to-temp, atomic-publish
 
         total = 0
-        with open(dest, "wb") as fh:
+        with open(tmp, "wb") as fh:
             for chunk in r.iter_content(1 << 20):
                 if chunk:
                     total += len(chunk)
                     if total > MAX_GRANULE_BYTES:
                         fh.close()
-                        dest.unlink(missing_ok=True)
+                        tmp.unlink(missing_ok=True)
                         return None, f"granule larger than {MAX_GRANULE_BYTES // 1_000_000} MB guard", time.time() - started
                     fh.write(chunk)
+        # Publish ONLY on complete success: an interrupted run (network
+        # drop, Ctrl+C, laptop lid) leaves a .part temp file, never a
+        # broken "complete" granule in the cache. Caught live in the
+        # laptop backend log (HDF5 'truncated file: eof=15MB, stored_eof=
+        # 60.5MB') — a partial file kept being served from cache all day.
+        tmp.replace(dest)
         return dest, None, time.time() - started
     except Exception as e:  # noqa: BLE001
+        if tmp is not None:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
         return None, f"{type(e).__name__}: {str(e)[:120]}", time.time() - started
 
 
@@ -555,8 +573,19 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
             pf = parser.parse(path)
             val = extractors.extract_chlorophyll(pf, lat, lon)
         except Exception as e:  # noqa: BLE001
-            tried.append(f"{rec['id']}: parse {type(e).__name__}")
-            skipped_info.append({"date": rec["date"], "why": f"parse {type(e).__name__}"})
+            why = f"parse {type(e).__name__}"
+            # SELF-HEAL: a partially-downloaded granule in the same-day
+            # cache can never become valid — purge it so the NEXT click
+            # re-downloads fresh instead of re-failing loudly all day.
+            if re.search(r"truncat|superblock|unable to (?:synchronously )?open|"
+                         r"not a valid|signature", str(e), re.I):
+                try:
+                    Path(path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+                why += " (truncated cached granule purged — will re-download on next click)"
+            tried.append(f"{rec['id']}: {why}")
+            skipped_info.append({"date": rec["date"], "why": why})
             continue
         via = "xarray"
         if val is None or val.get("value") is None:

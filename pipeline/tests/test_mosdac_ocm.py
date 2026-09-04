@@ -223,6 +223,85 @@ def test_extract_chl_h5_all_masked_returns_none(tmp_path):
     assert mosdac_ocm._extract_chl_h5(str(p), 20.5, 70.5) is None
 
 
+# ── atomic download + self-healing cache (truncated-file bug, laptop log) ──
+
+class _FakeResp:
+    def __init__(self, chunks, boom_after=None):
+        self.status_code = 200
+        self.headers = {"Content-Disposition": 'filename="granule.h5"'}
+        self._chunks = chunks
+        self._boom_after = boom_after
+
+    def iter_content(self, size):
+        for i, c in enumerate(self._chunks):
+            if self._boom_after is not None and i >= self._boom_after:
+                raise ConnectionError("network dropped mid-stream")
+            yield c
+
+
+class _FakeSession:
+    def __init__(self, resp):
+        self._resp = resp
+
+    def get(self, *a, **k):
+        return self._resp
+
+
+def test_download_atomic_publish_failure_leaves_no_partials(tmp_path, monkeypatch):
+    """Laptop backend log: an interrupted download left a 15 MB truncated
+    granule (stored_eof 60.5 MB) that the cache kept serving all day with
+    HDF5 errors. Now: download goes to .part, published only on success."""
+    monkeypatch.setattr(mosdac_ocm, "GRANULE_DIR", tmp_path)
+    resp = _FakeResp([b"partial-data-" * 100], boom_after=1)
+    session = _FakeSession(resp)
+    # iter_content yields chunk 0 (writes it), then raises at index 1
+    resp._chunks = [b"x" * 100, b"y" * 100]
+    resp._boom_after = 1
+    path, err, _ = mosdac_ocm._download_granule(session, 555)
+    assert path is None and err is not None
+    assert not (tmp_path / "mosdac_555.h5").exists()       # never published
+    assert not (tmp_path / "mosdac_555.h5.part").exists()  # debris cleaned
+    assert mosdac_ocm._find_cached_granule(555) is None
+
+
+def test_download_atomic_publish_success_and_cache_hit(tmp_path, monkeypatch):
+    monkeypatch.setattr(mosdac_ocm, "GRANULE_DIR", tmp_path)
+    resp = _FakeResp([b"a" * 100, b"b" * 100])
+    path, err, _ = mosdac_ocm._download_granule(_FakeSession(resp), 777)
+    assert err is None and path.name == "mosdac_777.h5"
+    assert (tmp_path / "mosdac_777.h5").stat().st_size == 200
+    assert not list(tmp_path.glob("*.part"))
+    assert mosdac_ocm._find_cached_granule(777) == path
+
+
+def test_part_files_are_never_cache_and_purged_immediately(tmp_path, monkeypatch):
+    monkeypatch.setattr(mosdac_ocm, "GRANULE_DIR", tmp_path)
+    part = tmp_path / "mosdac_888.h5.part"
+    part.write_bytes(b"interrupted")
+    assert mosdac_ocm._find_cached_granule(888) is None   # .part ≠ complete
+    mosdac_ocm._purge_old_granules()
+    assert not part.exists()  # fresh debris dropped right away, not in 26 h
+
+
+def test_live_chain_purges_truncated_cache_file(tmp_path, monkeypatch):
+    """One poisoned file must self-heal: parse raises a truncation error →
+    chain deletes the file so the next click re-downloads fresh."""
+    _patch_live_world(monkeypatch, None)
+    poisoned = tmp_path / "mosdac_991.h5"
+    poisoned.write_bytes(b"truncated")
+    monkeypatch.setattr(
+        mosdac_ocm, "_download_granule",
+        lambda session, rid: (poisoned, None, 0.0))
+    import pipeline.parser as parser
+    monkeypatch.setattr(
+        parser, "parse",
+        lambda p: (_ for _ in ()).throw(OSError("truncated file: eof=15MB")))
+    res = mosdac_ocm._live_chain(20.9, 70.37)
+    assert res.get("value") is None
+    assert not poisoned.exists()
+    assert "truncated cached granule purged" in res["error"]
+
+
 def test_records_date_from_dcdate():
     """Real apios shape seen 2026-09-04: title is the numeric id; date
     lives in dcDate/updated."""
