@@ -484,6 +484,10 @@ _LAST_USED_PATH: str | None = None  # granule file that yielded the last value
 
 
 def _live_chain(lat: float, lon: float) -> dict[str, Any]:
+    # NOTE: `_LAST_USED_PATH = ...` below is an assignment, so without this
+    # `global` it silently binds a FUNCTION-LOCAL shadow and the self-test's
+    # --debug granule dump never prints (found via the 10.12N/80.62E run).
+    global _LAST_USED_PATH
     t0 = time.time()
     _LAST_TRIED.clear()
 

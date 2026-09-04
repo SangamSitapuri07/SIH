@@ -146,6 +146,7 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
         area_med = snap.get("chlorophyll_mosdac_area_median")
         cdom_v = snap.get("chlorophyll_mosdac_cdom_value")
         cdom_u = snap.get("chlorophyll_mosdac_cdom_units")
+        scene_uniform = False  # set when the wider area is uniformly high too
         forensics = ""
         if ring_med is not None and ring_n:
             med_vs_mosdac = max(ring_med, chl_mosdac) / max(min(ring_med, chl_mosdac), 1e-9)
@@ -154,6 +155,7 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
             if patch_real:
                 if (area_med is not None and ring_med
                         and max(area_med, ring_med) / max(min(area_med, ring_med), 1e-9) <= 2.0):
+                    scene_uniform = True
                     forensics = (
                         f" Pixel forensics: the granule reads UNIFORMLY high here — the "
                         f"~3 km neighbourhood{where} reads ~{ring_med:.2f} and even the wider "
@@ -182,10 +184,26 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
                 )
         if cdom_v is not None:
             _u = f" {cdom_u}" if cdom_u else ""
-            forensics += (
-                f" OCM-3 also reports CDOM={cdom_v:g}{_u} at this pixel — CDOM-rich "
-                f"(case-2) water makes satellite chlorophyll algorithms disagree."
-            )
+            # Value-aware, not a blanket line: LOW CDOM means clear Case-1
+            # water — then turbidity CANNOT explain the gap. (10.12N/80.62E
+            # read 0.0048 1/m — very clear; rough 1/m scale bands below.)
+            if cdom_v < 0.02:
+                forensics += (
+                    f" OCM-3 also reports CDOM={cdom_v:g}{_u} at this pixel — LOW, "
+                    f"i.e. clear open-ocean (Case-1) water: a CDOM/turbidity artifact "
+                    f"cannot explain the gap."
+                )
+            elif cdom_v < 0.15:
+                forensics += (
+                    f" OCM-3 also reports CDOM={cdom_v:g}{_u} at this pixel — moderate; "
+                    f"dissolved organic matter may contribute a little to the gap."
+                )
+            else:
+                forensics += (
+                    f" OCM-3 also reports CDOM={cdom_v:g}{_u} at this pixel — high; "
+                    f"CDOM-rich (Case-2) water makes satellite chlorophyll algorithms "
+                    f"disagree."
+                )
 
         if ratio_m <= 3.0:
             findings.append({
@@ -243,8 +261,10 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
                     f"{chl:.2f} — {ratio_m:.1f}x apart, too large to explain by "
                     f"resolution alone."
                     + (occci_arbiter or " No third source available to arbitrate.")
-                    + " Likely a cloud-contaminated or misregistered pixel in this "
-                      "granule, less likely a real bloom this sharp."
+                    + (" The evidence points to a scene-level overestimate in "
+                       "this pass, not a real bloom." if scene_uniform else
+                       " Likely a cloud-contaminated or misregistered pixel in this "
+                       "granule, less likely a real bloom this sharp.")
                     + forensics + date_note
                     + " Verify against the image on mosdac.gov.in before trusting "
                       "this value; it is NOT counted as an independent confirmation."

@@ -143,7 +143,26 @@ def test_satellite_mosdac_cdom_case2_note():
     }
     msg = [f["msg"] for f in satellite.analyze(snap)["findings"]
            if f["type"] == "chl_mosdac_check_outlier"][0]
-    assert "CDOM=0.42 m^-1" in msg and "case-2" in msg
+    assert "CDOM=0.42 m^-1" in msg and "Case-2" in msg
+
+
+def test_satellite_mosdac_low_cdom_rules_out_turbidity_story():
+    """The actual 10.12N/80.62E evidence: CDOM 0.0048 1/m = clear Case-1
+    water, so the finding must say turbidity CANNOT explain the gap —
+    not repeat the case-2 line uncritically."""
+    snap = {
+        "chlorophyll": 0.35, "chlorophyll_source": "NOAA",
+        "chlorophyll_occci": 0.26,
+        "chlorophyll_mosdac": 3.0, "chlorophyll_mosdac_date": "2026-09-03",
+        "chlorophyll_mosdac_ring_valid": 289, "chlorophyll_mosdac_ring_median": 3.0,
+        "chlorophyll_mosdac_area_median": 2.5,
+        "chlorophyll_mosdac_cdom_value": 0.0048, "chlorophyll_mosdac_cdom_units": "1/m",
+    }
+    msg = [f["msg"] for f in satellite.analyze(snap)["findings"]
+           if f["type"] == "chl_mosdac_check_outlier"][0]
+    assert "CDOM=0.0048 1/m" in msg
+    assert "Case-1" in msg and "cannot explain the gap" in msg
+    assert "Case-2" not in msg
 
 
 # ── Bug #2: marine risk must ESCALATE on the warning it quotes ────────

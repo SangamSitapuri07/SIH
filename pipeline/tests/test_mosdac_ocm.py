@@ -89,6 +89,18 @@ def test_live_chain_success(monkeypatch):
     assert res["live_download_s"] == 12.3
 
 
+def test_live_chain_sets_module_used_path_for_debug_dump(monkeypatch):
+    """Regression: `_LAST_USED_PATH = ...` inside _live_chain needs a
+    `global` declaration — without it the assignment binds a function-local
+    shadow and the self-test's --debug granule dump silently never prints
+    (seen live on the 10.12N/80.62E run)."""
+    _patch_live_world(monkeypatch, {
+        "value": 0.77, "units": "mg m^-3", "distance_deg": 0.004})
+    mosdac_ocm._LAST_USED_PATH = None
+    mosdac_ocm._live_chain(20.9, 70.37)
+    assert mosdac_ocm._LAST_USED_PATH == "/tmp/fake_mosdac_granule.h5"
+
+
 def test_live_chain_honest_when_no_granule(monkeypatch):
     _patch_live_world(monkeypatch, None)
     # search returns nothing this time
