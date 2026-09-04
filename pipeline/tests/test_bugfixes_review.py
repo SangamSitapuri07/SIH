@@ -178,3 +178,82 @@ def test_advisory_quotes_gusts_even_when_calm(monkeypatch):
     wind_reason = next(r for r in res["reasons"] if r["code"] == "wind_ok")
     assert "gusts 22" in wind_reason["msg"]
     assert "comfortable" not in wind_reason["msg"] or "sustained" in wind_reason["msg"]
+
+
+# ── Now-vs-Peak labelling (review round 3) ─────────────────────────────
+
+def test_ocean_uses_48h_peak_and_labels_both_numbers():
+    """Reason panel must quote the 48h peak + 'now', and mark the 30-day
+    window max as history — not as a silent contradiction."""
+    from pipeline.agents import ocean
+    snap = {"sst_mean": 28.0, "wave_max": 4.2,
+            "wave_now_m": 1.48, "wave_peak_48h_m": 2.4}
+    res = ocean.analyze(snap)
+    calm = next(f for f in res["findings"] if f["type"] == "wave_calm")
+    assert "2.4 m" in calm["msg"] and "1.48 m now" in calm["msg"]
+    hist = next(f for f in res["findings"] if f["type"] == "wave_recent_window")
+    assert "Past ~30-day" in hist["msg"] and "NOT today" in hist["msg"]
+    assert res["risk_level"] == "low"
+
+
+def test_ocean_without_forecast_labels_window_max_honestly():
+    from pipeline.agents import ocean
+    res = ocean.analyze({"sst_mean": 28.0, "wave_max": 3.1})
+    w = next(f for f in res["findings"] if f["type"] == "wave_caution")
+    assert "past ~30 days" in w["msg"]
+    assert res["risk_level"] == "moderate"
+
+
+def test_marine_risk_escalates_on_fresh_breeze():
+    """The Vizag case: weather quoted 'Fresh breeze 10.2 m/s, exercise
+    caution' but Marine Risk stayed LOW. Wind WARNs must count like wave
+    WARNs."""
+    wx = {"agent": "weather", "findings": [{
+        "type": "fresh_breeze", "severity": "warn", "value": 10.2,
+        "msg": "Fresh breeze 10.2 m/s (Beaufort 5). Exercise caution."}],
+        "summary": "breezy", "risk_level": "moderate"}
+    res = marine_risk.analyze({}, agent_results=[wx])
+    assert res["risk_level"] != "low"
+    assert res["risk_score"] >= 2
+
+
+def test_advisory_wind_reason_labels_peak_and_now(monkeypatch):
+    """'Wind 12 kn, gusts 17 kn' (tile) vs 'Wind up to 25 kn (gusts 32 kn)'
+    (text) read as a contradiction; the text must now say which is peak
+    and which is now."""
+    advisory = _patch_advisory_world(monkeypatch, gust_kn=17, wind_kn=12)
+    monkeypatch.setattr(
+        advisory.fc, "get_point_forecast",
+        lambda *a, **k: {
+            "source": "mock",
+            "now": {"wave_height_m": 1.48, "swell_height_m": 0.4,
+                    "wind_kn": 12, "gust_kn": 17, "current_kn": 0.5,
+                    "current_dir_deg": 90},
+            "next24h": {"wave_max_m": 1.6, "gust_max_kn": 20,
+                        "rain_total_mm": 0.0},
+            "next48h": {"wave_max_m": 1.6, "wind_max_kn": 25,
+                        "gust_max_kn": 32},
+        })
+    res = advisory.build_advisory(15.16, 82.09)
+    r = next(r for r in res["reasons"] if r["code"] == "wind_strong")
+    assert r["severity"] == "caution"
+    assert "peak" in r["msg"] and "Right now: 12 kn" in r["msg"]
+
+
+def test_advisory_flags_unusually_strong_current(monkeypatch):
+    advisory = _patch_advisory_world(monkeypatch, gust_kn=10)
+    monkeypatch.setattr(
+        advisory.fc, "get_point_forecast",
+        lambda *a, **k: {
+            "source": "mock",
+            "now": {"wave_height_m": 0.8, "swell_height_m": 0.4,
+                    "wind_kn": 10, "gust_kn": 10, "current_kn": 6.03,
+                    "current_dir_deg": 110},
+            "next24h": {"wave_max_m": 0.9, "gust_max_kn": 10,
+                        "rain_total_mm": 0.0},
+            "next48h": {"wave_max_m": 0.9, "wind_max_kn": 10,
+                        "gust_max_kn": 10},
+        })
+    res = advisory.build_advisory(15.16, 82.09)
+    codes = [r["code"] for r in res["reasons"]]
+    assert "current_strong" in codes

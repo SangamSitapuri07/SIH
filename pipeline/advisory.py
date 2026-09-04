@@ -146,13 +146,18 @@ def build_advisory(
 
     wind_outlook = n48.get("wind_max_kn") if n48.get("wind_max_kn") is not None else wind_now
     gust_outlook = n48.get("gust_max_kn") if n48.get("gust_max_kn") is not None else gust_now
+    now_wind_txt = (
+        f" Right now: {wind_now:.0f} kn sustained"
+        + (f", gusts {gust_now:.0f} kn." if gust_now is not None else ".")
+    ) if wind_now is not None else ""
     if gust_outlook is not None and gust_outlook >= 34:
         reason("no_go", "gale_gusts",
-               f"💨 Gale-force gusts forecast (up to {gust_outlook:.0f} kn ≥ WMO 34 kn gale warning).")
+               f"💨 Gale-force gusts forecast, peak {gust_outlook:.0f} kn in next 48 h "
+               f"(≥ WMO 34 kn gale warning).{now_wind_txt}")
     elif wind_outlook is not None and wind_outlook >= 20:
         reason("caution", "wind_strong",
-               f"💨 Wind up to {wind_outlook:.0f} kn (gusts {(gust_outlook or 0):.0f} kn) — "
-               "fresh-to-strong breeze; tiring and rough for small craft.")
+               f"💨 Wind peak up to {wind_outlook:.0f} kn sustained (gusts {(gust_outlook or 0):.0f} kn) "
+               f"in next 48 h — fresh-to-strong breeze; tiring for small craft.{now_wind_txt}")
     elif max(gust_now or 0, gust_outlook or 0) >= 28:
         # The advisory's own policy header (and the UI tile's red-warn
         # threshold) says gusts 28-34 kn = caution — but this branch was
@@ -175,6 +180,12 @@ def build_advisory(
                    f"💨 Wind {wind_now:.0f} kn, gusts {g:.0f} kn — comfortable.")
         else:
             reason("info", "wind_ok", f"💨 Wind {wind_now:.0f} kn — comfortable.")
+
+    if current_kn is not None and current_kn > 3.0:
+        reason("info", "current_strong",
+               f"🌀 Surface current {current_kn} kn is unusually strong for open coast "
+               "(typical: 0.5-2.5 kn) — could be a shallow coastal grid-cell reading. "
+               "Verify against INCOIS current advisories before planning drift sets.")
 
     if n24.get("rain_total_mm") is not None:
         rain24 = n24["rain_total_mm"]

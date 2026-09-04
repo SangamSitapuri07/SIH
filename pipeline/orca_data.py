@@ -409,7 +409,24 @@ def zone_snapshot(
     else:
         snap["data_sources_failed"].append("GFW: skipped (include_gfw=False)")
 
-    # 5) Simple PFZ heuristic score (chlorophyll + SST + fishing presence)
+    # 5) Near-term wave context (NOW + next-48h peak) from the point
+    # forecast. The snapshot's historical wave_max is the max over the
+    # PAST ~30-day window — labelling it as "today's risk" made the
+    # reason panel look contradictory next to the advisory card's
+    # current readings. Forecast fetch is cheap (30-min cached per cell).
+    try:
+        from pipeline import forecast as fc
+        pf = fc.get_point_forecast(lat, lon)
+        now_blk = pf.get("now") or {}
+        n48_blk = pf.get("next48h") or {}
+        if now_blk.get("wave_height_m") is not None:
+            snap["wave_now_m"] = now_blk["wave_height_m"]
+        if n48_blk.get("wave_max_m") is not None:
+            snap["wave_peak_48h_m"] = n48_blk["wave_max_m"]
+    except Exception:  # noqa: BLE001
+        pass  # ocean agent falls back to the labelled 30-day window max
+
+    # 6) Simple PFZ heuristic score (chlorophyll + SST + fishing presence)
     snap["pfz_score"] = _pfz_score(snap)
 
     return snap

@@ -114,8 +114,8 @@ export default function AdvisoryCard({
 
       {/* variable tiles — every number is live */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-        <Tile label={`🌊 ${t(lang, "waves")}`} value={v.wave_height_m != null ? `${v.wave_height_m} m` : "—"} warn={(v.wave_height_m ?? 0) >= 2.5} sub={`${t(lang, "swell")}: ${v.swell_m ?? "—"} m`} />
-        <Tile label={`💨 ${t(lang, "wind")}`} value={v.wind_kts != null ? `${Math.round(v.wind_kts)} kn` : "—"} sub={`${t(lang, "gusts")}: ${v.gust_kts != null ? Math.round(v.gust_kts) : "—"} kn`} warn={(v.gust_kts ?? 0) >= 28} />
+        <Tile label={`🌊 ${t(lang, "waves")} (${t(lang, "now")})`} value={v.wave_height_m != null ? `${v.wave_height_m} m` : "—"} warn={(v.wave_height_m ?? 0) >= 2.5} sub={`${t(lang, "peak_48h")}: ${advisory.outlook_48h?.wave_max_m ?? "—"} m · ${t(lang, "swell")}: ${v.swell_m ?? "—"} m`} />
+        <Tile label={`💨 ${t(lang, "wind")} (${t(lang, "now")})`} value={v.wind_kts != null ? `${Math.round(v.wind_kts)} kn` : "—"} sub={`${t(lang, "gusts")}: ${v.gust_kts != null ? Math.round(v.gust_kts) : "—"} kn · ${t(lang, "peak_48h")}: ${advisory.outlook_48h?.gust_max_kn != null ? Math.round(advisory.outlook_48h.gust_max_kn) : "—"} kn`} warn={(v.gust_kts ?? 0) >= 28} />
         <Tile label={`🌡️ ${t(lang, "sst")}`} value={v.sst_c != null ? `${v.sst_c.toFixed(1)} °C` : "—"} />
         <Tile label={`🌀 ${t(lang, "current")}`} value={v.current_kn != null ? `${v.current_kn} kn` : "—"} sub={v.current_dir ?? undefined} />
         <Tile label={`🛰️ ${t(lang, "chlorophyll")}`} value={v.chlorophyll_mg_m3 != null ? `${v.chlorophyll_mg_m3.toFixed(2)} mg/m³` : "—"} sub={v.pfz_advisory_date ? `PFZ: ${v.pfz_advisory_date}` : undefined} />

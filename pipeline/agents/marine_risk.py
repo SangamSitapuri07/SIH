@@ -28,8 +28,13 @@ WEIGHTS = {
     "gale_gusts": 2,
     "storm_warning": 4,
     "gale_warning": 2,
-    "fresh_breeze": 1,
-    "heavy_rain": 1,
+    # fresh_breeze = 2 (was 1): a WARN-tier wind finding from the weather
+    # agent must escalate the boat-safety verdict exactly like a WARN-tier
+    # wave finding does — otherwise the panel quotes "Fresh breeze,
+    # exercise caution" right under a green LOW banner. (Screenshot
+    # review 2026-09-04: Vizag 10.2 m/s case.)
+    "fresh_breeze": 2,
+    "heavy_rain": 2,
     "sst_extreme": 1,
     "stale_data": 1,
     "low_source_coverage": 1,
@@ -74,7 +79,12 @@ def analyze(snap: dict[str, Any], agent_results: list[dict[str, Any]] | None = N
     # WIND as easily as from waves; the safety agent must see both.
     wx_result = next((a for a in agent_results if a.get("agent") == "weather"), {})
     for f in wx_result.get("findings", []):
-        w = WEIGHTS.get(f["type"])
+        w = WEIGHTS.get(f["type"]) if f["type"] in WEIGHTS else None
+        if w is None:
+            # Severity-based fallback: an unlisted WARN/HIGH weather
+            # finding (e.g. a thunderstorm condition code) must never be
+            # silently ignored by the safety verdict.
+            w = {"warn": 2, "high": 4, "critical": 5}.get(f.get("severity"), 0)
         if w:
             score += w
             findings.append(f)
