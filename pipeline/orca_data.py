@@ -232,7 +232,7 @@ def zone_snapshot(
         # ISRO live chain (login + search + granule download + extract) —
         # own budget, fits inside the 110 s route deadline; same-day
         # granule cache makes later clicks instant.
-        jobs["mosdac"] = (mosdac_fn, (lat, lon, chl_date), {}, "ISRO MOSDAC OCM-3", 90.0)
+        jobs["mosdac"] = (mosdac_fn, (lat, lon, chl_date), {}, "ISRO MOSDAC OCM-3", 75.0)
 
     # GFW runs INSIDE the same parallel gather (they're slow paid-report
     # POSTs — 35 s budget each) instead of a serial block after it.

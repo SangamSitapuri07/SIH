@@ -49,7 +49,11 @@ DATASET = mosdac_auth.DS_OCM_OC  # E06OCM_L2C_LAC_OC
 
 SEARCH_DAYS = 7            # look back up to a week for the newest granule
 POINT_BBOX_DEG = 1.0       # search bbox half-width around the clicked point
-JOB_BUDGET_SEC = 90.0      # whole live chain must fit the 110 s route deadline
+# 75 s cap: with OC-CCI + anomaly + weather jobs running in parallel, a
+# 90 s MOSDAC chain pushed total /reason time past the frontend's 90 s
+# abort (Visakhapatnam 2026-09-04: backend finished into cache but the
+# client had already shown a fake "unreachable" card).
+JOB_BUDGET_SEC = 75.0      # whole live chain must fit inside the 110 s route deadline with headroom
 DOWNLOAD_IDLE_TIMEOUT = 45 # abort if the stream stalls (slow demo wifi)
 MAX_GRANULE_BYTES = 250_000_000  # honest guard — LAC L2C files are far smaller
 

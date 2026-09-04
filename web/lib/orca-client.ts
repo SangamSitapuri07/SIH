@@ -220,13 +220,31 @@ async function apiFetch(path: string, init: RequestInit): Promise<Response> {
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
-async function apiGet<T>(path: string, timeoutMs = 90_000): Promise<T> {
+/** Turn a non-OK response into a human-readable error. FastAPI error
+ * bodies are JSON {"detail": "..."} — surface the DETAIL (it carries our
+ * honest 504 retry hint: "still computing in background, retry in 10-30s
+ * — answer comes instantly from cache"), not raw JSON braces. */
+function apiErrorMessage(status: number, body: string): string {
+  try {
+    const j = JSON.parse(body);
+    if (typeof j?.detail === "string") return `API ${status}: ${j.detail.slice(0, 500)}`;
+  } catch { /* not JSON — bare text (e.g. proxy 500) */ }
+  return `API ${status}: ${body.slice(0, 300)}`;
+}
+
+async function apiGet<T>(path: string, timeoutMs = 125_000): Promise<T> {
+  // 125 s — MUST stay above the backend's own 110 s deadline: a slow first
+  // fetch (MOSDAC 60 MB granule download + slow public APIs on a home
+  // link) legitimately needs ~100 s. At 90 s the frontend used to give up
+  // JUST before the backend finished, then showed a fake "unreachable"
+  // card while the backend completed the work into cache. Seen live on
+  // the laptop at Visakhapatnam (2026-09-04).
   const res = await apiFetch(path, {
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`API ${res.status}: ${body.slice(0, 200)}`);
+    throw new Error(apiErrorMessage(res.status, body));
   }
   return res.json();
 }
@@ -240,7 +258,7 @@ async function apiPost<T>(path: string, body: unknown, timeoutMs = 220_000): Pro
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`API ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(apiErrorMessage(res.status, text));
   }
   return res.json();
 }

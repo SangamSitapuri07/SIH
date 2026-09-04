@@ -163,6 +163,24 @@ app = FastAPI(
     version="0.2.0",
 )
 
+
+@app.exception_handler(Exception)
+async def _unhandled_to_json(request, exc):  # noqa: ANN001, ANN201
+    """Safety net: ANY unhandled exception (incl. response-serialization
+    failures, which live outside the route's try/except) becomes a JSON
+    body carrying the full traceback instead of Starlette's bare
+    'Internal Server Error' text — the web UI surfaces `detail` verbatim,
+    so the failure shows its own autopsy. Born 2026-09-04: laptop showed
+    'API 500: Internal Server Error' with zero usable info."""
+    from fastapi.responses import JSONResponse
+    tb = traceback.format_exc()
+    print(f"[ORCA] UNHANDLED {request.url.path}: {type(exc).__name__}: {exc}\n{tb}",
+          file=sys.stderr)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"unhandled {type(exc).__name__}: {exc}\n{tb[-2500:]}"},
+    )
+
 # CORS: the Next.js dev proxy proved flaky on Windows (browser→:3000 proxy
 # →:8000 connections RST while the DIRECT WebSocket to :8000 worked fine),
 # so the web UI now calls the backend directly on localhost. Allow any
