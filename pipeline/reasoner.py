@@ -95,7 +95,10 @@ def reason(
         parts.append(f"Composite PFZ score: {snap['pfz_score']:.2f}/1.0")
 
     if risk_agent.get("summary"):
-        parts.append(risk_agent["summary"])
+        # Label it: this is the vessel-safety AGENT's verdict. The big
+        # banner above is the OVERALL (max across all agents). Unlabeled,
+        # the two read as contradictions when they diverge.
+        parts.append(f"Vessel-safety: {risk_agent['summary']}")
 
     if ocean.get("summary") and ocean["summary"] != "No ocean data available for this zone.":
         parts.append(f"Ocean: {ocean['summary']}")

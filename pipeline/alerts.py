@@ -129,7 +129,11 @@ def evaluate(lat: float, lon: float) -> list[dict[str, Any]]:
 
     # -- Tropical cyclones (JTWC) --
     try:
-        cyc = jtwc.nearest_cyclone(lat, lon)
+        # Basin-filtered: ORCA serves Indian waters, so a Northwest
+        # Pacific typhoon must never mint an alert here. "io" = North
+        # Indian Ocean; "sh" = South Indian/Pacific (relevant south of
+        # the equator); distance gates below still apply.
+        cyc = jtwc.nearest_cyclone(lat, lon, basins=["io", "sh"])
         if cyc.get("found"):
             c = cyc["cyclone"]
             d = cyc["distance_km"]

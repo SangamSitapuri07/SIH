@@ -134,6 +134,13 @@ def get_layers(
             sources.add(jtwc.SOURCE_LABEL)
             for c in data["cyclones"]:
                 label = c.get("name") or c["designation"]
+                basin = c.get("basin")  # wp | io | sh
+                # ORCA serves Indian waters: Indian-ocean basins are
+                # "relevant" and drawn in alert red; far-away systems
+                # (e.g. a Japan-side typhoon) stay visible but muted so
+                # the map never cries wolf. (Screenshot review 2026-09-04:
+                # out-of-basin cyclones looked identical to local threats.)
+                relevant = basin in ("io", "sh")
                 features.append({
                     "type": "Feature",
                     "geometry": {"type": "Point", "coordinates": [c["lon"], c["lat"]]},
@@ -145,6 +152,9 @@ def get_layers(
                         "movement_deg": c.get("movement_deg"),
                         "movement_kt": c.get("movement_kt"),
                         "advisory_no": c.get("advisory_no"),
+                        "basin": basin,
+                        "basin_name": c.get("basin_name"),
+                        "indian_region": relevant,
                         "source": jtwc.SOURCE_LABEL,
                     },
                 })

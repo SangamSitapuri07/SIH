@@ -152,17 +152,44 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
                 "type": "wind_calm",
                 "severity": "good",
                 "value": wind_max,
-                "msg": f"Light winds {wind_max:.1f} m/s — safe conditions.",
+                "msg": (
+                    f"Light winds {wind_max:.1f} m/s sustained"
+                    + (f" (gusts {gust_max:.1f} m/s)" if gust_max is not None else "")
+                    + " — safe conditions."
+                ),
             })
 
-    # Gust analysis
-    if gust_max is not None and wind_max is not None and gust_max > wind_max * 1.5:
-        findings.append({
-            "type": "gusty",
-            "severity": "info",
-            "value": gust_max,
-            "msg": f"Wind gusts to {gust_max:.1f} m/s ({(gust_max/wind_max):.1f}× sustained).",
-        })
+    # Gust analysis — GUSTS kills small boats, not the sustained average.
+    # A calm sustained reading paired with gale-force gusts must NOT look
+    # safe: escalate gusts on the same Beaufort tiers as sustained wind.
+    # (Screenshot review 2026-09-04: Chennai showed "safe/calm" wording
+    # next to heavy peak gusts — the mismatch read as a bug, because the
+    # safety meaning of the gust number was never surfaced.)
+    if gust_max is not None:
+        if gust_max >= 20:
+            findings.append({
+                "type": "gust_storm",
+                "severity": "high",
+                "value": gust_max,
+                "msg": f"Storm-force gusts to {gust_max:.1f} m/s (Beaufort 9+) — dangerous bursts. Stay on land.",
+            })
+        elif gust_max >= 14:
+            findings.append({
+                "type": "gale_gusts",
+                "severity": "warn",
+                "value": gust_max,
+                "msg": (
+                    f"Gale-force gusts to {gust_max:.1f} m/s — sudden bursts "
+                    f"can swamp small craft even when the sustained wind looks calm."
+                ),
+            })
+        elif wind_max is not None and gust_max > wind_max * 1.5:
+            findings.append({
+                "type": "gusty",
+                "severity": "info",
+                "value": gust_max,
+                "msg": f"Wind gusts to {gust_max:.1f} m/s ({(gust_max/wind_max):.1f}× sustained).",
+            })
 
     # Precipitation
     if precip is not None:

@@ -112,17 +112,34 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
                     f"{chl_occci:.2f} ({ratio:.1f}x apart, within 3x)."
                 ),
             })
+    else:
+        # Cross-check absent (usually monsoon cloud cover masking OC-CCI).
+        # Say "not cross-validated" explicitly — it is NOT "no data":
+        # the primary measurement above is real and drives the risk tag.
+        findings.append({
+            "type": "chl_cross_check_missing",
+            "severity": "info",
+            "value": None,
+            "msg": (
+                "OC-CCI cross-check unavailable (usually monsoon clouds) — "
+                "value above is the primary measurement, shown WITHOUT "
+                "independent cross-validation."
+            ),
+        })
 
-    # Risk
+    # Risk comes from the PRIMARY measurement's hazard level — never from
+    # whether the optional cross-check source succeeded. (Bug found via
+    # screenshot review: with chl < 0.5 the only "good" finding came from
+    # the OC-CCI cross-check, so a cloud-masked cross-check silently
+    # flipped the tag to "unknown"/"no data" even though NOAA data was
+    # present and displayed.)
     severities = [f["severity"] for f in findings]
     if "high" in severities or "critical" in severities:
         risk = "high"
     elif "warn" in severities:
         risk = "moderate"
-    elif "good" in severities:
-        risk = "low"
     else:
-        risk = "unknown"
+        risk = "low"  # we HAVE a real chlorophyll value and it's not hazardous
 
     n_good = sum(1 for f in findings if f["severity"] == "good")
     n_warn = sum(1 for f in findings if f["severity"] in ("warn", "high"))

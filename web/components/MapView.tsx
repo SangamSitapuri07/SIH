@@ -166,6 +166,9 @@ export default function MapView({
         const [lo, la] = f.geometry.coordinates;
         const p = f.properties ?? {};
         const isCyclone = p.layer === "cyclone";
+        // Indian-ocean system → alert red. Far-away basin → muted gray,
+        // so a Japan-side typhoon never looks like a local threat.
+        const cycloneRelevant = p.indian_region !== false;
         return (
           <CircleMarker
             key={`pt-${i}`}
@@ -173,7 +176,9 @@ export default function MapView({
             radius={isCyclone ? 10 : 4}
             pathOptions={
               isCyclone
-                ? { color: "#ea580c", fillColor: "#ea580c", fillOpacity: 0.7, weight: 2 }
+                ? cycloneRelevant
+                  ? { color: "#ea580c", fillColor: "#ea580c", fillOpacity: 0.7, weight: 2 }
+                  : { color: "#94a3b8", fillColor: "#cbd5e1", fillOpacity: 0.45, weight: 1.5, dashArray: "4 4" }
                 : { color: "#475569", fillColor: "#94a3b8", fillOpacity: 0.9, weight: 1 }
             }
           >
@@ -183,6 +188,16 @@ export default function MapView({
                   <strong>🌀 {p.name ?? "Tropical cyclone"}</strong><br />
                   {p.intensity ?? ""} · max wind {p.max_wind_kt ?? "?"} kn<br />
                   moving {p.movement_deg ?? "?"}° at {p.movement_kt ?? "?"} kn<br />
+                  {p.advisory_no != null && (
+                    <>✅ official JTWC advisory #{p.advisory_no}<br /></>
+                  )}
+                  {p.basin_name && (
+                    <>
+                      basin: {p.basin_name}
+                      {!cycloneRelevant && " — outside Indian Ocean, shown for awareness only"}
+                      <br />
+                    </>
+                  )}
                   <em>{p.source}</em>
                 </div>
               ) : (
