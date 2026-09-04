@@ -222,7 +222,7 @@ def _norm_lon_arr(lons, ref_lon):
     return l, ref_lon
 
 
-def _extract_chl_h5(path, lat: float, lon: float, max_ring: int = 20) -> dict[str, Any] | None:
+def _extract_chl_h5(path, lat: float, lon: float, max_ring: int = 40) -> dict[str, Any] | None:
     """Best-effort direct chlorophyll extraction from a MOSDAC HDF5 file.
 
     Returns None with no exception when the structure is unreadable —
@@ -299,18 +299,30 @@ def _extract_chl_h5(path, lat: float, lon: float, max_ring: int = 20) -> dict[st
                     except Exception:  # noqa: BLE001
                         pass
 
+            # NetCDF-style packing: raw ints * scale_factor + add_offset.
+            # h5py reads RAW values — we must unscale ourselves (h5netcdf
+            # would do this automatically).
+            scale = float(np.asarray(attrs.get("scale_factor", 1.0)).flat[0]) \
+                if "scale_factor" in attrs else 1.0
+            offset = float(np.asarray(attrs.get("add_offset", 0.0)).flat[0]) \
+                if "add_offset" in attrs else 0.0
+            units_raw = str(attrs.get("units", b"mg m^-3")).strip("b'\" ")
+            is_log = "log" in units_raw.lower()
+
             def _ok(v: float) -> bool:
                 if not np.isfinite(v) or v <= 0:
                     return False
                 return not any(abs(v - fv) < 1e-3 or (fv != 0 and abs(v/fv - 1) < 1e-9) for fv in fills)
 
+            def _real(v: float) -> float:
+                out = v * scale + offset
+                return float(10 ** out) if is_log else float(out)
+
             best = None
             best_d = float("inf")
             for r in range(0, max_ring + 1):
-                improved = False
-                rng = range(-r, r + 1)
-                for di in rng:
-                    for dj in rng:
+                for di in range(-r, r + 1):
+                    for dj in range(-r, r + 1):
                         if max(abs(di), abs(dj)) != r:
                             continue
                         i, j = i0 + di, j0 + dj
@@ -321,23 +333,19 @@ def _extract_chl_h5(path, lat: float, lon: float, max_ring: int = 20) -> dict[st
                             continue
                         d = math.hypot(cell_lat(i, j) - lat, cell_lon(i, j) - lon)
                         if d < best_d:
-                            best, best_d = v, d
-                            improved = True
+                            best, best_d = _real(v), d
                 if best is not None and r >= 2:
-                    break  # good enough — nearest-ish valid cell found
-                if not improved and r > 6 and best is None:
-                    continue
+                    break  # nearest-ish valid cell found
             if best is None:
                 dbg["tried"].append(f"all fill/masked within {max_ring} cells of point")
                 continue
-            # values like 0.01-30 sane; big numbers (e.g. scaled ints) sane-check
-            if best > 1000:
-                dbg["tried"].append(f"value {best} looks unscaled")
+            if not (0.001 <= best <= 500):
+                dbg["tried"].append(f"value {best} implausible after scaling")
                 continue
             return {
                 "value": best,
                 "distance_deg": round(best_d, 4),
-                "units": str(attrs.get("units", b"mg m^-3")).strip("b'\" ") or "mg m^-3",
+                "units": ("mg m^-3" if is_log else units_raw) or "mg m^-3",
             }
     return None
 
@@ -450,6 +458,40 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
 
 # ── self-test ─────────────────────────────────────────────────────────
 
+def _debug_stats(path, lat: float, lon: float) -> None:
+    """Print the granule's real coverage + fill stats — the decisive
+    answer to 'was the point even inside this file, and how cloudy was
+    it?'"""
+    import h5py
+    import numpy as np
+    with h5py.File(path, "r") as f:
+        names: list[str] = []
+        f.visititems(lambda n, o: names.append(n) if isinstance(o, h5py.Dataset) else None)
+        print("     --debug datasets:")
+        for n in names[:40]:
+            print(f"        {n}  shape={f[n].shape}")
+        lat_d = next((n for n in names if n.split("/")[-1].lower() in ("lat", "latitude")), None)
+        lon_d = next((n for n in names if n.split("/")[-1].lower() in ("lon", "longitude")), None)
+        chl_d = next((n for n in names if _CHL_NAME_RE.search(n.split("/")[-1])), None)
+        if lat_d and lon_d:
+            la, lo = f[lat_d][()], f[lon_d][()]
+            print(f"     --debug lat range: {np.nanmin(la):.3f} .. {np.nanmax(la):.3f} | "
+                  f"lon range: {np.nanmin(lo):.3f} .. {np.nanmax(lo):.3f}")
+            print(f"     --debug point ({lat}, {lon}) inside coverage: "
+                  f"{np.nanmin(la) <= lat <= np.nanmax(la) and np.nanmin(lo) <= lon <= np.nanmax(lo)}")
+        if chl_d:
+            arr = np.asarray(f[chl_d][()], dtype="float64")
+            attrs = dict(f[chl_d].attrs)
+            print(f"     --debug {chl_d} attrs: {dict(list(attrs.items())[:6])}")
+            fv = float(np.asarray(attrs.get('_FillValue', np.nan)).flat[0]) if '_FillValue' in attrs else None
+            finite = np.isfinite(arr)
+            fillm = (arr == fv) if fv is not None else False
+            valid = finite & ~fillm & (arr > 0)
+            print(f"     --debug CHL cells: total={arr.size}, finite={finite.sum()} "
+                  f"({100*finite.mean():.0f}%), positive-valid={valid.sum()} ({100*valid.mean():.0f}%), "
+                  f"fill={fillm.sum() if fv else 'n/a'}")
+
+
 def _selftest() -> int:
     print("=" * 68)
     print("  MOSDAC OCM-3 LIVE self-test — login -> search -> download -> extract")
@@ -460,9 +502,15 @@ def _selftest() -> int:
         return 2
     print("  creds: found (hidden)")
 
-    lat, lon = 20.9, 70.37  # Veraval — our PFZ validation ground
+    # default = Veraval (PFZ validation ground); --lat/--lon override for
+    # testing offshore points (coastal cells are land-masked by nature)
+    lat, lon = 20.9, 70.37
+    if "--lat" in sys.argv and "--lon" in sys.argv:
+        lat = float(sys.argv[sys.argv.index("--lat") + 1])
+        lon = float(sys.argv[sys.argv.index("--lon") + 1])
+    print(f"  point: {lat}N {lon}E")
 
-    print(f"  1) LIVE search {DATASET}, last {SEARCH_DAYS} days around Veraval ({lat}N {lon}E)...")
+    print(f"  1) LIVE search {DATASET}, last {SEARCH_DAYS} days around ({lat}N {lon}E)...")
     end = datetime.now(timezone.utc).date()
     start = end - timedelta(days=SEARCH_DAYS)
     bbox = f"{lon - POINT_BBOX_DEG},{lat - POINT_BBOX_DEG},{lon + POINT_BBOX_DEG},{lat + POINT_BBOX_DEG}"
@@ -486,7 +534,7 @@ def _selftest() -> int:
     res = _live_chain(lat, lon)
     dt = time.time() - t0
     if res.get("value") is not None:
-        print(f"     ✅ chlorophyll {res['value']:.3f} {res.get('units')} at Veraval")
+        print(f"     ✅ chlorophyll {res['value']:.3f} {res.get('units')} at point")
         print(f"        granule: {res.get('granule')}")
         print(f"        granule date: {res.get('date')} | live download: {res.get('live_download_s') or 0}s | total: {dt:.1f}s")
         print("  MOSDAC LIVE pipeline READY — agents will show ISRO data on clicks. 🇮🇳")
@@ -495,20 +543,17 @@ def _selftest() -> int:
     if "--debug" in sys.argv:
         dbgd = getattr(_extract_chl_h5, "last_debug", None) or {}
         print("     --debug direct-reader attempts:", dbgd.get("tried"))
-        # dump the granule's actual structure so the fix can be exact
+        # decisive diagnostics: coverage, fill stats, attrs
         try:
-            import h5py
             files = sorted(GRANULE_DIR.glob("mosdac_*"), key=lambda p: -p.stat().st_mtime)
             if files:
-                print(f"     --debug structure of {files[0].name}:")
-                with h5py.File(files[0], "r") as f:
-                    names: list[str] = []
-                    f.visititems(lambda n, o: names.append(
-                        f"{n}  shape={getattr(o, 'shape', '')}"))
-                for n in names[:40]:
-                    print("       ", n)
+                print(f"     --debug structure + stats of {files[0].name}:")
+                _debug_stats(files[0], lat, lon)
+                print("     --debug TIP: if the point is outside coverage or the valid-fraction")
+                print("                  is tiny (monsoon clouds), retry OFFSHORE, e.g.:")
+                print("                  python -m pipeline.mosdac_ocm --debug --lat 20.2 --lon 70.0")
         except Exception as e:  # noqa: BLE001
-            print("     --debug structure dump failed:", e)
+            print("     --debug stats failed:", e)
     print("       (server busy or no fresh granule yet — agents will show this")
     print("        honest message and keep using NOAA primary. Re-run later.)")
     return 1
