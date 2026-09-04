@@ -56,6 +56,12 @@ POINT_BBOX_DEG = 1.0       # search bbox half-width around the clicked point
 JOB_BUDGET_SEC = 75.0      # whole live chain must fit inside the 110 s route deadline with headroom
 DOWNLOAD_IDLE_TIMEOUT = 45 # abort if the stream stalls (slow demo wifi)
 MAX_GRANULE_BYTES = 250_000_000  # honest guard — LAC L2C files are far smaller
+# TOTAL wall-clock cap for one granule download. The idle timeout alone is
+# NOT enough: a slow-but-alive connection (say 100 KB/s steady) would stream
+# 60 MB for ~10 minutes while every click on that point waits behind the
+# single-flight cache join — exactly how the laptop's inland-point clicks
+# blew the 110 s route deadline and 504'd twice (2026-09-04 evening).
+MAX_DL_WALL_SEC = 70.0
 
 GRANULE_DIR = Path(__file__).resolve().parent.parent / "data" / "mosdac_granules"
 
@@ -283,6 +289,12 @@ def _download_granule(session, rec_id: Any) -> tuple[Path | None, str | None, fl
                         tmp.unlink(missing_ok=True)
                         return None, f"granule larger than {MAX_GRANULE_BYTES // 1_000_000} MB guard", time.time() - started
                     fh.write(chunk)
+                    if time.time() - started > MAX_DL_WALL_SEC:
+                        fh.close()
+                        tmp.unlink(missing_ok=True)
+                        return None, (f"download too slow (> {MAX_DL_WALL_SEC:.0f}s wall, "
+                                    f"{total // 1_000_000} MB so far) — network crawling; "
+                                    "try again shortly"), time.time() - started
         # Publish ONLY on complete success: an interrupted run (network
         # drop, Ctrl+C, laptop lid) leaves a .part temp file, never a
         # broken "complete" granule in the cache. Caught live in the
@@ -553,10 +565,23 @@ def get_chlorophyll(lat: float, lon: float, date: str | None = None) -> dict[str
             "source": SOURCE_LABEL,
         }
     from pipeline.ttlcache import cached as _cached
+
+    def _run() -> dict[str, Any]:
+        res = _live_chain(lat, lon)
+        if res.get("error"):
+            # Failure is fine to show — but make sure rapid user retries
+            # do NOT re-pay the whole login→search→download chain each
+            # time (that's what made every re-click on the laptop stall
+            # past the route deadline). Cached briefly; auto-clears.
+            res = dict(res)
+            res["error"] = res["error"] + " (retry pauses for 10 min — cached)"
+        return res
+
     return _cached(
         f"mosdac_chl:{lat:.2f},{lon:.2f}",
         6 * 3600,  # same point+day = same newest granule; 6 h is honest
-        lambda: _live_chain(lat, lon),
+        _run,
+        ttl_for=lambda r: 600.0 if r.get("error") else 6 * 3600.0,
     )
 
 

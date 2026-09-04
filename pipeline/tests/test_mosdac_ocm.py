@@ -4,6 +4,7 @@ on a machine that has the creds)."""
 from __future__ import annotations
 
 import pytest
+import time
 
 from pipeline import mosdac_ocm, mosdac_auth
 
@@ -350,6 +351,63 @@ def test_server_polite_midclose_is_rejected(tmp_path, monkeypatch):
     path, err, _ = mosdac_ocm._download_granule(_FakeSession(resp), 447)
     assert path is None and "truncated" in err.lower()
     assert not (tmp_path / "mosdac_447.h5").exists()
+
+
+def test_download_wall_cap_aborts_slow_but_alive_stream(tmp_path, monkeypatch):
+    """The 110s-deadline killer: a slow-but-STEADY connection (bytes keep
+    coming, so the idle-timeout never fires) must still be aborted at the
+    total wall cap — otherwise one granule download blocks the route for
+    minutes (laptop inland clicks, 2026-09-04 evening)."""
+    monkeypatch.setattr(mosdac_ocm, "GRANULE_DIR", tmp_path)
+    monkeypatch.setattr(mosdac_ocm, "MAX_DL_WALL_SEC", 0.08)
+
+    class _SlowResp(_FakeResp):
+        def iter_content(self, size):
+            import time as _t
+            for c in self._chunks:
+                _t.sleep(0.01)
+                yield c
+
+    resp = _SlowResp([b"x" * 1024] * 30)  # 30 KB, drip-fed over ~0.3 s
+    t0 = time.time()
+    path, err, secs = mosdac_ocm._download_granule(_FakeSession(resp), 448)
+    assert path is None and "too slow" in err.lower()
+    assert not list(tmp_path.glob("mosdac_448*"))
+    assert time.time() - t0 < 5  # aborted promptly, honoured the cap
+
+
+def test_failed_chain_cached_briefly_retry_not_repaid(monkeypatch, tmp_path):
+    """A failed chain is cached for 10 min: repeat clicks answer instantly
+    from the failure entry instead of re-paying the login→download path,
+    while a transient failure does NOT stick for the 6-h success TTL."""
+    calls: list[int] = []
+    monkeypatch.setattr(mosdac_ocm, "mosdac_enabled", lambda: True)
+
+    def _boom(lat, lon):
+        calls.append(1)
+        return {"error": "MOSDAC OCM-3 live fetch failed (download too slow)",
+                "source": mosdac_ocm.SOURCE_LABEL}
+
+    monkeypatch.setattr(mosdac_ocm, "_live_chain", _boom)
+    import pipeline.ttlcache as ttlcache
+    ttlcache.clear()
+    r1 = mosdac_ocm.get_chlorophyll(20.9, 70.37)
+    r2 = mosdac_ocm.get_chlorophyll(20.9, 70.37)
+    assert len(calls) == 1                      # second click served from cache
+    assert "10 min" in r1["error"]
+    ent = ttlcache._store[f"mosdac_chl:{20.9:.2f},{70.37:.2f}"]
+    remaining = ent[0] - time.time()
+    assert 0 < remaining <= 610                 # ~10 min, NOT 6 h
+
+
+def test_ttlcache_ttl_for_override(monkeypatch):
+    import pipeline.ttlcache as ttlcache
+    ttlcache.clear()
+    v = ttlcache.cached("k1", 3600.0, lambda: {"ok": True},
+                        ttl_for=lambda r: 60.0)
+    ent = ttlcache._store["k1"]
+    assert ent[0] - time.time() <= 65           # override won over 3600 s
+    assert v == {"ok": True}
 
 
 def test_records_date_from_dcdate():
