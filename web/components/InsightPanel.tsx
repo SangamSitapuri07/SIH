@@ -4,11 +4,11 @@ import { OrcaInsight } from "@/lib/orca-client";
 import { t, Lang } from "@/lib/i18n";
 
 const RISK_COLOR: Record<string, string> = {
-  low: "bg-green-100 text-green-800 border-green-300",
-  moderate: "bg-yellow-100 text-yellow-800 border-yellow-300",
-  high: "bg-orange-100 text-orange-800 border-orange-300",
-  critical: "bg-red-100 text-red-800 border-red-300",
-  unknown: "bg-gray-100 text-gray-700 border-gray-300",
+  low: "bg-emerald-500/10 text-emerald-300 border-emerald-500/40",
+  moderate: "bg-amber-500/10 text-amber-300 border-amber-500/40",
+  high: "bg-orange-500/10 text-orange-300 border-orange-500/40",
+  critical: "bg-red-500/10 text-red-300 border-red-500/40",
+  unknown: "bg-slate-500/10 text-slate-300 border-slate-500/40",
 };
 
 const RISK_DOT: Record<string, string> = {
@@ -20,12 +20,12 @@ const RISK_DOT: Record<string, string> = {
 };
 
 const SEVERITY_COLOR: Record<string, string> = {
-  good: "text-green-700",
-  info: "text-gray-600",
-  warn: "text-yellow-700",
-  high: "text-orange-700",
-  critical: "text-red-700",
-  error: "text-red-700",
+  good: "text-emerald-300",
+  info: "text-slate-400",
+  warn: "text-amber-300",
+  high: "text-orange-300",
+  critical: "text-red-300",
+  error: "text-red-300",
 };
 
 const AGENT_EMOJI: Record<string, string> = {
@@ -69,11 +69,11 @@ function splitFailure(f: string): [string, string] {
 export default function InsightPanel({ insight, loading, zoneName, lang }: Props) {
   if (loading) {
     return (
-      <div className="p-6 text-gray-600 space-y-3">
-        <div className="animate-pulse text-base font-medium">
+      <div className="p-6 text-slate-300 space-y-3">
+        <div className="animate-pulse text-base font-medium text-cyan-300">
           ⏳ {t(lang, "loading")}
         </div>
-        <div className="text-sm text-gray-500 leading-relaxed">
+        <div className="text-sm text-slate-500 leading-relaxed">
           {t(lang, "panel_loading_hint")}
         </div>
       </div>
@@ -81,7 +81,7 @@ export default function InsightPanel({ insight, loading, zoneName, lang }: Props
   }
   if (!insight) {
     return (
-      <div className="p-6 text-gray-500 text-sm leading-relaxed">
+      <div className="p-6 text-slate-500 text-sm leading-relaxed">
         👆 {t(lang, "panel_click_anywhere")}
       </div>
     );
@@ -99,8 +99,8 @@ export default function InsightPanel({ insight, loading, zoneName, lang }: Props
   return (
     <div className="p-5 space-y-4 overflow-y-auto h-full">
       <div>
-        <h2 className="text-xl font-bold text-gray-900 leading-tight">{zoneName}</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
+        <h2 className="text-xl font-bold text-white leading-tight">{zoneName}</h2>
+        <p className="text-xs text-slate-500 mt-0.5">
           {insight.zone.lat.toFixed(2)}°, {insight.zone.lon.toFixed(2)}° · {insight.zone.date}
         </p>
       </div>
@@ -122,40 +122,40 @@ export default function InsightPanel({ insight, loading, zoneName, lang }: Props
       </div>
 
       {/* Recommendation */}
-      <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1">
+      <div className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] px-4 py-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-cyan-400/80 mb-1">
           {t(lang, "panel_recommendation")}
         </div>
-        <div className="text-sm font-medium text-gray-900 leading-relaxed">
+        <div className="text-sm font-medium text-slate-100 leading-relaxed">
           {insight.recommendation}
         </div>
       </div>
 
       {/* Summary */}
-      <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1">
+      <div className="rounded-lg border border-[#1E3356] bg-[#0C1930] px-4 py-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
           {t(lang, "panel_summary")}
         </div>
-        <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+        <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
           {insight.summary}
         </div>
       </div>
 
       {/* Data sources */}
       <div>
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
           {t(lang, "panel_sources_used")}
         </div>
         <div className="flex flex-wrap gap-1.5">
           {insight.data_sources_used.map((s) => (
-            <span key={s} className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1 rounded-md">
+            <span key={s} className="text-xs bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2 py-1 rounded-md">
               ✓ {s}
             </span>
           ))}
         </div>
         {insight.data_sources_failed.length > 0 && (
-          <details className="mt-2 rounded-lg border border-red-200 bg-red-50/60 px-3 py-2">
-            <summary className="cursor-pointer text-xs font-medium text-red-700">
+          <details className="mt-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-medium text-red-300">
               ⚠️ {insight.data_sources_failed.length} {t(lang, "panel_failed_n")}
             </summary>
             <ul className="mt-2 space-y-1.5">
@@ -163,8 +163,8 @@ export default function InsightPanel({ insight, loading, zoneName, lang }: Props
                 const [label, why] = splitFailure(f);
                 return (
                   <li key={f} className="text-xs leading-relaxed">
-                    <span className="font-semibold text-red-800">{label}</span>
-                    {why && <span className="text-red-700/90"> — {why}</span>}
+                    <span className="font-semibold text-red-200">{label}</span>
+                    {why && <span className="text-red-300/80"> — {why}</span>}
                   </li>
                 );
               })}
@@ -175,7 +175,7 @@ export default function InsightPanel({ insight, loading, zoneName, lang }: Props
 
       {/* Per-agent breakdown */}
       <div>
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
           {t(lang, "panel_agents_n")} ({insight.agents.length})
         </div>
         <div className="space-y-2">
@@ -185,16 +185,16 @@ export default function InsightPanel({ insight, loading, zoneName, lang }: Props
             return (
               <details
                 key={a.agent}
-                className={`rounded-lg border bg-white px-3 py-2 ${
-                  noData ? "border-gray-200 opacity-70" : "border-gray-300"
+                className={`rounded-lg border bg-[#0F1F3A] px-3 py-2 ${
+                  noData ? "border-[#16263F] opacity-60" : "border-[#1E3356]"
                 }`}
               >
                 <summary className="cursor-pointer flex items-center gap-2 list-none">
-                  <span className="min-w-0 flex-1 text-sm font-medium text-gray-800 leading-snug break-words">
+                  <span className="min-w-0 flex-1 text-sm font-medium text-slate-200 leading-snug break-words">
                     {AGENT_EMOJI[a.agent] || "•"} {label ? (lang === "hi" ? label.hi : label.en) : a.agent}
                   </span>
                   {noData ? (
-                    <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 border border-gray-200">
+                    <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-md bg-[#132544] text-slate-500 border border-[#1E3356]">
                       {t(lang, "panel_no_data")}
                     </span>
                   ) : (
@@ -203,7 +203,7 @@ export default function InsightPanel({ insight, loading, zoneName, lang }: Props
                     </span>
                   )}
                 </summary>
-                <div className="mt-2 text-xs text-gray-600 leading-relaxed">{a.summary}</div>
+                <div className="mt-2 text-xs text-slate-400 leading-relaxed">{a.summary}</div>
                 {a.findings.length > 0 && (
                   <ul className="mt-2 space-y-1">
                     {a.findings.map((f, i) => (
@@ -219,7 +219,7 @@ export default function InsightPanel({ insight, loading, zoneName, lang }: Props
         </div>
       </div>
 
-      <div className="text-[11px] text-gray-400 pb-2">
+      <div className="text-[11px] text-slate-600 pb-2">
         {t(lang, "panel_fetched")}: {new Date(insight.fetched_at).toLocaleString()}
       </div>
     </div>

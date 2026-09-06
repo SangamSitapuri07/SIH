@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   Advisory,
@@ -9,6 +9,7 @@ import {
   INDIAN_COASTAL_ZONES,
   OrcaAlert,
   OrcaInsight,
+  fetchHealth,
   fetchInsight,
 } from "@/lib/orca-client";
 import { t, Lang } from "@/lib/i18n";
@@ -22,6 +23,65 @@ import SettingsPanel from "@/components/SettingsPanel";
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
 type Tab = "map" | "ask" | "advisory" | "alerts" | "settings";
+
+/** Header chips show the REAL backend-reported source status — nothing cosmetic */
+const SRC_LABEL: Record<string, string> = {
+  mosdac: "MOSDAC",
+  noaa_erddap: "NOAA",
+  esa_occci: "OC-CCI",
+  openmeteo: "Open-Meteo",
+  gfw: "GFW",
+  incois_pfz_wfs: "INCOIS PFZ",
+  incois_las: "INCOIS",
+  jtwc: "JTWC",
+};
+const SRC_ORDER = ["mosdac", "noaa_erddap", "esa_occci", "openmeteo", "gfw", "incois_pfz_wfs", "incois_las", "jtwc"];
+
+function SourceChips() {
+  const [sources, setSources] = useState<Record<string, string> | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const pull = () => {
+      fetchHealth()
+        .then((h) => { if (alive) setSources(h.data_sources ?? {}); })
+        .catch(() => { if (alive) setSources(null); });
+    };
+    pull();
+    const id = setInterval(pull, 60_000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
+  if (sources === null) {
+    return (
+      <span className="text-[10px] sm:text-[11px] font-semibold px-2.5 py-1 rounded-md bg-red-500/10 border border-red-500/40 text-red-300">
+        backend ●DOWN
+      </span>
+    );
+  }
+  const keys = SRC_ORDER.filter((k) => k in sources);
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap justify-end">
+      {keys.map((k, i) => {
+        const v = String(sources[k]);
+        const live = v.toLowerCase().includes("live");
+        return (
+          <span
+            key={k}
+            title={v}
+            className={`text-[10px] sm:text-[11px] font-semibold px-2.5 py-1 rounded-md border ${
+              live
+                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                : "bg-amber-500/10 border-amber-500/30 text-amber-300"
+            } ${i > 3 ? "hidden lg:inline-block" : i > 1 ? "hidden sm:inline-block" : ""}`}
+          >
+            {SRC_LABEL[k] ?? k} {live ? "●LIVE" : "●SETUP"}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("map");
@@ -91,83 +151,99 @@ export default function Home() {
       });
   };
 
-  const TABS: { id: Tab; label: string }[] = [
-    { id: "map", label: t(lang, "tab_map") },
-    { id: "ask", label: t(lang, "tab_ask") },
-    { id: "advisory", label: t(lang, "tab_advisory") },
-    { id: "alerts", label: t(lang, "tab_alerts") },
-    { id: "settings", label: t(lang, "tab_settings") },
+  const TABS: { id: Tab; label: string; icon: string }[] = [
+    { id: "map", label: t(lang, "tab_map"), icon: "🗺️" },
+    { id: "ask", label: t(lang, "tab_ask"), icon: "💬" },
+    { id: "advisory", label: t(lang, "tab_advisory"), icon: "🛡️" },
+    { id: "alerts", label: t(lang, "tab_alerts"), icon: "🚨" },
+    { id: "settings", label: t(lang, "tab_settings"), icon: "⚙️" },
   ];
 
   return (
-    <div className="h-screen flex flex-col">
-      {/* header */}
-      <header className="bg-gradient-to-r from-blue-900 to-cyan-700 text-white px-4 py-2.5 shadow-md">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold leading-tight">🐋 ORCA</h1>
-            <p className="text-[11px] opacity-80">{t(lang, "app_tagline")} · SIH 2026 PS 176</p>
-          </div>
-          <nav className="flex gap-1 bg-white/10 rounded-full p-1">
-            {TABS.map(({ id, label }) => (
-              <button
-                key={id}
-                onClick={() => setTab(id)}
-                className={`text-xs sm:text-sm rounded-full px-3 py-1.5 transition ${
-                  tab === id ? "bg-white text-blue-900 font-semibold" : "text-white/90 hover:bg-white/20"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
+    <div className="h-screen flex overflow-hidden bg-[#0A1628] text-slate-200">
+      {/* left icon rail */}
+      <aside className="w-14 sm:w-16 shrink-0 flex flex-col items-center gap-1.5 py-3 bg-[#081120] border-r border-[#1E3356]">
+        <div className="mb-2 text-2xl" title="ORCA">🐋</div>
+        {TABS.map(({ id, label, icon }) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            title={label}
+            className={`w-11 sm:w-12 flex flex-col items-center gap-0.5 py-2 rounded-lg transition ${
+              tab === id
+                ? "bg-[#123055] text-cyan-300 shadow-[inset_0_0_0_1px_#22d3ee33]"
+                : "text-slate-500 hover:bg-[#0E1D36] hover:text-slate-300"
+            }`}
+          >
+            <span className="text-lg leading-none">{icon}</span>
+            <span className="text-[9px] font-medium leading-none">{label}</span>
+          </button>
+        ))}
+        <div className="mt-auto text-[9px] text-slate-600 [writing-mode:vertical-rl] rotate-180 select-none">
+          SIH 2026 · PS 176
         </div>
-      </header>
+      </aside>
 
-      {/* alert ticker — any active warning scrolls by */}
-      {ticker.length > 0 && (
-        <div className="bg-red-700 text-white text-xs px-4 py-1.5 flex items-center gap-3 overflow-hidden">
-          <span className="font-bold animate-pulse shrink-0">{t(lang, "ticker_prefix")}</span>
-          <div className="whitespace-nowrap overflow-hidden text-ellipsis">
-            {ticker.map((a) => `${a.simulated ? "[DEMO] " : ""}${lang === "hi" ? a.title_hi : a.title_en} (till ${a.valid_until.slice(11, 16)} UTC)`).join("  ·  ")}
+      {/* main column */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* header */}
+        <header className="shrink-0 bg-[#0B1830] border-b border-[#1E3356] px-3 sm:px-4 py-2">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-lg font-extrabold tracking-wide text-white leading-tight">
+                ORCA <span className="text-[11px] font-medium text-cyan-400/90 tracking-normal">Marine Intelligence</span>
+              </h1>
+              <p className="text-[10px] text-slate-500 truncate">{t(lang, "app_tagline")}</p>
+            </div>
+            <SourceChips />
           </div>
-        </div>
-      )}
+        </header>
 
-      {/* tab content — Map tab keeps its own layout */}
-      <div className="flex-1 overflow-hidden" hidden={tab !== "map"}>
-        <div className="h-full grid grid-cols-1 md:grid-cols-[2fr_1fr]">
-          <div className="relative">
-            <MapView zones={INDIAN_COASTAL_ZONES} selected={zone} onSelect={handleSelectZone} lang={lang} />
-            <div className="absolute bottom-4 left-4 bg-white/95 rounded shadow p-3 text-xs max-w-xs z-[1000]">
-              <div className="font-semibold mb-1">
-                {zone.name}
-              </div>
-              <div className="text-gray-600">
-                {t(lang, "map_click_hint")}
-              </div>
+        {/* alert ticker — any active warning scrolls by */}
+        {ticker.length > 0 && (
+          <div className="shrink-0 bg-red-950/80 border-b border-red-800/60 text-red-200 text-xs px-4 py-1.5 flex items-center gap-3 overflow-hidden">
+            <span className="font-bold animate-pulse shrink-0">{t(lang, "ticker_prefix")}</span>
+            <div className="whitespace-nowrap overflow-hidden text-ellipsis">
+              {ticker.map((a) => `${a.simulated ? "[DEMO] " : ""}${lang === "hi" ? a.title_hi : a.title_en} (till ${a.valid_until.slice(11, 16)} UTC)`).join("  ·  ")}
             </div>
           </div>
-          <div className="bg-gray-50 border-l overflow-hidden">
-            <InsightPanel insight={insight} loading={insightLoading} zoneName={zone.name} lang={lang} />
+        )}
+
+        {/* tab content — Map tab keeps its own layout (map component untouched) */}
+        <div className="flex-1 overflow-hidden" hidden={tab !== "map"}>
+          <div className="h-full grid grid-cols-1 md:grid-cols-[2fr_1fr]">
+            <div className="relative">
+              <MapView zones={INDIAN_COASTAL_ZONES} selected={zone} onSelect={handleSelectZone} lang={lang} />
+              <div className="absolute bottom-4 left-4 bg-[#0E1D36]/90 backdrop-blur border border-[#1E3356] rounded-lg shadow-lg p-3 text-xs max-w-xs z-[1000]">
+                <div className="font-semibold text-slate-100 mb-1">
+                  {zone.name}
+                </div>
+                <div className="text-slate-400">
+                  {t(lang, "map_click_hint")}
+                </div>
+              </div>
+            </div>
+            <div className="bg-[#0B1830] border-l border-[#1E3356] overflow-hidden">
+              <InsightPanel insight={insight} loading={insightLoading} zoneName={zone.name} lang={lang} />
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="flex-1 overflow-hidden" hidden={tab !== "ask"}>
-        <AskOrca zone={zone} lang={lang} onVerdict={setAdvisory} />
-      </div>
+        <div className="flex-1 overflow-hidden" hidden={tab !== "ask"}>
+          <AskOrca zone={zone} lang={lang} onVerdict={setAdvisory} />
+        </div>
 
-      <div className="flex-1 overflow-hidden" hidden={tab !== "advisory"}>
-        <AdvisoryCard zone={zone} lang={lang} advisory={advisory} setAdvisory={setAdvisory} />
-      </div>
+        <div className="flex-1 overflow-hidden" hidden={tab !== "advisory"}>
+          <AdvisoryCard zone={zone} lang={lang} advisory={advisory} setAdvisory={setAdvisory} />
+        </div>
 
-      <div className="flex-1 overflow-hidden" hidden={tab !== "alerts"}>
-        <AlertsPanel zone={zone} lang={lang} ticker={ticker} setTicker={setTicker} />
-      </div>
+        <div className="flex-1 overflow-hidden" hidden={tab !== "alerts"}>
+          <AlertsPanel zone={zone} lang={lang} ticker={ticker} setTicker={setTicker} />
+        </div>
 
-      <div className="flex-1 overflow-hidden" hidden={tab !== "settings"}>
-        <SettingsPanel zone={zone} setZone={setZone} lang={lang} setLang={setLang} />
+        <div className="flex-1 overflow-hidden" hidden={tab !== "settings"}>
+          <SettingsPanel zone={zone} setZone={setZone} lang={lang} setLang={setLang} />
+        </div>
       </div>
     </div>
   );

@@ -3,25 +3,41 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #0a1628;
+  --foreground: #e6edf7;
+  --panel: #0e1d36;
+  --panel-border: #1e3356;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Segoe UI", system-ui, -apple-system, Arial, Helvetica, sans-serif;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+}
+
+/* dark scrollbars — console feel */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: #0a1628;
+}
+*::-webkit-scrollbar-thumb {
+  background: #1e3356;
+  border-radius: 6px;
+  border: 2px solid #0a1628;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #2b4a7c;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1e3356 #0a1628;
 }

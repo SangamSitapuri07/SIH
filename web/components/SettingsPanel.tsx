@@ -55,19 +55,19 @@ export default function SettingsPanel({
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-slate-100 p-4 space-y-4 max-w-2xl">
-      <h2 className="font-bold text-slate-800">{t(lang, "settings_title")}</h2>
+    <div className="h-full overflow-y-auto bg-[#0A1628] p-4 space-y-4 max-w-2xl">
+      <h2 className="font-bold text-slate-100">{t(lang, "settings_title")}</h2>
 
       {/* language */}
-      <section className="rounded-lg border bg-white p-4">
-        <h3 className="text-sm font-semibold mb-2">🗣️ {t(lang, "language")}</h3>
+      <section className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+        <h3 className="text-sm font-semibold text-slate-200 mb-2">🗣️ {t(lang, "language")}</h3>
         <div className="flex gap-2">
           {LANGS.map((l) => (
             <button
               key={l.id}
               onClick={() => setLang(l.id)}
               className={`rounded-full px-4 py-1.5 text-sm border ${
-                lang === l.id ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-700"
+                lang === l.id ? "bg-cyan-600 text-white border-cyan-500" : "bg-[#132544] border-[#24457A] text-slate-300"
               }`}
             >
               {l.label}
@@ -78,10 +78,10 @@ export default function SettingsPanel({
       </section>
 
       {/* home port */}
-      <section className="rounded-lg border bg-white p-4">
-        <h3 className="text-sm font-semibold mb-2">⚓ {t(lang, "home_port")}</h3>
+      <section className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+        <h3 className="text-sm font-semibold text-slate-200 mb-2">⚓ {t(lang, "home_port")}</h3>
         <select
-          className="border rounded px-3 py-2 text-sm w-full"
+          className="bg-[#0A1628] border border-[#24457A] text-slate-200 rounded px-3 py-2 text-sm w-full"
           value={zone.name}
           onChange={(e) => {
             const z = INDIAN_COASTAL_ZONES.find((x) => x.name === e.target.value);
@@ -100,8 +100,8 @@ export default function SettingsPanel({
       </section>
 
       {/* GFW deep data toggle */}
-      <section className="rounded-lg border bg-white p-4">
-        <h3 className="text-sm font-semibold mb-2">🚢 {t(lang, "gfw_title")}</h3>
+      <section className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+        <h3 className="text-sm font-semibold text-slate-200 mb-2">🚢 {t(lang, "gfw_title")}</h3>
         <label className="flex items-start gap-2 cursor-pointer">
           <input
             type="checkbox"
@@ -112,7 +112,7 @@ export default function SettingsPanel({
               setGfwDeep(e.target.checked);
             }}
           />
-          <span className="text-sm text-slate-700">{t(lang, "gfw_toggle")}</span>
+          <span className="text-sm text-slate-300">{t(lang, "gfw_toggle")}</span>
         </label>
         <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
           {health && (health as any).credentials?.gfw_token_configured === false
@@ -124,29 +124,29 @@ export default function SettingsPanel({
       </section>
 
       {/* system status / data freshness */}
-      <section className="rounded-lg border bg-white p-4">
-        <h3 className="text-sm font-semibold mb-2">📊 {t(lang, "data_freshness")}</h3>
+      <section className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+        <h3 className="text-sm font-semibold text-slate-200 mb-2">📊 {t(lang, "data_freshness")}</h3>
         {!health ? (
-          <p className="text-sm text-red-600">backend unreachable on /api/v1/health</p>
+          <p className="text-sm text-red-400">backend unreachable on /api/v1/health</p>
         ) : (
           <div className="text-xs space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-slate-600">{t(lang, "server")}:</span>
-              <span className={health.status === "ok" ? "text-green-700" : "text-red-600"}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-slate-400">{t(lang, "server")}:</span>
+              <span className={health.status === "ok" ? "text-emerald-300" : "text-red-400"}>
                 {health.status} · v{health.version}
               </span>
-              <span className="text-slate-400">GFW token: {health.gfw_token_configured ? "✅" : "not set (.env)"}</span>
+              <span className="text-slate-500">GFW token: {health.gfw_token_configured ? "✅" : "not set (.env)"}</span>
             </div>
             <div>
-              <span className="font-semibold text-slate-600">{t(lang, "ws_status")}:</span>{" "}
-              <span className="text-slate-600">{wsState}</span>
+              <span className="font-semibold text-slate-400">{t(lang, "ws_status")}:</span>{" "}
+              <span className="text-slate-300">{wsState}</span>
             </div>
             <div>
-              <div className="font-semibold text-slate-600 mb-1">{t(lang, "backend_sources")}:</div>
+              <div className="font-semibold text-slate-400 mb-1">{t(lang, "backend_sources")}:</div>
               <ul className="space-y-0.5">
                 {Object.entries(health.data_sources ?? {}).map(([k, v]) => (
-                  <li key={k} className="text-slate-600">
-                    <span className="font-mono">{k}</span>: {v}
+                  <li key={k} className="text-slate-400">
+                    <span className="font-mono text-cyan-300/80">{k}</span>: {v}
                   </li>
                 ))}
               </ul>
@@ -168,30 +168,30 @@ export default function SettingsPanel({
       </section>
 
       {/* feedback */}
-      <section className="rounded-lg border bg-white p-4">
-        <h3 className="text-sm font-semibold mb-2">💬 {t(lang, "feedback_title")}</h3>
+      <section className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+        <h3 className="text-sm font-semibold text-slate-200 mb-2">💬 {t(lang, "feedback_title")}</h3>
         {fbDone ? (
-          <p className="text-sm text-green-700">{t(lang, "feedback_thanks")}</p>
+          <p className="text-sm text-emerald-300">{t(lang, "feedback_thanks")}</p>
         ) : (
           <div className="space-y-2">
             <textarea
               value={fb}
               onChange={(e) => setFb(e.target.value)}
-              className="w-full border rounded px-3 py-2 text-sm"
+              className="w-full bg-[#0A1628] border border-[#24457A] text-slate-200 placeholder:text-slate-600 rounded px-3 py-2 text-sm"
               rows={2}
               placeholder={lang === "hi" ? "टिप्पणी (वैकल्पिक)…" : "comment (optional)…"}
             />
             <div className="flex gap-2">
-              <button onClick={() => sendFeedback(true)} className="bg-green-600 text-white rounded px-4 py-1.5 text-sm">👍 Yes</button>
-              <button onClick={() => sendFeedback(false)} className="bg-slate-500 text-white rounded px-4 py-1.5 text-sm">👎 Not really</button>
+              <button onClick={() => sendFeedback(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white rounded px-4 py-1.5 text-sm">👍 Yes</button>
+              <button onClick={() => sendFeedback(false)} className="bg-slate-600 hover:bg-slate-500 text-white rounded px-4 py-1.5 text-sm">👎 Not really</button>
             </div>
-            <p className="text-[10px] text-slate-400">Feedback is saved to data/feedback.jsonl on the server.</p>
+            <p className="text-[10px] text-slate-500">Feedback is saved to data/feedback.jsonl on the server.</p>
           </div>
         )}
       </section>
 
-      <section className="rounded-lg border bg-white p-4 text-xs text-slate-500">
-        <h3 className="text-sm font-semibold text-slate-700 mb-1">⚖️ {t(lang, "disclaimer_title")}</h3>
+      <section className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4 text-xs text-slate-400">
+        <h3 className="text-sm font-semibold text-slate-200 mb-1">⚖️ {t(lang, "disclaimer_title")}</h3>
         {lang === "hi"
           ? "ORCA एक सलाहकार सहायक है — समुद्र में उतरने का अंतिम फैसला नाव के मालिक का है। रवाना होने से पहले नवीनतम INCOIS/IMD बुलेटिन ज़रूर देखें।"
           : "ORCA is a decision-support aid — the final call at sea always rests with the skipper. Cross-check with the latest INCOIS / IMD bulletin before sailing."}

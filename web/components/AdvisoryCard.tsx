@@ -12,9 +12,9 @@ const VERDICT_STYLE: Record<string, { bg: string; ring: string; label_en: string
 
 function Tile({ label, value, sub, warn }: { label: string; value: string; sub?: string; warn?: boolean }) {
   return (
-    <div className={`rounded-lg border p-3 bg-white ${warn ? "border-amber-400" : "border-slate-200"}`}>
+    <div className={`rounded-lg border p-3 bg-[#0F1F3A] ${warn ? "border-amber-500/60 shadow-[0_0_12px_#f59e0b22]" : "border-[#1E3356]"}`}>
       <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`text-lg font-bold ${warn ? "text-amber-600" : "text-slate-800"}`}>{value}</div>
+      <div className={`text-lg font-bold ${warn ? "text-amber-300" : "text-slate-100"}`}>{value}</div>
       {sub && <div className="text-[11px] text-slate-500">{sub}</div>}
     </div>
   );
@@ -54,11 +54,11 @@ export default function AdvisoryCard({
 
   if (loading && !advisory) {
     return (
-      <div className="h-full flex items-center justify-center text-slate-500">
+      <div className="h-full flex items-center justify-center text-slate-400 bg-[#0A1628]">
         <div className="text-center">
           <div className="text-3xl mb-2 animate-bounce">🌊</div>
-          <p className="text-sm">{t(lang, "loading")}</p>
-          <p className="text-xs mt-1 opacity-70">10 agents · 6 live sources weave into one verdict</p>
+          <p className="text-sm text-slate-300">{t(lang, "loading")}</p>
+          <p className="text-xs mt-1 text-slate-500">10 agents · 6 live sources weave into one verdict</p>
         </div>
       </div>
     );
@@ -66,11 +66,11 @@ export default function AdvisoryCard({
 
   if (error) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center bg-[#0A1628]">
         <div className="text-center max-w-sm">
           <div className="text-3xl mb-2">🔌</div>
-          <p className="text-sm text-slate-600 mb-3">{error}</p>
-          <button onClick={load} className="bg-blue-600 text-white rounded px-4 py-2 text-sm">
+          <p className="text-sm text-slate-400 mb-3">{error}</p>
+          <button onClick={load} className="bg-cyan-600 hover:bg-cyan-500 text-white rounded px-4 py-2 text-sm">
             {t(lang, "refresh")}
           </button>
         </div>
@@ -85,7 +85,7 @@ export default function AdvisoryCard({
   const sw = advisory.safe_window;
 
   return (
-    <div className="h-full overflow-y-auto bg-slate-100 p-4 space-y-4">
+    <div className="h-full overflow-y-auto bg-[#0A1628] p-4 space-y-4">
       {/* verdict banner: icon + shape + colour (readable by anyone) */}
       <div className={`rounded-xl ${st.bg} text-white p-5 shadow-lg ring-4 ${st.ring}`}>
         <div className="flex items-center justify-between">
@@ -124,14 +124,14 @@ export default function AdvisoryCard({
       </div>
 
       {/* safe window */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="text-sm font-semibold mb-1">⏱️ {t(lang, "safe_window")}</h3>
+      <div className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+        <h3 className="text-sm font-semibold text-slate-200 mb-1">⏱️ {t(lang, "safe_window")}</h3>
         {sw.found ? (
-          <p className="text-sm text-slate-700">
-            <span className="font-mono font-semibold">{sw.from_utc?.slice(5, 16).replace("T", " ")}</span>
+          <p className="text-sm text-slate-300">
+            <span className="font-mono font-semibold text-cyan-300">{sw.from_utc?.slice(5, 16).replace("T", " ")}</span>
             {" → "}
-            <span className="font-mono font-semibold">{sw.to_utc?.slice(5, 16).replace("T", " ")}</span> UTC
-            <span className="ml-2 text-xs bg-green-100 text-green-800 rounded px-2 py-0.5">{sw.hours} h</span>
+            <span className="font-mono font-semibold text-cyan-300">{sw.to_utc?.slice(5, 16).replace("T", " ")}</span> UTC
+            <span className="ml-2 text-xs bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 rounded px-2 py-0.5">{sw.hours} h</span>
           </p>
         ) : (
           <p className="text-sm text-slate-500">{t(lang, "no_safe_window")} {sw.note ? `(${sw.note})` : ""}</p>
@@ -139,28 +139,28 @@ export default function AdvisoryCard({
       </div>
 
       {/* reasons */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="text-sm font-semibold mb-2">🔎 {t(lang, "reasons")}</h3>
+      <div className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+        <h3 className="text-sm font-semibold text-slate-200 mb-2">🔎 {t(lang, "reasons")}</h3>
         <ul className="space-y-1.5">
           {advisory.reasons.map((r, i) => (
             <li key={i} className="text-sm flex gap-2">
               <span className={
-                r.severity === "no_go" ? "text-red-600" :
-                r.severity === "caution" ? "text-amber-600" : "text-slate-400"
+                r.severity === "no_go" ? "text-red-400" :
+                r.severity === "caution" ? "text-amber-400" : "text-slate-500"
               }>
                 {r.severity === "no_go" ? "⛔" : r.severity === "caution" ? "⚠️" : "ℹ️"}
               </span>
-              <span className="text-slate-700">{r.msg}</span>
+              <span className="text-slate-300">{r.msg}</span>
             </li>
           ))}
         </ul>
       </div>
 
       {/* sources footer — full transparency */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4 text-xs text-slate-500 space-y-1">
-        <div><span className="font-semibold text-slate-600">{t(lang, "sources")}:</span> {advisory.sources.join(" · ")}</div>
+      <div className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4 text-xs text-slate-500 space-y-1">
+        <div><span className="font-semibold text-slate-400">{t(lang, "sources")}:</span> {advisory.sources.join(" · ")}</div>
         {advisory.sources_failed.length > 0 && (
-          <div><span className="font-semibold text-slate-600">{t(lang, "failed_sources")}:</span> {advisory.sources_failed.join(" · ")}</div>
+          <div><span className="font-semibold text-slate-400">{t(lang, "failed_sources")}:</span> {advisory.sources_failed.join(" · ")}</div>
         )}
         <div className="italic">{advisory.disclaimer}</div>
         <div>{t(lang, "cyclone")}: {v.cyclone_note}</div>

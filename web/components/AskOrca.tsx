@@ -102,13 +102,13 @@ export default function AskOrca({
   return (
     <div className="h-full flex flex-col">
       {/* header */}
-      <div className="px-4 py-3 bg-slate-900 text-white">
+      <div className="px-4 py-3 bg-[#0E1D36] text-slate-100 border-b border-[#1E3356]">
         <h2 className="font-bold">{t(lang, "ask_title")}</h2>
-        <p className="text-xs opacity-75">{t(lang, "ask_hint")}</p>
+        <p className="text-xs text-slate-500">{t(lang, "ask_hint")}</p>
       </div>
 
       {/* messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#0A1628]">
         {messages.length === 0 && !busy && (
           <div className="text-center text-sm text-slate-500 mt-8">
             <div className="text-4xl mb-3">🐋</div>
@@ -125,20 +125,20 @@ export default function AskOrca({
             <div
               className={
                 m.role === "user"
-                  ? "inline-block bg-blue-600 text-white rounded-2xl rounded-br-sm px-4 py-2 max-w-[85%] text-left"
-                  : "inline-block bg-white border rounded-2xl rounded-bl-sm px-4 py-3 max-w-[95%] shadow-sm"
+                  ? "inline-block bg-cyan-700 text-white rounded-2xl rounded-br-sm px-4 py-2 max-w-[85%] text-left"
+                  : "inline-block bg-[#0F1F3A] border border-[#1E3356] rounded-2xl rounded-bl-sm px-4 py-3 max-w-[95%] shadow-lg"
               }
             >
               {m.role === "orca" && m.steps && m.steps.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-2">
                   {m.steps.map((s, j) => (
-                    <span key={j} className="text-[10px] bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-slate-600">
+                    <span key={j} className="text-[10px] bg-[#132544] border border-[#24457A] rounded-full px-2 py-0.5 text-slate-400">
                       {s.summary}
                     </span>
                   ))}
                 </div>
               )}
-              <p className="whitespace-pre-wrap text-sm">{m.text}</p>
+              <p className="whitespace-pre-wrap text-sm text-slate-100">{m.text}</p>
               {m.advisory && (
                 <div className="mt-2 flex items-center gap-2 text-xs">
                   <span className={`px-2 py-1 rounded font-bold text-white ${
@@ -146,13 +146,13 @@ export default function AskOrca({
                     m.advisory.verdict === "caution" ? "bg-amber-500" : "bg-red-600"}`}>
                     {m.advisory.icon} {m.advisory.verdict === "go" ? "GO" : m.advisory.verdict === "caution" ? "CAUTION" : "NO-GO"}
                   </span>
-                  <span className="text-slate-500">
+                  <span className="text-slate-400">
                     {lang === "hi" ? m.advisory.headline_hi : m.advisory.headline_en}
                   </span>
                 </div>
               )}
               {m.usedFallback && (
-                <div className="mt-1 text-[10px] text-slate-400">
+                <div className="mt-1 text-[10px] text-slate-600">
                   answered via HTTP (same agents, trace replayed)
                 </div>
               )}
@@ -163,23 +163,23 @@ export default function AskOrca({
         {/* live trace while running */}
         {busy && (
           <div className="text-left">
-            <div className="inline-block bg-white border rounded-2xl rounded-bl-sm px-4 py-3 max-w-[95%] shadow-sm">
+            <div className="inline-block bg-[#0F1F3A] border border-[#1E3356] rounded-2xl rounded-bl-sm px-4 py-3 max-w-[95%] shadow-lg">
               <div className="flex flex-wrap gap-1 mb-2">
                 {liveSteps.map((s, j) => (
-                  <span key={j} className="text-[10px] bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5 text-slate-700 animate-pulse">
+                  <span key={j} className="text-[10px] bg-[#123055] border border-cyan-500/40 rounded-full px-2 py-0.5 text-cyan-200 animate-pulse">
                     {s.summary}
                   </span>
                 ))}
                 {liveSteps.length === 0 && (
-                  <span className="text-[10px] bg-slate-100 rounded-full px-2 py-0.5 text-slate-500 animate-pulse">
+                  <span className="text-[10px] bg-[#132544] rounded-full px-2 py-0.5 text-slate-500 animate-pulse">
                     {status || "connecting…"}
                   </span>
                 )}
               </div>
               {liveTokens ? (
-                <p className="whitespace-pre-wrap text-sm">{liveTokens}▌</p>
+                <p className="whitespace-pre-wrap text-sm text-slate-100">{liveTokens}▌</p>
               ) : (
-                <p className="text-xs text-slate-400">{status}</p>
+                <p className="text-xs text-slate-500">{status}</p>
               )}
             </div>
           </div>
@@ -187,14 +187,14 @@ export default function AskOrca({
       </div>
 
       {/* quick prompts + input */}
-      <div className="border-t bg-white p-3 space-y-2">
+      <div className="border-t border-[#1E3356] bg-[#0E1D36] p-3 space-y-2">
         <div className="flex flex-wrap gap-2">
           {quick.map((q) => (
             <button
               key={q}
               disabled={busy}
               onClick={() => ask(q)}
-              className="text-xs bg-slate-100 hover:bg-slate-200 border rounded-full px-3 py-1 disabled:opacity-50"
+              className="text-xs bg-[#132544] hover:bg-[#1A355E] border border-[#24457A] text-slate-300 rounded-full px-3 py-1 disabled:opacity-50"
             >
               {q}
             </button>
@@ -202,7 +202,7 @@ export default function AskOrca({
         </div>
         <div className="flex gap-2">
           <input
-            className="flex-1 border rounded-lg px-3 py-2 text-sm"
+            className="flex-1 bg-[#0A1628] border border-[#24457A] text-slate-100 placeholder:text-slate-600 rounded-lg px-3 py-2 text-sm outline-none focus:border-cyan-500/60"
             placeholder={t(lang, "ask_placeholder")}
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -212,12 +212,12 @@ export default function AskOrca({
           <button
             onClick={() => ask(input)}
             disabled={busy || !input.trim()}
-            className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50"
+            className="bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50"
           >
             {t(lang, "send")}
           </button>
         </div>
-        <p className="text-[10px] text-slate-400">{t(lang, "ask_mic_note")}</p>
+        <p className="text-[10px] text-slate-600">{t(lang, "ask_mic_note")}</p>
       </div>
     </div>
   );
