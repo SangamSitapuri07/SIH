@@ -189,8 +189,9 @@ const TILE_SOURCES: { name: string; viaApi: boolean; url: (z: number, x: number,
 
 function useMapTexture(lat: number, lon: number, radiusDeg: number, attempt: number) {
   const [state, setState] = useState<{
-    tex: THREE.Texture | null; status: "loading" | "ok" | "fail"; via?: string; reasons: string[];
-  }>({ tex: null, status: "loading", reasons: [] });
+    tex: THREE.Texture | null; status: "loading" | "ok" | "fail"; via?: string;
+    reasons: string[]; done: number; total: number;
+  }>({ tex: null, status: "loading", reasons: [], done: 0, total: 0 });
   useEffect(() => {
     let alive = true;
     const ZOOM = 10; // ±1.2° ≈ 7×8 tiles — coastline sharp + city labels readable
@@ -210,32 +211,51 @@ function useMapTexture(lat: number, lon: number, radiusDeg: number, attempt: num
       for (let ty = ty0; ty <= ty1; ty++) coords.push([tx, ty]);
 
     const trySource = async (src: (typeof TILE_SOURCES)[number], why: (msg: string) => void): Promise<THREE.Texture | null> => {
-      const results = await withTimeout(
-        fetchPool(coords, 5, ([tx, ty]) => tileToImg(src.url(ZOOM, tx, ty), src.viaApi)),
-        75000);  // zoom-10 tile count needs a bigger window on slow links;
-                 // both proxies cache, so every later click is instant
+      // PROGRESSIVE paint: every tile lands on the 1024² canvas the
+      // moment it arrives (drawn at its exact fractional position —
+      // the canvas clips the corner overflow), and the FIRST tile
+      // already flips the surface to map-mode. The map GROWS in front
+      // of the user (chip shows done/total) instead of popping in after
+      // a long invisible wait — "map implement nahi ho raha" was 50% a
+      // perception problem caused by all-or-nothing assembly.
+      const c2 = document.createElement("canvas");
+      c2.width = 1024; c2.height = 1024;
+      const g2 = c2.getContext("2d")!;
+      const tex = new THREE.CanvasTexture(c2);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      let painted = 0;
+      let sourceActive = true;
+      const paint = (img: HTMLImageElement, tx: number, ty: number) => {
+        if (!alive || !sourceActive) return;
+        const dx = ((tx * 256 - x0) / (x1 - x0)) * 1024;
+        const dy = ((ty * 256 - y0) / (y1 - y0)) * 1024;
+        g2.drawImage(img, dx, dy, (256 / (x1 - x0)) * 1024, (256 / (y1 - y0)) * 1024);
+        tex.needsUpdate = true;
+        painted++;
+        if (painted === 1 || painted % 4 === 0 || painted === coords.length) {
+          setState((s) => ({ tex, status: "ok", via: src.name, reasons: [], done: painted, total: coords.length }));
+        }
+      };
+      let results: PromiseSettledResult<HTMLImageElement>[];
+      try {
+        results = await withTimeout(
+          fetchPool(coords, 5, ([tx, ty]) =>
+            tileToImg(src.url(ZOOM, tx, ty), src.viaApi).then((img) => { paint(img, tx, ty); return img; })),
+          75000);  // zoom-10 tile count needs a bigger window on slow links;
+                   // both proxies cache, so every later click is instant
+      } finally {
+        // even on timeout: the still-in-flight pool workers must NOT keep
+        // painting this discarded texture and resurrect it as "ok"
+        sourceActive = false;
+      }
       const okCount = results.filter((r) => r.status === "fulfilled").length;
       if (okCount < results.length * 0.7) {
         const firstErr = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
         why(`${okCount}/${results.length} tiles (${firstErr ? String(firstErr.reason).slice(0, 120) : "?"})`);
         return null;
       }
-      const big = document.createElement("canvas");
-      big.width = (tx1 - tx0 + 1) * 256; big.height = (ty1 - ty0 + 1) * 256;
-      const g = big.getContext("2d")!;
-      results.forEach((r, i) => {
-        if (r.status !== "fulfilled") return;
-        const [tx, ty] = coords[i];
-        g.drawImage(r.value, (tx - tx0) * 256, (ty - ty0) * 256);
-      });
-      // crop the EXACT ±radius degree box → texture covers the world square exactly
-      const c2 = document.createElement("canvas");
-      c2.width = 1024; c2.height = 1024;
-      c2.getContext("2d")!.drawImage(
-        big, x0 - tx0 * 256, y0 - ty0 * 256, x1 - x0, y1 - y0, 0, 0, 1024, 1024);
-      const tex = new THREE.CanvasTexture(c2);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = 4;
+      if (alive) setState({ tex, status: "ok", via: src.name, reasons: [], done: painted, total: coords.length });
       return tex;
     };
 
@@ -245,14 +265,14 @@ function useMapTexture(lat: number, lon: number, radiusDeg: number, attempt: num
         try {
           const tex = await trySource(src, (m) => tried.push(`${src.name}: ${m}`));
           if (!alive) return;
-          if (tex) { setState({ tex, status: "ok", via: src.name, reasons: [] }); return; }
+          if (tex) return; // progressive paints already set the state
         } catch (e) {
           tried.push(`${src.name}: ${e instanceof Error ? e.message : e}`);
         }
         if (!alive) return;
       }
       console.warn("[Ocean3D] all tile sources failed:", tried.join(" | "));
-      if (alive) setState({ tex: null, status: "fail", reasons: tried });
+      if (alive) setState({ tex: null, status: "fail", reasons: tried, done: 0, total: 0 });
     })();
     return () => { alive = false; };
   }, [lat, lon, radiusDeg, attempt]);
@@ -712,7 +732,8 @@ export default function Ocean3D({
 }) {
   const s = useMemo(() => buildSampler(data.met.points), [data]);
   const [mapAttempt, setMapAttempt] = useState(0);
-  const { tex: mapTex, status: mapStatus, reasons: mapReasons, via: mapVia } = useMapTexture(
+  const { tex: mapTex, status: mapStatus, reasons: mapReasons, via: mapVia,
+    done: mapDone, total: mapTotal } = useMapTexture(
     data.center.lat, data.center.lon, data.radius_deg, mapAttempt);
   const hoverRef = useRef<HoverInfo | null>(null);
   const onSea = (x: number | null, z?: number) => {
@@ -797,7 +818,11 @@ export default function Ocean3D({
           <span className="surface-2 px-2.5 py-1 text-[10px] text-slate-400">🗺️ {lang === "hi" ? "asli map tiles aa rahi hain…" : "real map tiles loading…"}</span>
         )}
         {mapStatus === "ok" && mapVia && (
-          <span className="surface-2 px-2.5 py-1 text-[10px] text-emerald-300/80">🗺️ real map ✓ ({mapVia})</span>
+          <span className="surface-2 px-2.5 py-1 text-[10px] text-emerald-300 font-semibold">
+            {mapDone < mapTotal
+              ? `🗺️ ${lang === "hi" ? "asli OpenStreetMap aa raha hai" : "real OpenStreetMap arriving"}… ${mapDone}/${mapTotal}`
+              : `🗺️ ${lang === "hi" ? "ASLI OpenStreetMap चालू ✓" : "REAL OpenStreetMap ON ✓"} (${mapVia})`}
+          </span>
         )}
         {mapStatus === "fail" && (
           <div className="surface-2 px-2.5 py-1.5 text-[10px] text-amber-300 max-w-[280px] pointer-events-auto text-left">

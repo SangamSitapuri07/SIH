@@ -255,10 +255,14 @@ def zone_snapshot(
     if occci_fn is not None:
         jobs["occci"] = (occci_fn, (lat, lon, chl_date), {}, "ESA OC-CCI", 25.0)  # slow shared server
     if mosdac_fn is not None:
-        # ISRO live chain (login + search + granule download + extract) —
-        # own budget, fits inside the 110 s route deadline; same-day
-        # granule cache makes later clicks instant.
-        jobs["mosdac"] = (mosdac_fn, (lat, lon, chl_date), {}, "ISRO MOSDAC OCM-3", 75.0)
+        # ISRO live chain (login + search + granule download + extract).
+        # The chain paces ITSELF at JOB_BUDGET_SEC (75 s, stage-guarded)
+        # and always returns a stage-precise error; this outer cap is
+        # 9 s LOOSER so the gather never namelessly decapitates the
+        # chain milliseconds before it could speak (the bare "timeout
+        # after 75s" card the user saw even AFTER the stage-guard fix —
+        # chain budget == gather cap was an exact-tie race).
+        jobs["mosdac"] = (mosdac_fn, (lat, lon, chl_date), {}, "ISRO MOSDAC OCM-3", 84.0)
 
     if warm_extras:
         if noaa_fn is not None:
