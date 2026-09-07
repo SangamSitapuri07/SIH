@@ -110,6 +110,88 @@ _result_cache: dict[str, tuple[float, dict]] = {}
 _cache_lock = threading.Lock()
 _GFW_CACHE_TTL_SEC = 6 * 3600  # 6 h
 
+# ── Persistent state (survives backend restarts) ─────────────────────
+# Root cause of the "429 keeps coming back even after our 120 s pause"
+# loop (2026-09): both the success cache AND the 429 cooldown lived in
+# process memory only — every backend restart wiped both, the prewarm
+# immediately re-burned calls into an already-angry server, and the
+# loop never escaped. State now lives in data/gfw_cache.json:
+#   entries            → success cache (same 6 h TTL, restart-proof)
+#   rate_limited_until → the 429 cooldown timestamp (restart-proof)
+#   last_headers       → GFW's x-ratelimit-* headers from the last
+#                        response, so we can TELL daily-quota 429s
+#                        (remaining=0, reset in N hours) apart from
+#                        burst/per-minute 429s instead of guessing.
+_CACHE_FILE = Path(__file__).resolve().parent.parent / "data" / "gfw_cache.json"
+_disk_state: dict | None = None
+
+# Rate-limit headers GFW documents (May 2026 V3 release notes)
+_RL_HEADER_KEYS = (
+    "x-ratelimit-daily-limit-requests",
+    "x-ratelimit-daily-remaining-requests",
+    "x-ratelimit-daily-current-usage",
+    "x-ratelimit-daily-reset-hours",
+    "x-ratelimit-monthly-remaining-requests",
+    "x-ratelimit-monthly-reset-days",
+    "retry-after",
+)
+# Last headers seen on ANY GFW response (success or error) — self-test uses
+_LAST_HEADERS: dict[str, str] = {}
+
+
+def _load_state() -> dict:
+    """Lazy-load the persistent cache/cooldown file (once per process)."""
+    global _disk_state
+    if _disk_state is None:
+        state: dict = {"entries": {}, "rate_limited_until": 0.0, "last_headers": {}}
+        try:
+            if _CACHE_FILE.exists():
+                raw = json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    for k in state:
+                        if isinstance(raw.get(k), type(state[k])):
+                            state[k] = raw[k]
+            # prune expired entries
+            now = time.time()
+            state["entries"] = {
+                k: v for k, v in state["entries"].items()
+                if isinstance(v, list) and len(v) == 2 and float(v[0]) > now
+            }
+        except Exception:
+            pass  # corrupt/absent file → start clean, never crash the app
+        _disk_state = state
+    return _disk_state
+
+
+def _save_state() -> None:
+    """Atomically persist state (write-temp-then-replace)."""
+    state = _load_state()
+    try:
+        entries = state.get("entries", {})
+        if len(entries) > 150:  # keep the file bounded — newest wins
+            entries = dict(sorted(entries.items(), key=lambda kv: -kv[1][0])[:150])
+            state["entries"] = entries
+        _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _CACHE_FILE.with_name(_CACHE_FILE.name + ".tmp")
+        tmp.write_text(json.dumps(state), encoding="utf-8")
+        tmp.replace(_CACHE_FILE)
+    except Exception:
+        pass  # cache is an optimisation — a failed write must never break a fetch
+
+
+def _harvest_rl_headers(headers) -> dict[str, str]:
+    """Pull the GFW rate-limit headers off a response (any status)."""
+    out: dict[str, str] = {}
+    try:
+        if headers:
+            for k in _RL_HEADER_KEYS:
+                v = headers.get(k)
+                if v is not None:
+                    out[k] = str(v)
+    except Exception:
+        pass
+    return out
+
 # Burst throttle: GFW's free tier also rate-limits PER MINUTE. Serialising
 # real HTTP calls with a small gap makes the startup prewarm + rapid map
 # clicks structurally unable to trip the limiter. (Root cause of the
@@ -129,20 +211,43 @@ def _throttle() -> None:
 
 
 def _rate_limit_remaining() -> float:
-    """Seconds of 429-cooldown left (0.0 = not rate-limited)."""
-    return max(0.0, _RATE_LIMIT_UNTIL - time.time())
+    """Seconds of 429-cooldown left (0.0 = not rate-limited).
+
+    Reads the persisted timestamp too — a backend restart must NOT
+    magically lift a cooldown the server already imposed.
+    """
+    st = _load_state()
+    until = max(_RATE_LIMIT_UNTIL, float(st.get("rate_limited_until") or 0.0))
+    return max(0.0, until - time.time())
 
 
 def _note_429(err: urllib.error.HTTPError) -> int:
-    """Record a 429 cooldown; returns the pause length in seconds."""
+    """Record a 429 cooldown; returns the pause length in seconds.
+
+    Prefers GFW's own guidance over our default: Retry-After first, then
+    x-ratelimit-daily-reset-hours (the daily-quota block — GFW blocks for
+    ~24h once the daily cap is exhausted; a 120 s pause would just mean
+    429 → pause 2 min → 429 forever). Persisted so restarts can't reset it.
+    """
     global _RATE_LIMIT_UNTIL
     retry_after = None
+    reset_hours = None
     try:
         retry_after = err.headers.get("Retry-After") if err.headers else None
+        reset_hours = err.headers.get("x-ratelimit-daily-reset-hours") if err.headers else None
     except Exception:
-        retry_after = None
-    wait = int(str(retry_after)) if retry_after and str(retry_after).isdigit() else 120
+        pass
+    wait = 0
+    if retry_after and str(retry_after).isdigit():
+        wait = int(str(retry_after))
+    elif reset_hours and str(reset_hours).replace(".", "", 1).isdigit() and float(reset_hours) > 0:
+        wait = int(float(reset_hours) * 3600)
+    if wait <= 0:
+        wait = 120
     _RATE_LIMIT_UNTIL = time.time() + wait
+    st = _load_state()
+    st["rate_limited_until"] = _RATE_LIMIT_UNTIL
+    _save_state()
     return wait
 
 
@@ -151,6 +256,11 @@ def _cache_get(key: str) -> dict | None:
         ent = _result_cache.get(key)
         if ent is not None and ent[0] > time.time():
             return ent[1]
+        # fall back to the restart-proof disk cache
+        dentry = _load_state().get("entries", {}).get(key)
+        if dentry and float(dentry[0]) > time.time():
+            _result_cache[key] = (float(dentry[0]), dentry[1])
+            return dentry[1]
     return None
 
 
@@ -158,8 +268,12 @@ def _cache_put_success(key: str, value: dict) -> None:
     """Cache ONLY successful responses — never cache an error/quota dict."""
     if not isinstance(value, dict) or "error" in value:
         return
+    expires = time.time() + _GFW_CACHE_TTL_SEC
     with _cache_lock:
-        _result_cache[key] = (time.time() + _GFW_CACHE_TTL_SEC, value)
+        _result_cache[key] = (expires, value)
+        st = _load_state()
+        st.setdefault("entries", {})[key] = [expires, value]
+        _save_state()
 
 
 def _clamp_date_range(start_date: str, end_date: str) -> tuple[str, str]:
@@ -204,10 +318,46 @@ def _make_request(url: str, tok: str, method: str = "GET",
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
+        global _LAST_HEADERS
+        _LAST_HEADERS = _harvest_rl_headers(resp.headers)
+        if _LAST_HEADERS:  # remember quota state across restarts
+            st = _load_state()
+            st["last_headers"] = _LAST_HEADERS
+            _save_state()
         raw = resp.read()
         if raw[:2] == b"\x1f\x8b":  # gzip magic number
             raw = gzip.decompress(raw)
         return json.loads(raw.decode("utf-8"))
+
+
+def _quota_explanation() -> str:
+    """Explain WHY a 429 happened using GFW's own rate-limit headers
+    (from this 429 or the last response we saw), instead of guessing."""
+    hdrs = _LAST_HEADERS or _load_state().get("last_headers", {}) or {}
+    remaining = hdrs.get("x-ratelimit-daily-remaining-requests")
+    usage = hdrs.get("x-ratelimit-daily-current-usage")
+    reset = hdrs.get("x-ratelimit-daily-reset-hours")
+    if remaining is not None or reset is not None:
+        quota_line = f"daily remaining={remaining}, today's usage={usage}"
+        if reset and str(reset) not in ("0", "0.0"):
+            return (
+                f"GFW's own headers say DAILY quota exhausted ({quota_line}; "
+                f" resets in ~{reset}h). This is shared across ALL your GFW "
+                f"tokens — the pause below matches their reset clock."
+            )
+        if remaining and str(remaining).isdigit() and int(remaining) <= 0:
+            return (
+                f"GFW's headers say DAILY quota exhausted ({quota_line}) — "
+                f"blocked until the daily reset (~24h)."
+            )
+        return (
+            f"Burst/per-minute limiting, NOT the daily cap — GFW's headers "
+            f"report {quota_line}. A short pause fixes this."
+        )
+    return (
+        "No rate-limit headers came with the 429 — could be GFW's burst "
+        "limit or a shared-token quota burn from another app/script."
+    )
 
 
 def get_fishing_effort(
@@ -387,12 +537,14 @@ def get_fishing_effort(
         except Exception:
             pass
         if e.code == 429:
+            global _LAST_HEADERS  # noqa: F824
+            _LAST_HEADERS = _harvest_rl_headers(getattr(e, "headers", None))
             wait = _note_429(e)
             return {
                 "error": (
-                    f"GFW free-tier quota reached (HTTP 429) — all GFW calls "
-                    f"auto-paused for {wait}s. Not a token problem; the last "
-                    f"good responses keep coming from the 6h cache."
+                    f"GFW answered HTTP 429 — {_quota_explanation()} "
+                    f"All GFW calls auto-paused for {wait}s. Not a token "
+                    f"problem; cached good responses keep being served."
                 ),
                 "source": "GFW",
                 "rate_limited": True,
@@ -544,11 +696,13 @@ def get_fishing_vessels_in_region(
         except Exception:
             pass
         if e.code == 429:
+            global _LAST_HEADERS  # noqa: F824
+            _LAST_HEADERS = _harvest_rl_headers(getattr(e, "headers", None))
             wait = _note_429(e)
             return {
                 "error": (
-                    f"GFW free-tier quota reached (HTTP 429) — all GFW calls "
-                    f"auto-paused for {wait}s. Not a token problem."
+                    f"GFW answered HTTP 429 — {_quota_explanation()} "
+                    f"All GFW calls auto-paused for {wait}s. Not a token problem."
                 ),
                 "source": "GFW",
                 "rate_limited": True,
@@ -605,6 +759,17 @@ def _selftest() -> int:
         return 1
     print(f"[GFW self-test] ✅ effort: {effort.get('hours')} fishing hours, "
           f"{effort.get('vessel_ids')} vessels in 30 days")
+
+    # Always show GFW's own quota counters — GFW sends them on every response
+    rl = _LAST_HEADERS or _load_state().get("last_headers", {})
+    if rl:
+        print(f"[GFW self-test] quota (GFW's headers): "
+              f"daily remaining={rl.get('x-ratelimit-daily-remaining-requests', '?')}, "
+              f"today used={rl.get('x-ratelimit-daily-current-usage', '?')}, "
+              f"monthly remaining={rl.get('x-ratelimit-monthly-remaining-requests', '?')}")
+    else:
+        print("[GFW self-test] quota: no x-ratelimit-* headers sent by GFW this call "
+              "(they are sent post-May-2026; absence is not an error)")
 
     if "--debug" in sys.argv:
         print("[GFW self-test] ── RAW effort response (token never shown) ──")
