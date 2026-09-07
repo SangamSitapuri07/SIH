@@ -211,9 +211,17 @@ def _request_with_burst_retry(url: str, tok: str, method: str, body: dict | None
     a single angry minute doesn't turn into a failed source for the user.
 
     Daily-cap 429s are NOT retried — the server said "come back tomorrow".
+
+    Anti-pile-up (2026-09-07 night log): when the per-minute limiter is
+    angry, EVERY first attempt 429s. The old code gave each call its own
+    15-22 s in-band wait — with rapid map clicks that queued into minutes
+    of sleeps and pushed /reason past its 110 s deadline. Now each burst
+    429 is a "strike": strikes widen the inter-call gap for 5 minutes,
+    and at 3 strikes we skip the in-band retry and fail fast into the
+    honest auto-pause path instead of strangling every other source.
     """
     try:
-        return _make_request(url, tok, method, body, timeout)
+        data = _make_request(url, tok, method, body, timeout)
     except urllib.error.HTTPError as e:
         global _LAST_HEADERS
         _LAST_HEADERS = _harvest_rl_headers(getattr(e, "headers", None)) or _LAST_HEADERS
@@ -225,11 +233,21 @@ def _request_with_burst_retry(url: str, tok: str, method: str, body: dict | None
             daily_ok = False
         if e.code != 429 or not daily_ok or retries <= 0:
             raise
+        strikes = _note_burst_strike()
+        if strikes >= _BURST_MAX_STRIKES:
+            print(f"[GFW] burst limiter still angry ({strikes} strikes in a row) — "
+                  "failing fast into the shared cooldown instead of sleeping again",
+                  file=sys.stderr)
+            raise
         wait = min(_burst_wait_sec(e), 22.0)  # stay inside the job budget
-        print(f"[GFW] burst 429 with daily quota remaining — waiting {wait:.0f}s and retrying once",
+        print(f"[GFW] burst 429 (strike {strikes}) with daily quota remaining — "
+              f"waiting {wait:.0f}s and retrying once",
               file=sys.stderr)
         time.sleep(wait)
-        return _make_request(url, tok, method, body, timeout)
+        data = _make_request(url, tok, method, body, timeout)
+    # Any success means the burst window cleared — reset the strikes.
+    _reset_burst_strikes()
+    return data
 
 # Burst throttle: GFW's free tier also rate-limits PER MINUTE. Serialising
 # real HTTP calls with a small gap makes the startup prewarm + rapid map
@@ -239,11 +257,42 @@ def _request_with_burst_retry(url: str, tok: str, method: str, body: dict | None
 _MIN_CALL_GAP_SEC = 6.0  # bumped 4s→6s (2026-09-07): still saw burst 429s
 _last_call_ts = 0.0
 
+# Adaptive anti-pile-up state (see _request_with_burst_retry): while the
+# per-minute limiter is angry, the gap between GFW calls widens to give
+# GFW's burst window room to cool, and strikes decide when a call stops
+# paying for an in-band retry.
+_BURST_MAX_STRIKES = 3
+_BURST_STRIKES = 0
+_ADAPTIVE_GAP_SEC = 0.0
+_ADAPTIVE_GAP_UNTIL = 0.0
+
+
+def _note_burst_strike() -> int:
+    """Record one burst-429 strike; widen the inter-call gap for 5 min.
+    Returns the live strike count."""
+    global _BURST_STRIKES, _ADAPTIVE_GAP_SEC, _ADAPTIVE_GAP_UNTIL
+    with _cache_lock:
+        _BURST_STRIKES += 1
+        _ADAPTIVE_GAP_SEC = min(30.0, 12.0 * _BURST_STRIKES)  # 12 s, 24 s, 30 s cap
+        _ADAPTIVE_GAP_UNTIL = time.time() + 300.0
+        return _BURST_STRIKES
+
+
+def _reset_burst_strikes() -> None:
+    global _BURST_STRIKES
+    if _BURST_STRIKES:
+        with _cache_lock:
+            _BURST_STRIKES = 0
+
 
 def _throttle() -> None:
     global _last_call_ts
     with _cache_lock:
-        wait = _MIN_CALL_GAP_SEC - (time.time() - _last_call_ts)
+        gap = _MIN_CALL_GAP_SEC
+        now = time.time()
+        if now < _ADAPTIVE_GAP_UNTIL and _ADAPTIVE_GAP_SEC > gap:
+            gap = _ADAPTIVE_GAP_SEC  # burst window angry — space calls out
+        wait = gap - (now - _last_call_ts)
         if wait > 0:
             time.sleep(wait)
         _last_call_ts = time.time()

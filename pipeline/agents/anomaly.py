@@ -106,6 +106,28 @@ def _fetch_baseline(lat: float, lon: float, target_date: str, window_years: int 
     }
 
 
+def baseline_cached(lat: float, lon: float, target_date: str) -> dict:
+    """_fetch_baseline through the shared TTL cache — ONE ERA5 walk per
+    0.01° cell per day, shared by analyze() AND the zone-snapshot's
+    parallel warm-up job (same key), so the 10-agent run never pays the
+    3 archive calls serially after the gather. (Serial payment is what
+    pushed a cold /reason past its 110 s deadline on the 2026-09-07
+    night run — URLError×2 at the very end of the request.)
+
+    A real baseline keeps for 6 h (climatology changes ~never within a
+    day); a TOTAL failure (empty dict) only 10 min — a dead archive
+    minute must not poison the cell for hours, and the give-up-early
+    path makes an honest re-miss cheap.
+    """
+    from pipeline.ttlcache import cached
+    return cached(
+        f"anom:{lat:.2f},{lon:.2f}:{target_date}",
+        21_600,  # 6 h
+        lambda: _fetch_baseline(lat, lon, target_date, window_years=3),
+        ttl_for=lambda b: 21_600.0 if (b and b.get("baseline_sst_mean") is not None) else 600.0,
+    ) or {}
+
+
 def analyze(snap: dict[str, Any]) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     lat = snap.get("lat")
@@ -129,14 +151,9 @@ def analyze(snap: dict[str, Any]) -> dict[str, Any]:
     current_wave = snap.get("wave_max")
 
     try:
-        # Historical baseline for a point changes ~never within a day —
-        # cache it so repeat clicks don't re-walk 3 slow archive calls.
-        from pipeline.ttlcache import cached
-        baseline = cached(
-            f"anom:{lat:.2f},{lon:.2f}:{target_date}",
-            21_600,  # 6 h
-            lambda: _fetch_baseline(lat, lon, target_date, window_years=3),
-        )
+        # Shared cached helper — when the zone snapshot already warmed
+        # this key inside its parallel gather, this is an instant hit.
+        baseline = baseline_cached(lat, lon, target_date)
         if baseline is None:
             baseline = {}
     except urllib.error.HTTPError as e:

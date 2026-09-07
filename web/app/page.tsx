@@ -105,11 +105,18 @@ export default function Home() {
   const insightBusyRef = useRef(false);
   const pendingZoneRef = useRef<DemoZone | null>(null);
   const runIdRef = useRef(0);
+  // One silent auto-retry after a 504: the backend's timeout reply keeps
+  // computing in the background and lands in cache — asking again a few
+  // seconds later usually returns the full 10-agent board with no second
+  // click from the user ("1 button ke andar").
+  const autoRetriedKeyRef = useRef<string | null>(null);
+  const retryPendingForRunRef = useRef(0);
 
   // Latest click WINS: rapid clicks queue up and only the newest zone
   // gets analyzed next — no dropped clicks, no parallel agent-chains
   // strangling the network.
   const handleSelectZone = (z: DemoZone) => {
+    autoRetriedKeyRef.current = null; // a fresh click re-arms the auto-retry
     pendingZoneRef.current = z;
     setZone(z);
     setAdvisory(null); // stale until re-fetched
@@ -132,6 +139,20 @@ export default function Home() {
         const timedOut =
           err instanceof Error &&
           (err.name === "TimeoutError" || /timed out/i.test(err.message) || /API 504/.test(err.message));
+        const zoneKey = `${z.lat.toFixed(2)},${z.lon.toFixed(2)}`;
+        if (timedOut && autoRetriedKeyRef.current !== zoneKey) {
+          // Silent retry ONCE — the background compute has had ~9 s to
+          // finish and fill the caches, so this call is usually instant.
+          autoRetriedKeyRef.current = zoneKey;
+          retryPendingForRunRef.current = myId;
+          window.setTimeout(() => {
+            if (runIdRef.current !== myId || pendingZoneRef.current) return; // superseded
+            retryPendingForRunRef.current = 0;
+            pendingZoneRef.current = z;
+            runNextInsight();
+          }, 9000);
+          return; // spinner stays on; the honest card only shows if the retry also fails
+        }
         setInsight({
           zone: { lat: z.lat, lon: z.lon, date: new Date().toISOString().slice(0, 10) },
           agents: [],
@@ -155,8 +176,8 @@ export default function Home() {
         insightBusyRef.current = false;
         if (pendingZoneRef.current) {
           runNextInsight(); // a newer click was queued while we worked
-        } else if (runIdRef.current === myId) {
-          setInsightLoading(false);
+        } else if (runIdRef.current === myId && retryPendingForRunRef.current !== myId) {
+          setInsightLoading(false); // stays ON while the silent retry is pending
         }
       });
   };

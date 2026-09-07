@@ -27,6 +27,16 @@ def _mock_all(**overrides):
     orca_data._get_gfw_fleet = lambda: overrides.get(
         "gfw_fleet", lambda *a, **kw: {"error": "mock", "source": "GFW"}
     )
+    # Silent warmers (ERA5 baseline + today's weather) — stubbed so the
+    # offline suite never touches the real archive/weather endpoints.
+    # Their results are NOT snapshot fields, so the used/failed source
+    # counts below are unaffected.
+    orca_data._get_baseline = lambda: overrides.get(
+        "baseline", lambda *a, **kw: {}
+    )
+    orca_data._get_wx_summary = lambda: overrides.get(
+        "wx", lambda *a, **kw: {}
+    )
 
 
 def test_zone_snapshot_offline():
@@ -151,3 +161,89 @@ if __name__ == "__main__":
     test_pfz_score_no_data()
     test_safe_helper()
     print("\n🎉 All 8 orca_data tests passed!")
+
+
+def test_noaa_lag_analysis_from_parallel_job():
+    """Today's VIIRS product empty → the upfront PARALLEL 3-day-lag job
+    fills chlorophyll with zero extra wall-clock (no serial second fetch —
+    that serial tail helped push cold clicks past the /reason deadline)."""
+    calls: list[str] = []
+
+    def fake_noaa(lat, lon, d):
+        calls.append(d)
+        if d == "2026-08-15":
+            return {"error": "no product yet"}
+        return {"value": 0.7, "units": "mg m^-3", "source": "NOAA ERDDAP DINEOF"}
+
+    _mock_all(noaa=fake_noaa)
+    snap = orca_data.zone_snapshot(19.0, 72.8, "2026-08-15", include_gfw=False)
+    assert sorted(calls) == ["2026-08-12", "2026-08-15"], calls
+    assert snap["chlorophyll"] == 0.7
+    assert snap["chlorophyll_source"].startswith("NOAA")
+    assert snap["chlorophyll_date"] == "2026-08-12"
+    assert "satellite lag" in snap["chlorophyll_note"]
+    print("✅ 3-day-lag chlorophyll arrives via the parallel job")
+
+
+def test_warmers_fill_the_agent_cache_keys():
+    """The warm jobs must write the EXACT ttlcache keys the anomaly and
+    weather agents read — otherwise reason() pays serial network after
+    the gather (the 2026-09-07 /reason 504 root cause)."""
+    from pipeline import ttlcache
+    from pipeline.agents import anomaly as anomaly_mod
+    from pipeline.agents import weather as weather_mod
+
+    ttlcache.clear()
+    got = {"archive": 0}
+    orig_anom_fetch = anomaly_mod._fetch_baseline
+    orig_wx_fetch = weather_mod._fetch
+    try:
+        _mock_all()
+        # The snapshot must call the agents' REAL cached wrappers (they
+        # own the cache keys); only the network layer is stubbed.
+        orca_data._get_baseline = lambda: anomaly_mod.baseline_cached
+        orca_data._get_wx_summary = lambda: weather_mod.get_daily_summary
+        anomaly_mod._fetch_baseline = lambda *a, **kw: (
+            got.__setitem__("archive", got["archive"] + 1),
+            {"baseline_sst_mean": 28.1, "baseline_sst_n": 3, "baseline_wave_mean": 1.2},
+        )[1]
+        weather_mod._fetch = lambda *a, **kw: {
+            "daily": {"wind_speed_10m_max": [5.0]}, "timezone": "mock",
+        }
+
+        orca_data.zone_snapshot(19.0, 72.8, "2026-08-15", include_gfw=False)
+        stats = ttlcache.cache_stats()
+        assert "anom:19.00,72.80:2026-08-15" in stats, f"baseline not warmed: {sorted(stats)}"
+        assert "wx:19.00,72.80:2026-08-15" in stats, f"weather not warmed: {sorted(stats)}"
+
+        # The agent's own call afterwards must be a cache HIT — no second
+        # archive walk inside the serial 10-agent run.
+        r = anomaly_mod.analyze({"lat": 19.0, "lon": 72.8, "date": "2026-08-15", "sst_mean": 29.4})
+        assert got["archive"] == 1, f"archive walked {got['archive']} times (must be 1)"
+        assert any(f["type"] == "sst_anomaly" for f in r["findings"]), r["findings"]
+    finally:
+        anomaly_mod._fetch_baseline = orig_anom_fetch
+        weather_mod._fetch = orig_wx_fetch
+        ttlcache.clear()
+    print("✅ warmers fill the exact agent cache keys (reason() pays no serial fetch)")
+
+
+def test_grid_cells_skip_warmers():
+    """Grid sweeps (25+ cells) must NOT multiply archive/ERDDAP load —
+    warm_extras=False keeps the old polite conditional fallback."""
+    hits = {"climo": 0, "wx": 0, "noaa_calls": []}
+
+    def fake_noaa(lat, lon, d):
+        hits["noaa_calls"].append(d)
+        return {"value": 1.0, "units": "mg m^-3", "source": "NOAA ERDDAP DINEOF"}
+
+    _mock_all(
+        noaa=fake_noaa,
+        baseline=lambda *a, **kw: hits.__setitem__("climo", hits["climo"] + 1) or {},
+        wx=lambda *a, **kw: hits.__setitem__("wx", hits["wx"] + 1) or {},
+    )
+    snap = orca_data.zone_snapshot(19.0, 72.8, "2026-08-15", include_gfw=False, warm_extras=False)
+    assert hits["climo"] == 0 and hits["wx"] == 0
+    assert hits["noaa_calls"] == ["2026-08-15"]  # no upfront lag job for grid cells
+    assert snap["chlorophyll"] == 1.0
+    print("✅ grid cells keep the polite conditional fallback")

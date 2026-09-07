@@ -91,6 +91,20 @@ def _get_gfw_fleet():
     from pipeline import gfw
     return gfw.get_fishing_vessels_in_region
 
+def _get_baseline():
+    """Anomaly agent's cached ERA5 baseline walker. The snapshot warms
+    it INSIDE the parallel gather so the 10-agent run never pays the
+    3 archive calls serially afterwards (that serial tail pushed a cold
+    /reason past its 110 s deadline on the 2026-09-07 night log)."""
+    from pipeline.agents import anomaly
+    return anomaly.baseline_cached
+
+def _get_wx_summary():
+    """Weather agent's cached daily summary — same ttlcache key the
+    weather agent and the advisory read, so warming = instant 'hit'."""
+    from pipeline.agents import weather
+    return weather.get_daily_summary
+
 
 # Default date window for time-windowed sources (fishing, chlorophyll history)
 DEFAULT_WINDOW_DAYS = 30
@@ -164,11 +178,13 @@ def zone_snapshot(
     window_days: int = DEFAULT_WINDOW_DAYS,
     radius_deg: float = DEFAULT_RADIUS_DEG,
     include_gfw: bool = True,
+    warm_extras: bool = True,
 ) -> dict[str, Any]:
     """Build a unified ZoneSnapshot for a single lat/lon.
 
-    Fetches from NOAA, Open-Meteo, GFW (optional), and INCOIS in sequence.
-    Each source failure is non-fatal; the snapshot is always returned.
+    Fetches from NOAA, Open-Meteo, GFW (optional), and INCOIS, with all
+    sources running CONCURRENTLY. Each source failure is non-fatal; the
+    snapshot is always returned.
 
     Args:
         lat, lon: Center of the zone (decimal degrees).
@@ -178,6 +194,11 @@ def zone_snapshot(
         radius_deg: Bounding-box half-width for the GFW query.
         include_gfw: If False, skip the GFW call (useful for unit tests and
             for callers without a GFW token).
+        warm_extras: If True (single-point interactive clicks), the gather
+            also warms the shared agent caches (ERA5 baseline, today's
+            weather, NOAA 3-day-lag chlorophyll) so reason()/advisory()
+            pay no serial network afterwards. Grid cells pass False so a
+            25-cell sweep doesn't multiply archive/ERDDAP load.
 
     Returns:
         Dict with normalized fields (see module docstring).
@@ -191,6 +212,11 @@ def zone_snapshot(
     gfw_start = (date.fromisoformat(gfw_end) - timedelta(days=window_days)).isoformat()
     # NOAA/INCOIS use a recent date as the file index — use target_date as-is
     chl_date = target_date
+    # VIIRS chlorophyll runs on a ~3-day processing lag, so the ~3-day-old
+    # analysis file is what actually exists most days. Warmed UPFRONT in
+    # the parallel gather (not a serial second fetch after "today" comes
+    # back empty) — the fallback then costs zero wall-clock.
+    prev_chl_date = (date.fromisoformat(target_date) - timedelta(days=3)).isoformat()
 
     snap: dict[str, Any] = {
         "lat": lat,
@@ -233,6 +259,26 @@ def zone_snapshot(
         # own budget, fits inside the 110 s route deadline; same-day
         # granule cache makes later clicks instant.
         jobs["mosdac"] = (mosdac_fn, (lat, lon, chl_date), {}, "ISRO MOSDAC OCM-3", 75.0)
+
+    if warm_extras:
+        if noaa_fn is not None:
+            # Upfront 3-day-lag VIIRS analysis (see note by prev_chl_date).
+            jobs["noaa_prev"] = (
+                noaa_fn, (lat, lon, prev_chl_date), {}, "NOAA ERDDAP (3-day-lag analysis)",
+            )
+        # Silent warmers: results are NOT snapshot fields — they pre-fill
+        # the shared ttlcache under the exact keys the anomaly/weather
+        # agents (and the advisory) read, so the serial 10-agent run that
+        # follows the gather finds them warm. Never listed as
+        # used/failed sources: the agents report their own status.
+        try:
+            jobs["climo"] = (_get_baseline(), (lat, lon, target_date), {}, "ERA5 baseline", 28.0)
+        except ImportError:
+            pass
+        try:
+            jobs["wx_now"] = (_get_wx_summary(), (lat, lon, target_date), {}, "Open-Meteo weather", 14.0)
+        except ImportError:
+            pass
 
     # GFW runs INSIDE the same parallel gather (they're slow paid-report
     # POSTs — 35 s budget each) instead of a serial block after it.
@@ -277,12 +323,18 @@ def zone_snapshot(
     got_noaa = bool(chl and not err_noaa and isinstance(chl, dict) and chl.get("value") is not None)
     attempt_date = chl_date
     if not got_noaa and noaa_fn is not None:
-        attempt_date = (date.fromisoformat(target_date) - timedelta(days=3)).isoformat()
-        chl2, err2 = _safe(
-            noaa_fn, lat, lon, attempt_date,
-            default=None, label="NOAA ERDDAP",
-        )
-        if chl2 and not err2 and chl2.get("value") is not None:
+        attempt_date = prev_chl_date
+        if "noaa_prev" in results:
+            # Already fetched inside the parallel gather — free.
+            chl2, err2 = results["noaa_prev"]
+        else:
+            # Grid/warm_extras=False path: conditional serial fallback,
+            # so a 25-cell sweep stays polite with ERDDAP.
+            chl2, err2 = _safe(
+                noaa_fn, lat, lon, attempt_date,
+                default=None, label="NOAA ERDDAP",
+            )
+        if chl2 and not err2 and isinstance(chl2, dict) and chl2.get("value") is not None:
             chl = chl2
             got_noaa = True
         else:
@@ -482,6 +534,7 @@ def zone_snapshot_cached(
     radius_deg: float = DEFAULT_RADIUS_DEG,
     include_gfw: bool = True,
     ttl_sec: float = 600.0,
+    warm_extras: bool = True,
 ) -> dict[str, Any]:
     """zone_snapshot with a 10-minute cache per 0.05° cell.
 
@@ -490,6 +543,10 @@ def zone_snapshot_cached(
     multi-source fetch. Cached, the second caller gets an instant answer
     (which is what makes the 30-second demo flow possible). Cached
     values are immutable-by-convention — callers must not mutate.
+
+    warm_extras is intentionally NOT part of the cache key: the extra
+    jobs only pre-fill shared agent caches and replace an identical
+    serial fallback — the snapshot content is the same either way.
     """
     from pipeline.ttlcache import cached
     # Normalize: None and "today" must map to the SAME cache key or
@@ -500,6 +557,7 @@ def zone_snapshot_cached(
     key = f"snapshot:{lat:.2f}:{lon:.2f}:{target_date}:{include_gfw}:{radius_deg}"
     return cached(key, ttl_sec, lambda: zone_snapshot(
         lat, lon, target_date, radius_deg=radius_deg, include_gfw=include_gfw,
+        warm_extras=warm_extras,
     ))
 
 
@@ -545,6 +603,7 @@ def grid_snapshot(
                 la, lo, target_date,
                 radius_deg=step_deg,
                 include_gfw=include_gfw,
+                warm_extras=False,  # grid sweep: don't multiply archive/ERDDAP load
             )
             points.append(snap)
 

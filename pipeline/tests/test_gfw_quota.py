@@ -24,6 +24,9 @@ def isolated_gfw_state(tmp_path, monkeypatch):
     monkeypatch.setattr(gfw, "_RATE_LIMIT_UNTIL", 0.0)
     monkeypatch.setattr(gfw, "_LAST_HEADERS", {})
     monkeypatch.setattr(gfw, "_result_cache", {})
+    monkeypatch.setattr(gfw, "_BURST_STRIKES", 0)
+    monkeypatch.setattr(gfw, "_ADAPTIVE_GAP_SEC", 0.0)
+    monkeypatch.setattr(gfw, "_ADAPTIVE_GAP_UNTIL", 0.0)
     yield fake
     monkeypatch.setattr(gfw, "_disk_state", None)
 
@@ -172,3 +175,54 @@ def test_daily_cap_429_not_retried(isolated_gfw_state, monkeypatch):
         gfw._request_with_burst_retry("http://x", "tok", "GET", None)
     assert calls["n"] == 1, f"daily-cap 429 was retried {calls['n']} times!"
     print("✅ daily-cap 429 not retried")
+
+
+def test_burst_strikes_fail_fast_after_three(isolated_gfw_state, monkeypatch):
+    """Anti-pile-up (2026-09-07): when every first attempt 429s, the
+    in-band 15-22 s waits used to queue into minutes and push /reason
+    past its deadline. Strike 3 must skip the retry entirely."""
+    calls = {"n": 0}
+    sleeps = {"n": 0}
+    real_sleep = time.sleep
+    monkeypatch.setattr(
+        time, "sleep",
+        lambda s: (sleeps.__setitem__("n", sleeps["n"] + 1), real_sleep(0.001))[1],
+    )
+    monkeypatch.setattr(gfw, "_MIN_CALL_GAP_SEC", 0.0)
+
+    def always_429(*a, **kw):
+        calls["n"] += 1
+        raise _fake_429({"x-ratelimit-daily-remaining-requests": "49900",
+                         "Retry-After": "5"})
+
+    monkeypatch.setattr(gfw, "_make_request", always_429)
+    for _ in range(3):
+        with pytest.raises(urllib.error.HTTPError):
+            gfw._request_with_burst_retry("http://x", "tok", "GET", None)
+    # attempt1: 1 + retry, attempt2: 1 + retry, attempt3: fail fast (no retry)
+    assert calls["n"] == 5, f"expected 5 wire attempts, got {calls['n']}"
+    assert sleeps["n"] == 2, f"the 3rd burst-429 must NOT pay the in-band wait ({sleeps['n']} sleeps)"
+    assert gfw._BURST_STRIKES == 3
+    assert gfw._ADAPTIVE_GAP_SEC >= 30.0
+    assert gfw._ADAPTIVE_GAP_UNTIL > time.time()
+    print("✅ strike 3 fails fast + adaptive gap engaged")
+
+
+def test_burst_success_resets_strikes(isolated_gfw_state, monkeypatch):
+    """A successful call means the burst window cleared — strikes reset
+    so the NEXT bad minute starts the count fresh."""
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    monkeypatch.setattr(gfw, "_MIN_CALL_GAP_SEC", 0.0)
+    seq = {"n": 0}
+
+    def flaky(*a, **kw):
+        seq["n"] += 1
+        if seq["n"] == 1:
+            raise _fake_429({"x-ratelimit-daily-remaining-requests": "49900"})
+        return {"ok": True}
+
+    monkeypatch.setattr(gfw, "_make_request", flaky)
+    out = gfw._request_with_burst_retry("http://x", "tok", "GET", None)
+    assert out["ok"] is True
+    assert gfw._BURST_STRIKES == 0, f"success must reset strikes (got {gfw._BURST_STRIKES})"
+    print("✅ success resets burst strikes")
