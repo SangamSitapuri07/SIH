@@ -159,19 +159,41 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
+/** gentle worker-pool — OSM tile policy rate-limits heavy parallel grabs
+ *  (the 2D map works precisely because browsers fetch ~6 at a time, so
+ *  we fetch 4 at a time the same honest way) */
+async function fetchPool<T, R>(
+  items: T[], size: number, worker: (item: T) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const out: PromiseSettledResult<R>[] = new Array(items.length);
+  let idx = 0;
+  await Promise.all(Array.from({ length: size }, async () => {
+    for (;;) {
+      const i = idx++;
+      if (i >= items.length) return;
+      try {
+        out[i] = { status: "fulfilled", value: await worker(items[i]) };
+      } catch (e) {
+        out[i] = { status: "rejected", reason: e };
+      }
+    }
+  }));
+  return out;
+}
+
 const TILE_SOURCES: { name: string; viaApi: boolean; url: (z: number, x: number, y: number) => string }[] = [
   { name: "next-proxy", viaApi: false, url: (z, x, y) => `/api/localtiles/${z}/${x}/${y}.png` },
   { name: "backend-proxy", viaApi: true, url: (z, x, y) => `/api/v1/tiles/${z}/${x}/${y}.png` },
   { name: "osm-direct", viaApi: false, url: (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png` },
 ];
 
-function useMapTexture(lat: number, lon: number, radiusDeg: number) {
+function useMapTexture(lat: number, lon: number, radiusDeg: number, attempt: number) {
   const [state, setState] = useState<{
-    tex: THREE.Texture | null; status: "loading" | "ok" | "fail"; via?: string;
-  }>({ tex: null, status: "loading" });
+    tex: THREE.Texture | null; status: "loading" | "ok" | "fail"; via?: string; reasons: string[];
+  }>({ tex: null, status: "loading", reasons: [] });
   useEffect(() => {
     let alive = true;
-    const ZOOM = 10;
+    const ZOOM = 9; // 4×4-ish tiles — gentle on OSM + fast on slow links
     const n = 2 ** ZOOM;
     const lat2y = (la: number) => {
       const r = (la * Math.PI) / 180;
@@ -186,12 +208,16 @@ function useMapTexture(lat: number, lon: number, radiusDeg: number) {
     for (let tx = tx0; tx <= tx1; tx++)
       for (let ty = ty0; ty <= ty1; ty++) coords.push([tx, ty]);
 
-    const trySource = async (src: (typeof TILE_SOURCES)[number]): Promise<THREE.Texture | null> => {
+    const trySource = async (src: (typeof TILE_SOURCES)[number], why: (msg: string) => void): Promise<THREE.Texture | null> => {
       const results = await withTimeout(
-        Promise.allSettled(coords.map(([tx, ty]) => tileToImg(src.url(ZOOM, tx, ty), src.viaApi))),
-        16000);
+        fetchPool(coords, 4, ([tx, ty]) => tileToImg(src.url(ZOOM, tx, ty), src.viaApi)),
+        45000);
       const okCount = results.filter((r) => r.status === "fulfilled").length;
-      if (okCount < results.length * 0.7) return null;
+      if (okCount < results.length * 0.7) {
+        const firstErr = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+        why(`${okCount}/${results.length} tiles (${firstErr ? String(firstErr.reason).slice(0, 120) : "?"})`);
+        return null;
+      }
       const big = document.createElement("canvas");
       big.width = (tx1 - tx0 + 1) * 256; big.height = (ty1 - ty0 + 1) * 256;
       const g = big.getContext("2d")!;
@@ -215,20 +241,19 @@ function useMapTexture(lat: number, lon: number, radiusDeg: number) {
       const tried: string[] = [];
       for (const src of TILE_SOURCES) {
         try {
-          const tex = await trySource(src);
+          const tex = await trySource(src, (m) => tried.push(`${src.name}: ${m}`));
           if (!alive) return;
-          if (tex) { setState({ tex, status: "ok", via: src.name }); return; }
-          tried.push(`${src.name}: <70% tiles`);
+          if (tex) { setState({ tex, status: "ok", via: src.name, reasons: [] }); return; }
         } catch (e) {
           tried.push(`${src.name}: ${e instanceof Error ? e.message : e}`);
         }
         if (!alive) return;
       }
       console.warn("[Ocean3D] all tile sources failed:", tried.join(" | "));
-      if (alive) setState({ tex: null, status: "fail" });
+      if (alive) setState({ tex: null, status: "fail", reasons: tried });
     })();
     return () => { alive = false; };
-  }, [lat, lon, radiusDeg]);
+  }, [lat, lon, radiusDeg, attempt]);
   return state;
 }
 
@@ -678,8 +703,9 @@ export default function Ocean3D({
   lang: Lang;
 }) {
   const s = useMemo(() => buildSampler(data.met.points), [data]);
-  const { tex: mapTex, status: mapStatus } = useMapTexture(
-    data.center.lat, data.center.lon, data.radius_deg);
+  const [mapAttempt, setMapAttempt] = useState(0);
+  const { tex: mapTex, status: mapStatus, reasons: mapReasons, via: mapVia } = useMapTexture(
+    data.center.lat, data.center.lon, data.radius_deg, mapAttempt);
   const hoverRef = useRef<HoverInfo | null>(null);
   const onSea = (x: number | null, z?: number) => {
     if (x == null || z == null) { hoverRef.current = null; return; }
@@ -762,15 +788,43 @@ export default function Ocean3D({
         {mapStatus === "loading" && (
           <span className="surface-2 px-2.5 py-1 text-[10px] text-slate-400">🗺️ {lang === "hi" ? "asli map tiles aa rahi hain…" : "real map tiles loading…"}</span>
         )}
+        {mapStatus === "ok" && mapVia && (
+          <span className="surface-2 px-2.5 py-1 text-[10px] text-emerald-300/80">🗺️ real map ✓ ({mapVia})</span>
+        )}
         {mapStatus === "fail" && (
-          <span className="surface-2 px-2.5 py-1 text-[10px] text-amber-300">🗺️ {lang === "hi" ? "map tiles नहीं आईं — backend restart kiya? (blue-sea mode)" : "map tiles failed — restarted the backend? (blue-sea mode)"}</span>
+          <div className="surface-2 px-2.5 py-1.5 text-[10px] text-amber-300 max-w-[280px] pointer-events-auto text-left">
+            <div className="flex items-center gap-2 justify-between">
+              <span>🗺️ {lang === "hi" ? "map tiles नहीं आईं — blue-sea mode चल रहा है" : "map tiles failed — running blue-sea mode"}</span>
+              <button onClick={() => setMapAttempt((a) => a + 1)}
+                className="shrink-0 rounded border border-amber-400/40 px-1.5 py-0.5 hover:bg-amber-400/10">
+                {lang === "hi" ? "फिर से" : "retry"}
+              </button>
+            </div>
+            {mapReasons.length > 0 && (
+              <details className="mt-1">
+                <summary className="cursor-pointer text-slate-400 hover:text-slate-200">
+                  {lang === "hi" ? "क्यों? (technical truth)" : "why? (technical truth)"}
+                </summary>
+                <ul className="mt-1 space-y-0.5 text-slate-500">
+                  {mapReasons.map((r, i) => <li key={i}>• {r}</li>)}
+                </ul>
+                <div className="mt-1 text-slate-600">
+                  {lang === "hi"
+                    ? "Backend restart karke retry dabao. Numbers + 3D sab real chal raha hai; sirf base-photo nahi aayi."
+                    : "Restart the backend and hit retry. Numbers + 3D are all real and working; only the base photo didn't arrive."}
+                </div>
+              </details>
+            )}
+          </div>
         )}
       </div>
 
       {/* legend + honesty note */}
       <div className="absolute bottom-3 left-3 surface-2 px-3 py-2 text-[10px] text-slate-300 space-y-1 max-w-[340px] pointer-events-none">
         <div className="font-semibold text-slate-100">{lang === "hi" ? "3D समुद्र — कैसे पढ़ें" : "3D ocean — how to read it"}</div>
-        <div>🗺️ {lang === "hi" ? "नीचे ASLI OpenStreetMap नक्शा — शहर/तट asli जगह पर" : "the base is the REAL OpenStreetMap — cities/coast at real places"}</div>
+        <div>🗺️ {mapTex
+          ? (lang === "hi" ? "नीचे ASLI OpenStreetMap नक्शा — शहर/तट asli जगह पर" : "the base is the REAL OpenStreetMap — cities/coast at real places")
+          : (lang === "hi" ? "नीचे blue-sea mode (map photo नहीं आई) — लहरें/रंग सब real data से" : "blue-sea mode below (map photo missing) — waves/colours still from real data")}</div>
         <div>🌊 {lang === "hi" ? "लहरों की ऊँचाई = असली wave data · 🤍 झाग = rough पानी" : "wave height = real wave data · white specks = rough water"}</div>
         <div>💨 {lang === "hi" ? "उड़ती रोशनी = असली हवा की दिशा + gust गति" : "flying streaks = real wind direction + gust speed"} · 🌀 {lang === "hi" ? "तीर = असली धारा" : "arrows = real current"}</div>
         <div>🎣 {lang === "hi" ? "हरी चमक + मछलियाँ = असली chlorophyll hotspot" : "green glow + fish = real chlorophyll hotspot"}</div>
