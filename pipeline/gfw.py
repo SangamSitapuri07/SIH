@@ -192,6 +192,45 @@ def _harvest_rl_headers(headers) -> dict[str, str]:
         pass
     return out
 
+
+def _burst_wait_sec(err: urllib.error.HTTPError) -> float:
+    """How long a BURST 429 wants us to wait (Retry-After, else a guess)."""
+    try:
+        ra = err.headers.get("Retry-After") if err.headers else None
+        if ra and str(ra).isdigit():
+            return float(ra)
+    except Exception:
+        pass
+    return 15.0  # GFW burst windows are usually < 60 s
+
+
+def _request_with_burst_retry(url: str, tok: str, method: str, body: dict | None,
+                              timeout: int = 60, retries: int = 1) -> dict | None:
+    """One in-band retry when a 429 is clearly BURST limiting (headers say
+    the daily quota is fine). The retry waits within the 35 s job budget so
+    a single angry minute doesn't turn into a failed source for the user.
+
+    Daily-cap 429s are NOT retried — the server said "come back tomorrow".
+    """
+    try:
+        return _make_request(url, tok, method, body, timeout)
+    except urllib.error.HTTPError as e:
+        global _LAST_HEADERS
+        _LAST_HEADERS = _harvest_rl_headers(getattr(e, "headers", None)) or _LAST_HEADERS
+        daily_ok = False
+        try:
+            rem = _LAST_HEADERS.get("x-ratelimit-daily-remaining-requests")
+            daily_ok = rem is not None and str(rem).isdigit() and int(rem) > 100
+        except Exception:
+            daily_ok = False
+        if e.code != 429 or not daily_ok or retries <= 0:
+            raise
+        wait = min(_burst_wait_sec(e), 22.0)  # stay inside the job budget
+        print(f"[GFW] burst 429 with daily quota remaining — waiting {wait:.0f}s and retrying once",
+              file=sys.stderr)
+        time.sleep(wait)
+        return _make_request(url, tok, method, body, timeout)
+
 # Burst throttle: GFW's free tier also rate-limits PER MINUTE. Serialising
 # real HTTP calls with a small gap makes the startup prewarm + rapid map
 # clicks structurally unable to trip the limiter. (Root cause of the
@@ -352,7 +391,8 @@ def _quota_explanation() -> str:
             )
         return (
             f"Burst/per-minute limiting, NOT the daily cap — GFW's headers "
-            f"report {quota_line}. A short pause fixes this."
+            f"report {quota_line}. With usage this low, their gateway is "
+            f"throttling how FAST we ask, not how MUCH. A short pause fixes this."
         )
     return (
         "No rate-limit headers came with the 429 — could be GFW's burst "
@@ -469,7 +509,7 @@ def get_fishing_effort(
     }
 
     try:
-        data = _make_request(url, tok, method="POST", body=body, timeout=60)
+        data = _request_with_burst_retry(url, tok, method="POST", body=body, timeout=60)
         global _LAST_RAW
         _LAST_RAW = data  # debug self-test only — parser verification
         # Real GFW response shape (from docs):
@@ -643,7 +683,7 @@ def get_fishing_vessels_in_region(
     }
 
     try:
-        data = _make_request(url, tok, method="POST", body=body, timeout=60)
+        data = _request_with_burst_retry(url, tok, method="POST", body=body, timeout=60)
         entries = data.get("entries", data.get("data", []))
         by_flag: dict[str, int] = {}
         by_gear: dict[str, int] = {}

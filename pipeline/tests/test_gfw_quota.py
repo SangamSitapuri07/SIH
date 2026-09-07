@@ -132,3 +132,43 @@ def test_uncached_point_waits_during_cooldown(isolated_gfw_state, monkeypatch):
     assert r is not None and r.get("rate_limited") is True
     assert "No cached copy" in r["error"], r["error"]
     print("✅ uncached point honestly waits during cooldown")
+
+
+def test_burst_429_retried_once(isolated_gfw_state, monkeypatch):
+    """Daily quota fine + burst 429 → wait + retry succeeds in-band."""
+    calls = {"n": 0}
+    real_sleep = time.sleep
+    monkeypatch.setattr(time, "sleep", lambda s: real_sleep(0.001))
+    monkeypatch.setattr(gfw, "_MIN_CALL_GAP_SEC", 0.0)
+
+    def flaky(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _fake_429({"x-ratelimit-daily-remaining-requests": "49996",
+                             "Retry-After": "5"})
+        return {"total": 99.5, "entries": []}
+
+    monkeypatch.setattr(gfw, "_make_request", flaky)
+    out = gfw._request_with_burst_retry("http://x", "tok", "GET", None)
+    assert calls["n"] == 2
+    assert out["total"] == 99.5
+    print("✅ burst 429 retried once, recovered")
+
+
+def test_daily_cap_429_not_retried(isolated_gfw_state, monkeypatch):
+    """Daily cap exhausted → do NOT waste a retry."""
+    calls = {"n": 0}
+    real_sleep = time.sleep
+    monkeypatch.setattr(time, "sleep", lambda s: real_sleep(0.001))
+    monkeypatch.setattr(gfw, "_MIN_CALL_GAP_SEC", 0.0)
+
+    def dead(*a, **kw):
+        calls["n"] += 1
+        raise _fake_429({"x-ratelimit-daily-remaining-requests": "0",
+                         "x-ratelimit-daily-reset-hours": "11"})
+
+    monkeypatch.setattr(gfw, "_make_request", dead)
+    with pytest.raises(urllib.error.HTTPError):
+        gfw._request_with_burst_retry("http://x", "tok", "GET", None)
+    assert calls["n"] == 1, f"daily-cap 429 was retried {calls['n']} times!"
+    print("✅ daily-cap 429 not retried")
