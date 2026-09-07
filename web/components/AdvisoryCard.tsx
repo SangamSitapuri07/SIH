@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { Advisory, DemoZone, fetchAdvisory } from "@/lib/orca-client";
 import { t, Lang } from "@/lib/i18n";
 import Sparkline from "@/components/Sparkline";
+
+const AdvisoryMap = dynamic(() => import("@/components/AdvisoryMap"), { ssr: false });
 
 const VERDICT_STYLE: Record<string, { bg: string; ring: string; label_en: string; label_hi: string }> = {
   go: { bg: "bg-green-600", ring: "ring-green-300", label_en: "GO", label_hi: "जा सकते हैं" },
@@ -152,6 +155,15 @@ export default function AdvisoryCard({
           </div>
         </div>
       )}
+
+      {/* mini location map — where am I, which way is the PFZ */}
+      <AdvisoryMap
+        lat={zone.lat}
+        lon={zone.lon}
+        pfzNm={v.nearest_pfz_nm}
+        pfzBearing={v.nearest_pfz_bearing}
+        lang={lang}
+      />
 
       {/* variable tiles — every number is live */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
