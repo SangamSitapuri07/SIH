@@ -338,8 +338,10 @@ export const fetchAdvisory = (lat: number, lon: number) =>
 export interface FieldPoint {
   lat: number; lon: number;
   chl?: number; wave_m?: number | null; swell_m?: number | null;
-  current_kn?: number | null; sst_c?: number | null;
-  wind_kn?: number | null; gust_kn?: number | null;
+  current_kn?: number | null; current_dir_deg?: number | null;
+  sst_c?: number | null;
+  wind_kn?: number | null; wind_dir_deg?: number | null;
+  gust_kn?: number | null;
 }
 export interface FieldResponse {
   type: "field";

@@ -15,11 +15,15 @@
  * data; failed sources show their real error.
  */
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { MapContainer, TileLayer, CircleMarker, Tooltip, Polyline } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import LineChart from "@/components/LineChart";
 import { Lang } from "@/lib/i18n";
 import { fetchField, FieldPoint, FieldResponse } from "@/lib/orca-client";
+import { chlColor, waveColor, windColor, currentColor, sstColor } from "@/components/fieldColors";
+
+const Ocean3D = dynamic(() => import("@/components/Ocean3D"), { ssr: false });
 
 type Trend = {
   labels: string[];
@@ -32,38 +36,6 @@ type Trend = {
 };
 
 type LayerId = "chl" | "wave" | "swell" | "wind" | "current" | "sst";
-
-/* color ramps — honest thresholds, consistent with the advisory rules */
-function chlColor(v: number): string {
-  if (v >= 5) return "#ef4444";      // bloom-level
-  if (v >= 2) return "#f59e0b";      // high
-  if (v >= 0.5) return "#34d399";    // productive
-  return "#64748b";                  // low
-}
-function waveColor(v: number): string {
-  if (v >= 4) return "#ef4444";
-  if (v >= 2.5) return "#f59e0b";
-  if (v >= 1.2) return "#0891b2";
-  return "#38bdf8";
-}
-function windColor(v: number): string {
-  if (v >= 34) return "#ef4444";     // gale
-  if (v >= 28) return "#f59e0b";     // gust caution
-  if (v >= 15) return "#a78bfa";
-  return "#818cf8";
-}
-function currentColor(v: number): string {
-  if (v >= 3) return "#ef4444";      // very strong
-  if (v >= 1.5) return "#f59e0b";    // strong
-  if (v >= 0.6) return "#34d399";    // normal drift
-  return "#38bdf8";                  // weak
-}
-function sstColor(v: number): string {
-  if (v >= 30) return "#ef4444";     // hot — coral-stress band
-  if (v >= 28.5) return "#f59e0b";   // warm
-  if (v >= 26) return "#34d399";     // baitfish-friendly band
-  return "#38bdf8";                  // cool
-}
 
 const LAYERS: {
   id: LayerId; label: string; labelHi: string; unit: string;
@@ -127,10 +99,11 @@ export default function FieldExplorer({
   const [data, setData] = useState<FieldResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [layer, setLayer] = useState<LayerId>("chl");
+  const [view, setView] = useState<"map" | "3d">("map");
 
   useEffect(() => {
     let alive = true;
-    setErr(null); setData(null); setLayer("chl");
+    setErr(null); setData(null); setLayer("chl"); setView("map");
     fetchField(lat, lon)
       .then((j) => { if (alive) setData(j); })
       .catch((e) => {
@@ -169,20 +142,43 @@ export default function FieldExplorer({
             🔬 {lang === "hi" ? "विज़ुअल एक्सप्लोरर" : "Visual Explorer"}
           </h2>
           <span className="text-[11px] text-slate-500 font-mono shrink-0">{lat.toFixed(2)}°N, {lon.toFixed(2)}°E · ±1.2°</span>
-          {/* layer switcher — wraps on small screens */}
-          <div className="flex flex-wrap gap-1 bg-[#0E1729] border border-[#1C2A45] rounded-lg p-1">
-            {LAYERS.map((l) => (
-              <button
-                key={l.id}
-                onClick={() => setLayer(l.id)}
-                className={`text-[11px] rounded-md px-2.5 py-1.5 transition ${
-                  layer === l.id ? "bg-cyan-500/15 text-cyan-300 font-semibold" : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                {lang === "hi" ? l.labelHi : l.label}
-              </button>
-            ))}
+          {/* view toggle: 2D map vs living 3D ocean (same real data) */}
+          <div className="flex gap-1 bg-[#0E1729] border border-[#1C2A45] rounded-lg p-1 shrink-0">
+            <button
+              onClick={() => setView("map")}
+              className={`text-[11px] rounded-md px-2.5 py-1.5 transition ${
+                view === "map" ? "bg-cyan-500/15 text-cyan-300 font-semibold" : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              🗺️ {lang === "hi" ? "नक्शा" : "Map"}
+            </button>
+            <button
+              onClick={() => setView("3d")}
+              disabled={!data || !data.met.points.length}
+              title={!data ? (lang === "hi" ? "पहले grid load होने दो" : "wait for the grid to load") : undefined}
+              className={`text-[11px] rounded-md px-2.5 py-1.5 transition disabled:opacity-40 ${
+                view === "3d" ? "bg-cyan-500/15 text-cyan-300 font-semibold" : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              🌊 {lang === "hi" ? "3D समुद्र" : "3D Ocean"}
+            </button>
           </div>
+          {/* layer switcher (map view) — wraps on small screens */}
+          {view === "map" && (
+            <div className="flex flex-wrap gap-1 bg-[#0E1729] border border-[#1C2A45] rounded-lg p-1">
+              {LAYERS.map((l) => (
+                <button
+                  key={l.id}
+                  onClick={() => setLayer(l.id)}
+                  className={`text-[11px] rounded-md px-2.5 py-1.5 transition ${
+                    layer === l.id ? "bg-cyan-500/15 text-cyan-300 font-semibold" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {lang === "hi" ? l.labelHi : l.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <button
           onClick={onClose}
@@ -207,6 +203,10 @@ export default function FieldExplorer({
           {err && (
             <div className="absolute inset-0 flex items-center justify-center text-red-300 text-sm z-[1001] px-6 text-center">{err}</div>
           )}
+          {view === "3d" && data ? (
+            <Ocean3D key={`${lat}:${lon}:${data.generated_at}`} data={data} lang={lang} />
+          ) : (
+          <>
           <MapContainer center={[lat, lon]} zoom={9} style={{ height: "100%", width: "100%", background: "#070D1A" }}>
             <TileLayer
               attribution="&copy; OpenStreetMap contributors"
@@ -262,6 +262,8 @@ export default function FieldExplorer({
               <div className="text-slate-500">{lang === "hi" ? "ज़्यादा chl = ज़्यादा प्लांक्टन = मछली का खाना" : "more chl = more plankton = fish food"}</div>
             )}
           </div>
+          </>
+          )}
         </div>
 
         {/* right panel */}

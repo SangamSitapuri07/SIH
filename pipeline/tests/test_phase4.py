@@ -382,8 +382,10 @@ def test_field_met_grid_parses_sst(monkeypatch):
         if "marine" in url:
             return [{"current": {"wave_height": 1.5, "swell_wave_height": 0.9,
                                  "ocean_current_velocity": 0.5,
+                                 "ocean_current_direction": 240.0,
                                  "sea_surface_temperature": 28.9}}] * n
-        return [{"current": {"wind_speed_10m": 11.0, "wind_gusts_10m": 14.0}}] * n
+        return [{"current": {"wind_speed_10m": 11.0, "wind_gusts_10m": 14.0,
+                             "wind_direction_10m": 250.0}}] * n
 
     monkeypatch.setattr(fx, "_http_json", fake_http)
     out = fx.fetch_met_grid(19.0, 72.0)
@@ -391,3 +393,5 @@ def test_field_met_grid_parses_sst(monkeypatch):
     p = out["points"][0]
     assert p["sst_c"] == 28.9
     assert p["current_kn"] == round(0.5 * 1.943844, 2)
+    assert p["current_dir_deg"] == 240.0     # real flow direction → 3D arrows
+    assert p["wind_dir_deg"] == 250.0        # real wind direction → 3D streaks
