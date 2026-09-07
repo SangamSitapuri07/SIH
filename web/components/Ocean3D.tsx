@@ -57,8 +57,7 @@ function fill(vals: (number | null)[], n: number, mean: number): number[] {
   return out.map((v) => (Number.isNaN(v) ? mean : v));
 }
 
-function buildSampler(points: FieldPoint[]): Sampler | null {
-  if (!points.length) return null;
+function buildSampler(points: FieldPoint[]): Sampler | null {  if (!points.length) return null;
   const n = Math.round(Math.sqrt(points.length));
   if (n * n !== points.length) return null;
   const col = (k: keyof FieldPoint) => points.map((p) => (p[k] as number | null) ?? null);
@@ -105,18 +104,23 @@ function bilinear(arr: number[], n: number, x: number, z: number): number {
   return a * (1 - fx) * (1 - fz) + b * fx * (1 - fz) + c * (1 - fx) * fz + d * fx * fz;
 }
 
-/** data-shaped wave field: amplitude follows the REAL local wave/swell */
+/** data-shaped wave field: amplitude follows the REAL local wave/swell.
+ *  Amplitudes slightly above the map scale on purpose — the world is
+ *  ±1.2° (~133 km) wide so a physically-true 2 m wave would be an
+ *  invisible 0.0002-unit bump; this exaggeration kills nothing real
+ *  (hover still reads exact real metres). */
 function seaHeight(s: Sampler, x: number, z: number, t: number): number {
   const w = bilinear(s.wave, s.n, x, z);
   const sw = bilinear(s.swell, s.n, x, z);
   const a = Math.min(1, w / 4);
   const b = Math.min(1, sw / 4);
   let h = 0;
-  h += a * 0.46 * Math.sin(x * 0.42 + z * 0.19 - t * (0.8 + a * 0.75));
-  h += a * 0.30 * Math.sin(x * -0.27 + z * 0.51 - t * (1.25 + a * 0.9) + 1.7);
-  h += a * 0.18 * Math.sin(x * 0.15 + z * 0.85 - t * (0.6 + a) + 3.9); // chop
-  h += b * 0.36 * Math.sin(x * 0.14 - z * 0.30 - t * 0.62 + 0.4);      // swell rollers
-  h += b * 0.22 * Math.sin(x * -0.09 - z * 0.24 - t * 0.5 + 2.2);
+  h += a * 0.52 * Math.sin(x * 0.42 + z * 0.19 - t * (0.8 + a * 0.75));
+  h += a * 0.34 * Math.sin(x * -0.27 + z * 0.51 - t * (1.25 + a * 0.9) + 1.7);
+  h += a * 0.20 * Math.sin(x * 0.15 + z * 0.85 - t * (0.6 + a) + 3.9); // chop
+  h += a * 0.10 * Math.sin(x * 1.35 - z * 0.90 - t * (2.1 + a) + 0.9); // fine ripple
+  h += b * 0.40 * Math.sin(x * 0.14 - z * 0.30 - t * 0.62 + 0.4);      // swell rollers
+  h += b * 0.24 * Math.sin(x * -0.09 - z * 0.24 - t * 0.5 + 2.2);
   return h;
 }
 
@@ -289,7 +293,7 @@ function OceanSurface({ s, mapTex, onSea }: {
   s: Sampler; mapTex: THREE.Texture | null;
   onSea: (x: number | null, z?: number) => void;
 }) {
-  const SEG = 92;
+  const SEG = 120; // 14k vertices — smoother swell curves on slow machines too
   const { geo, foamK } = useMemo(() => {
     const g = new THREE.PlaneGeometry(2 * HALF, 2 * HALF, SEG, SEG);
     g.rotateX(-Math.PI / 2);
@@ -299,7 +303,9 @@ function OceanSurface({ s, mapTex, onSea }: {
     for (let i = 0; i < cnt; i++) {
       foamA[i] = Math.min(1, bilinear(s.wave, s.n, pos.getX(i), pos.getZ(i)) / 3);
     }
-    g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(cnt * 3), 3));
+    const colA = new Float32Array(cnt * 3);
+    colA.fill(1); // map-mode multiply starts neutral-bright
+    g.setAttribute("color", new THREE.BufferAttribute(colA, 3));
     return { geo: g, foamK: foamA };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -312,12 +318,12 @@ function OceanSurface({ s, mapTex, onSea }: {
       pos.setY(i, seaHeight(s, pos.getX(i), pos.getZ(i), t));
     }
     pos.needsUpdate = true;
+    const colA = geo.attributes.color as THREE.BufferAttribute;
     if (!mapTex) {
       // fallback water: always a real-looking rolling blue sea — troughs
       // dark, crests light, foam only where the model says rough. Colour
       // follows SHAPE ('h'), never a fake heat-map, so it can never
       // become the red-lava blob the judge saw.
-      const colA = geo.attributes.color as THREE.BufferAttribute;
       for (let i = 0; i < cnt; i++) {
         const h = pos.getY(i);
         const tN = Math.max(0, Math.min(1, (h + 1.1) / 2.2));
@@ -327,8 +333,18 @@ function OceanSurface({ s, mapTex, onSea }: {
           (TROUGH.g + (CREST.g - TROUGH.g) * tN) + (FOAM.g - CREST.g) * fo,
           (TROUGH.b + (CREST.b - TROUGH.b) * tN) + (FOAM.b - CREST.b) * fo);
       }
-      colA.needsUpdate = true;
+    } else {
+      // MAP mode: the unlit map stays untouched-bright, but we multiply
+      // vertex colours ~0.78 (trough) → ~1.06 (crest) so the 3D wave
+      // relief is READABLE on the flat photo — shape shading, not tint.
+      for (let i = 0; i < cnt; i++) {
+        const h = pos.getY(i);
+        const tN = Math.max(0, Math.min(1, (h + 1.3) / 2.6));
+        const shade = 0.78 + tN * 0.28;
+        colA.setXYZ(i, shade, shade, shade + tN * 0.05); // crests a hair bluer
+      }
     }
+    colA.needsUpdate = true;
     geo.computeVertexNormals();
   });
 
@@ -340,12 +356,11 @@ function OceanSurface({ s, mapTex, onSea }: {
     >
       {mapTex
         ? /* meshBASIC: unlit + toneMapped off — renders the OSM tiles at
-             native brightness. The old meshStandardMaterial was LIT by
-             the dim night-scene lights, so the real map rendered as a
-             dark navy wash that looked identical to the blue-sea
-             fallback (user: "map implement nahi ho raha" even though the
-             tiles had loaded fine — the chip said so). */
-          <meshBasicMaterial map={mapTex} toneMapped={false} fog={false} />
+             native brightness (the old LIT material drowned the map to a
+             dark navy wash). vertexColors multiplies per-vertex wave
+             SHADE (0.78→1.06) so the swell still reads as 3D relief
+             without ever tinting the map away. */
+          <meshBasicMaterial map={mapTex} vertexColors toneMapped={false} fog={false} />
         : <meshStandardMaterial vertexColors roughness={0.42} metalness={0.12} />}
     </mesh>
   );
@@ -360,35 +375,50 @@ function SeaCard({ s, lat, lon, x, z, lang }: {
   const gu = bilinear(s.gust, s.n, x, z);
   const cu = bilinear(s.cur, s.n, x, z);
   const st = bilinear(s.sst, s.n, x, z);
-  const Row = ({ icon, name, val, unit, color }: { icon: string; name: string; val: string; unit: string; color: string }) => (
+  const hi = lang === "hi";
+  // plain-language verdicts — a fisherman shouldn't need to know the
+  // thresholds, the card speaks for itself (values stay exact + real)
+  const waveWord = w < 1.5 ? (hi ? "शांत" : "calm") : w < 2.5 ? (hi ? "उठापट्ट" : "choppy") : (hi ? "ख़तरनाक" : "dangerous");
+  const swellWord = sw < 1 ? (hi ? "हल्की" : "mild") : sw < 2 ? (hi ? "दूर की लहरें" : "distant rollers") : (hi ? "लंबी तेज़" : "strong");
+  const gustWord = gu < 15 ? (hi ? "हल्की हवा" : "light") : gu < 25 ? (hi ? "तेज़ हवा" : "strong") : (hi ? "तूफ़ानी" : "storm-force");
+  const curWord = cu < 0.8 ? (hi ? "धीमी धारा" : "gentle") : cu < 1.8 ? (hi ? "तेज़ धारा" : "brisk") : (hi ? "बहुत तेज़" : "ripping");
+  const sstWord = st < 24 ? (hi ? "ठंडा पानी" : "cool") : st < 30 ? (hi ? "सामान्य" : "normal") : (hi ? "गर्म पानी" : "warm");
+  const Row = ({ icon, name, val, unit, color, word }: {
+    icon: string; name: string; val: string; unit: string; color: string; word: string;
+  }) => (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-slate-400">{icon} {name}</span>
-      <span className="font-bold" style={{ color }}>{val}<span className="font-normal text-slate-500"> {unit}</span></span>
+      <span className="text-slate-300">{icon} {name}</span>
+      <span className="font-bold" style={{ color }}>
+        {val}<span className="font-normal text-slate-500"> {unit}</span>
+        <span className="ml-1.5 font-normal text-[10px]" style={{ color: "#7C90B4" }}>{word}</span>
+      </span>
     </div>
   );
   return (
-    <div className="whitespace-nowrap rounded-lg border border-cyan-400/30 bg-[#0A1120]/95 px-3 py-2 text-[11px] shadow-xl leading-relaxed">
-      <div className="font-mono text-cyan-300 font-bold mb-1">{fmtLat(lat)}, {fmtLon(lon)}</div>
-      <Row icon="🌊" name={lang === "hi" ? "लहरें" : "waves"} val={w.toFixed(1)} unit="m" color={waveColor(w)} />
-      <Row icon="〰️" name="swell" val={sw.toFixed(1)} unit="m" color={waveColor(sw)} />
-      <Row icon="💨" name="gusts" val={gu.toFixed(0)} unit="kn" color={windColor(gu)} />
-      <Row icon="🌀" name={lang === "hi" ? "धारा" : "current"} val={cu.toFixed(1)} unit="kn" color={currentColor(cu)} />
-      <Row icon="🌡️" name="SST" val={st.toFixed(1)} unit="°C" color={sstColor(st)} />
-      <div className="mt-1 text-[9px] text-slate-600 italic">{lang === "hi" ? "असली मॉडल/सैटेलाइट मान — अनुमान नहीं" : "real model/satellite values — not estimates"}</div>
+    <div className="whitespace-nowrap rounded-lg border border-cyan-400/30 bg-[#0A1120]/95 px-3.5 py-2.5 text-[13px] shadow-xl leading-relaxed">
+      <div className="font-mono text-cyan-300 font-bold mb-1 text-[12px]">{fmtLat(lat)}, {fmtLon(lon)}</div>
+      <Row icon="🌊" name={hi ? "लहरें" : "waves"} val={w.toFixed(1)} unit="m" color={waveColor(w)} word={waveWord} />
+      <Row icon="〰️" name="swell" val={sw.toFixed(1)} unit="m" color={waveColor(sw)} word={swellWord} />
+      <Row icon="💨" name={hi ? "झंझा हवा" : "gusts"} val={gu.toFixed(0)} unit="kn" color={windColor(gu)} word={gustWord} />
+      <Row icon="🌀" name={hi ? "पानी की धारा" : "current"} val={cu.toFixed(1)} unit="kn" color={currentColor(cu)} word={curWord} />
+      <Row icon="🌡️" name={hi ? "पानी का तापमान" : "sea temp"} val={st.toFixed(1)} unit="°C" color={sstColor(st)} word={sstWord} />
+      <div className="mt-1.5 text-[10px] text-slate-500 italic">
+        {hi ? "सारे नंबर असली मॉडल/सैटेलाइट से — अंदाज़ा नहीं" : "all numbers from real models/satellites — not guesses"}
+      </div>
     </div>
   );
 }
 
 function HotspotCard({ h, rank, lang }: { h: FieldResponse["hotspots"][number]; rank: number; lang: Lang }) {
   return (
-    <div className="whitespace-nowrap rounded-lg border border-emerald-400/40 bg-[#0A1120]/95 px-3 py-2 text-[11px] shadow-xl leading-relaxed">
+    <div className="whitespace-nowrap rounded-lg border border-emerald-400/40 bg-[#0A1120]/95 px-3.5 py-2.5 text-[13px] shadow-xl leading-relaxed">
       <div className="font-bold text-emerald-300 mb-0.5">🎣 #{rank} · {h.chl} mg/m³</div>
       <div className="font-mono text-slate-400">{fmtLat(h.lat)}, {fmtLon(h.lon)}</div>
       <div className="text-slate-300">{h.distance_nm} NM · {h.bearing}</div>
-      <div className="mt-1 text-slate-500 max-w-[220px] whitespace-normal">
+      <div className="mt-1.5 text-slate-400 max-w-[250px] whitespace-normal text-[11.5px] leading-snug">
         {lang === "hi"
-          ? "ज़्यादा chlorophyll = plankton का खाना → baitfish → मछली। असली NOAA सैटेलाइट मान।"
-          : "high chlorophyll = plankton food → baitfish → fish. Real NOAA satellite value."}
+          ? "ज़्यादा chlorophyll = plankton भरपूर → छोटी मछली (baitfish) → बड़ी मछली। यही मछली पकड़ने की सबसे अच्छी jagah है। असली NOAA सैटेलाइट मान।"
+          : "high chlorophyll = rich plankton → baitfish → big fish. This is the best fishing zone. Real NOAA satellite value."}
       </div>
     </div>
   );
@@ -477,59 +507,68 @@ function FoamSpecks({ s, tex }: { s: Sampler; tex: THREE.Texture }) {
   );
 }
 
-/* ── 💨 wind streaks — real direction, speed ∝ gusts ───────────────── */
-function WindStreaks({ s, tex }: { s: Sampler; tex: THREE.Texture }) {
-  const COUNT = Math.round(Math.min(900, Math.max(140, s.gustMean * 26)));
-  const ref = useRef<THREE.Points>(null);
+/* ── 💨 wind streaks — instanced air-streams (not dots!) ────────────
+ * Each streak is a thin elongated quad ALIGNED with the REAL wind
+ * direction racing over the water; count & speed follow the real gust
+ * knots, and every streak's tint comes from the real gust cell it was
+ * born in (calm come magenta→red only where gusts truly are strong). */
+function WindStreaks({ s }: { s: Sampler }) {
+  const COUNT = Math.round(Math.min(420, Math.max(120, s.gustMean * 16)));
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
   const seeds = useMemo(() =>
     Array.from({ length: COUNT }, () => ({
       x: (Math.random() * 2 - 1) * HALF,
       z: (Math.random() * 2 - 1) * HALF,
       y: 0.7 + Math.random() * 4.2,
-      jit: 0.65 + Math.random() * 0.7,
+      jit: 0.6 + Math.random() * 0.8,     // per-streak speed jitter
+      len: 0.6 + Math.random() * 0.7,     // length jitter
+      bob: Math.random() * Math.PI * 2,   // vertical bob phase
     })), [COUNT]);
+  const vx = Math.sin(s.windDirRad), vz = -Math.cos(s.windDirRad);
+  const yaw = -Math.atan2(vz, vx);        // streak long-axis ∥ wind dir
 
-  const { posArr, colArr } = useMemo(() => {
-    const p = new Float32Array(COUNT * 3);
-    const c = new Float32Array(COUNT * 3);
+  // one-time per-streak colour from the real gust field
+  const paintColors = (mesh: THREE.InstancedMesh) => {
     const tmp = new THREE.Color();
     seeds.forEach((sd, i) => {
-      p.set([sd.x, sd.y, sd.z], i * 3);
       tmp.set(windColor(bilinear(s.gust, s.n, sd.x, sd.z)));
-      c.set([tmp.r, tmp.g, tmp.b], i * 3);
+      mesh.setColorAt(i, tmp);
     });
-    return { posArr: p, colArr: c };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [COUNT]);
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  };
 
-  useFrame((_, dt) => {
-    const pts = ref.current;
-    if (!pts) return;
+  useFrame(({ clock }, dt) => {
+    const mesh = ref.current;
+    if (!mesh) return;
     const d = Math.min(dt, 0.05);
-    const vx = Math.sin(s.windDirRad), vz = -Math.cos(s.windDirRad);
+    const t = clock.elapsedTime;
     const speed = s.gustMean * 0.42;
     for (let i = 0; i < COUNT; i++) {
       const sd = seeds[i];
       sd.x += vx * speed * sd.jit * d;
       sd.z += vz * speed * sd.jit * d;
-      sd.y += Math.sin(sd.x * 0.7 + sd.z * 0.4 + i) * 0.004;
       if (sd.x > HALF) sd.x -= 2 * HALF; if (sd.x < -HALF) sd.x += 2 * HALF;
       if (sd.z > HALF) sd.z -= 2 * HALF; if (sd.z < -HALF) sd.z += 2 * HALF;
-      posArr.set([sd.x, sd.y, sd.z], i * 3);
+      const gN = Math.min(1, bilinear(s.gust, s.n, sd.x, sd.z) / 30);
+      dummy.position.set(sd.x, sd.y + Math.sin(t * 1.4 + sd.bob) * 0.10, sd.z);
+      dummy.rotation.set(Math.sin(sd.bob) * 0.10, yaw, Math.cos(sd.bob) * 0.06);
+      dummy.scale.set(sd.len * (0.75 + gN * 0.8), 1 + gN * 0.8, 1);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
     }
-    (pts.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    mesh.instanceMatrix.needsUpdate = true;
   });
 
   return (
-    <points ref={ref} frustumCulled={false}>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[posArr, 3]} />
-        <bufferAttribute attach="attributes-color" args={[colArr, 3]} />
-      </bufferGeometry>
-      <pointsMaterial size={0.16} map={tex} vertexColors transparent
-        opacity={0.85} depthWrite={false} blending={THREE.AdditiveBlending}
-        sizeAttenuation />
-    </points>
+    <instancedMesh key={COUNT} ref={ref} args={[undefined, undefined, COUNT]}
+      frustumCulled={false}
+      onUpdate={(m: THREE.InstancedMesh) => paintColors(m)}>
+      <planeGeometry args={[1, 0.055]} />
+      <meshBasicMaterial color="#dff0ff" transparent opacity={0.5}
+        side={THREE.DoubleSide} depthWrite={false}
+        blending={THREE.AdditiveBlending} />
+    </instancedMesh>
   );
 }
 
@@ -588,37 +627,64 @@ function CurrentArrows({ s, data }: { s: Sampler; data: FieldResponse }) {
   );
 }
 
-/* ── 🎣 plankton glow + low-poly fish at the real hotspots ─────────── */
-const fishBody = new THREE.SphereGeometry(0.34, 12, 8);
-const fishTail = new THREE.ConeGeometry(0.2, 0.42, 6);
+/* ── 🎣 plankton glow + fish schools at the real hotspots ───────────
+ * Fish built from primitives but with real fish anatomy: fusiform body
+ * (spindle, wider at shoulders), forked tail fin, dorsal fin, side
+ * eyes, metallic-scale sheen (metalness high = light slides along the
+ * flank like a real fish out of water). Swim: S-shaped body undulation
+ * + tail wag + gentle depth bob — all driven by clock so it never
+ * desyncs from the swell they ride. */
+const fishBodyG = new THREE.SphereGeometry(0.34, 16, 10);
+const fishTailG = new THREE.ConeGeometry(0.24, 0.5, 2);   // 2-seg = flat fin
+const fishDorsalG = new THREE.ConeGeometry(0.13, 0.3, 3); // dorsal fin
+const fishEyeG = new THREE.SphereGeometry(0.045, 6, 6);
 
 function Fish({ cx, cz, r, phase, s, color }: {
   cx: number; cz: number; r: number; phase: number; s: Sampler; color: string;
 }) {
   const g = useRef<THREE.Group>(null);
+  const mid = useRef<THREE.Group>(null);
   const tail = useRef<THREE.Mesh>(null);
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
-    const ang = phase + t * 0.35;
+    const ang = phase + t * (0.30 + 0.05 * Math.sin(phase)); // school members drift apart subtly
     const x = cx + Math.cos(ang) * r;
     const z = cz + Math.sin(ang) * r;
     if (g.current) {
-      g.current.position.set(x, seaHeight(s, x, z, t) + 0.02, z);
-      g.current.rotation.y = -ang - Math.PI / 2;
-      g.current.rotation.z = Math.sin(t * 2.4 + phase) * 0.18;
+      g.current.position.set(x, seaHeight(s, x, z, t) + 0.05 + Math.sin(t * 1.2 + phase) * 0.06, z);
+      g.current.rotation.y = -ang - Math.PI / 2;               // head along swim direction
+      g.current.rotation.z = Math.sin(t * 2.2 + phase) * 0.10; // bank into the turn
     }
-    if (tail.current) tail.current.rotation.y = Math.sin(t * 7 + phase) * 0.5;
+    // S-curve body undulation: mid-section opposes the tail
+    if (mid.current) mid.current.rotation.y = Math.sin(t * 5.2 + phase) * 0.14;
+    if (tail.current) tail.current.rotation.y = Math.sin(t * 5.2 + phase - 0.7) * 0.55;
   });
+  const dark = "#0e1a24";
   return (
-    <group ref={g}>
-      <mesh geometry={fishBody} scale={[1.5, 0.62, 0.62]}>
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.35}
-          roughness={0.35} metalness={0.25} />
-      </mesh>
-      <mesh ref={tail} geometry={fishTail} position={[-0.62, 0, 0]}
-        rotation={[0, 0, Math.PI / 2]} scale={[1, 1, 0.5]}>
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.3}
-          roughness={0.4} />
+    <group ref={g} scale={[1.15, 1.15, 1.15]}>
+      <group ref={mid}>
+        {/* body — fusiform: long, compressed sides, metallic flank */}
+        <mesh geometry={fishBodyG} scale={[2.15, 0.78, 0.52]}>
+          <meshStandardMaterial color={color} roughness={0.28} metalness={0.75}
+            emissive={color} emissiveIntensity={0.10} flatShading={false} />
+        </mesh>
+        {/* dorsal fin */}
+        <mesh geometry={fishDorsalG} position={[0.02, 0.30, 0]} scale={[1.1, 1, 0.28]}>
+          <meshStandardMaterial color={color} roughness={0.4} metalness={0.5} />
+        </mesh>
+        {/* eyes, both flanks */}
+        <mesh geometry={fishEyeG} position={[0.52, 0.10, 0.20]}>
+          <meshBasicMaterial color={dark} />
+        </mesh>
+        <mesh geometry={fishEyeG} position={[0.52, 0.10, -0.20]}>
+          <meshBasicMaterial color={dark} />
+        </mesh>
+      </group>
+      {/* forked tail */}
+      <mesh ref={tail} geometry={fishTailG} position={[-0.80, 0, 0]}
+        rotation={[0, 0, Math.PI / 2]} scale={[1.1, 1, 0.30]}>
+        <meshStandardMaterial color={color} roughness={0.35} metalness={0.6}
+          emissive={color} emissiveIntensity={0.08} />
       </mesh>
     </group>
   );
@@ -695,13 +761,15 @@ function Hotspots({ s, data, tex, lang, onHotspot }: {
             </mesh>
             <PlanktonSwirl pos={pos} tex={tex} chl={h.chl} />
             {[0, 1, 2, 3].map((f) => (
-              <Fish key={f} cx={0} cz={0} r={0.55 + f * 0.28}
+              <Fish key={f} cx={0} cz={0} r={0.6 + f * 0.30}
                 phase={(f * Math.PI) / 2 + hi} s={s}
-                color={f % 2 ? "#34d399" : "#6ee7b7"} />
+                /* silvery flank tones (hilsa/mackerel look), slight
+                   member-to-member variation like a real school */
+                color={["#c4d6e2", "#aecbd8", "#a9c9b9", "#bcd2de"][f]} />
             ))}
             <Html center distanceFactor={24} position={[0, 1.7, 0]}
               style={{ pointerEvents: "none" }}>
-              <div className="whitespace-nowrap rounded-md bg-emerald-500/90 px-2 py-1 text-[10px] font-bold text-[#052e1b] shadow-lg text-center leading-tight">
+              <div className="whitespace-nowrap rounded-md bg-emerald-500/90 px-2.5 py-1.5 text-[12px] font-bold text-[#052e1b] shadow-lg text-center leading-tight">
                 🎣 #{hi + 1} · {h.chl} mg/m³
                 <div className="font-mono font-normal opacity-80">{fmtLat(h.lat)}, {fmtLon(h.lon)}</div>
               </div>
@@ -713,7 +781,7 @@ function Hotspots({ s, data, tex, lang, onHotspot }: {
         <Beacon />
         <Html center distanceFactor={24} position={[0, 3.6, 0]}
           style={{ pointerEvents: "none" }}>
-          <div className="whitespace-nowrap rounded-md bg-cyan-400/95 px-2 py-1 text-[10px] font-bold text-[#082f3a] shadow-lg text-center leading-tight">
+          <div className="whitespace-nowrap rounded-md bg-cyan-400/95 px-2.5 py-1.5 text-[12px] font-bold text-[#082f3a] shadow-lg text-center leading-tight">
             📍 {lang === "hi" ? "आपका बिंदु" : "Your point"}
             <div className="font-mono font-normal opacity-80">{fmtLat(data.center.lat)}, {fmtLon(data.center.lon)}</div>
           </div>
@@ -774,10 +842,10 @@ export default function Ocean3D({
   return (
     <div className="relative h-full w-full bg-[#050B14]">
       <Canvas
-        camera={{ position: [0, 13, 21], fov: 46 }}
-        dpr={[1, 1.75]}
-        gl={{ antialias: true, alpha: false }}
-      >
+        camera={{ position: [0, 16, 17.5], fov: 44 }}  // closer: the sea fills
+        dpr={[1, 1.75]}                                 // the frame edge-to-edge
+        gl={{ antialias: true, alpha: false }}          // (was shot "in a corner"
+      >                                                 //  of black starfield)
         <color attach="background" args={["#050B14"]} />
         <fog attach="fog" args={["#050B14", 34, 72]} />
         <ambientLight intensity={0.75} />
@@ -787,45 +855,45 @@ export default function Ocean3D({
 
         <OceanSurface s={s} mapTex={mapTex} onSea={onSea} />
         <FoamSpecks s={s} tex={tex} />
-        <WindStreaks s={s} tex={tex} />
+        <WindStreaks s={s} />
         <CurrentArrows s={s} data={data} />
         <Hotspots s={s} data={data} tex={tex} lang={lang} onHotspot={onHotspot} />
         <HoverTip s={s} data={data} hoverRef={hoverRef} lang={lang} />
 
         <OrbitControls
           makeDefault
-          autoRotate autoRotateSpeed={0.5}
+          autoRotate autoRotateSpeed={0.28}  // slow cinematic drift — easy to read
           enableDamping dampingFactor={0.08}
-          minDistance={8} maxDistance={46}
+          minDistance={7} maxDistance={40}
           maxPolarAngle={1.38}
-          target={[0, 0.2, 0]}
+          target={[0, 0.4, 0]}
         />
       </Canvas>
 
       {/* live-value chips */}
       <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 pointer-events-none">
-        <span className="surface-2 px-2.5 py-1 text-[11px] text-cyan-200">🌊 max wave <b>{s.waveMax.toFixed(1)} m</b></span>
-        <span className="surface-2 px-2.5 py-1 text-[11px] text-violet-300">💨 max gust <b>{s.gustMax.toFixed(0)} kn</b></span>
-        <span className="surface-2 px-2.5 py-1 text-[11px] text-amber-200">🌡️ avg SST <b>{s.sstMean.toFixed(1)}°C</b></span>
+        <span className="surface-2 px-2.5 py-1.5 text-[12.5px] text-cyan-200">🌊 max wave <b>{s.waveMax.toFixed(1)} m</b></span>
+        <span className="surface-2 px-2.5 py-1.5 text-[12.5px] text-violet-300">💨 max gust <b>{s.gustMax.toFixed(0)} kn</b></span>
+        <span className="surface-2 px-2.5 py-1.5 text-[12.5px] text-amber-200">🌡️ avg SST <b>{s.sstMean.toFixed(1)}°C</b></span>
         {data.hotspots[0] && (
-          <span className="surface-2 px-2.5 py-1 text-[11px] text-emerald-300">🎣 top chl <b>{data.hotspots[0].chl} mg/m³</b></span>
+          <span className="surface-2 px-2.5 py-1.5 text-[12.5px] text-emerald-300">🎣 top chl <b>{data.hotspots[0].chl} mg/m³</b></span>
         )}
       </div>
       {/* compass + map status */}
       <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5 pointer-events-none">
-        <span className="surface-2 px-2.5 py-1 text-[11px] text-slate-200 font-bold">🧭 N ↑</span>
+        <span className="surface-2 px-2.5 py-1.5 text-[12px] text-slate-200 font-bold">🧭 N ↑</span>
         {mapStatus === "loading" && (
-          <span className="surface-2 px-2.5 py-1 text-[10px] text-slate-400">🗺️ {lang === "hi" ? "asli map tiles aa rahi hain…" : "real map tiles loading…"}</span>
+          <span className="surface-2 px-2.5 py-1 text-[11px] text-slate-400">🗺️ {lang === "hi" ? "asli map tiles aa rahi hain…" : "real map tiles loading…"}</span>
         )}
         {mapStatus === "ok" && mapVia && (
-          <span className="surface-2 px-2.5 py-1 text-[10px] text-emerald-300 font-semibold">
+          <span className="surface-2 px-2.5 py-1 text-[11px] text-emerald-300 font-semibold">
             {mapDone < mapTotal
               ? `🗺️ ${lang === "hi" ? "asli OpenStreetMap aa raha hai" : "real OpenStreetMap arriving"}… ${mapDone}/${mapTotal}`
               : `🗺️ ${lang === "hi" ? "ASLI OpenStreetMap चालू ✓" : "REAL OpenStreetMap ON ✓"} (${mapVia})`}
           </span>
         )}
         {mapStatus === "fail" && (
-          <div className="surface-2 px-2.5 py-1.5 text-[10px] text-amber-300 max-w-[280px] pointer-events-auto text-left">
+          <div className="surface-2 px-2.5 py-1.5 text-[11px] text-amber-300 max-w-[300px] pointer-events-auto text-left">
             <div className="flex items-center gap-2 justify-between">
               <span>🗺️ {lang === "hi" ? "map tiles नहीं आईं — blue-sea mode चल रहा है" : "map tiles failed — running blue-sea mode"}</span>
               <button onClick={() => setMapAttempt((a) => a + 1)}
@@ -852,22 +920,27 @@ export default function Ocean3D({
         )}
       </div>
 
-      {/* legend + honesty note */}
-      <div className="absolute bottom-3 left-3 surface-2 px-3 py-2 text-[10px] text-slate-300 space-y-1 max-w-[340px] pointer-events-none">
-        <div className="font-semibold text-slate-100">{lang === "hi" ? "3D समुद्र — कैसे पढ़ें" : "3D ocean — how to read it"}</div>
-        <div>🗺️ {mapTex
-          ? (lang === "hi" ? "नीचे ASLI OpenStreetMap नक्शा — शहर/तट asli जगह पर" : "the base is the REAL OpenStreetMap — cities/coast at real places")
-          : (lang === "hi" ? "नीचे blue-sea mode (map photo नहीं आई) — लहरें/रंग सब real data से" : "blue-sea mode below (map photo missing) — waves/colours still from real data")}</div>
-        <div>🌊 {lang === "hi" ? "लहरों की ऊँचाई = असली wave data · 🤍 झाग = rough पानी" : "wave height = real wave data · white specks = rough water"}</div>
-        <div>💨 {lang === "hi" ? "उड़ती रोशनी = असली हवा की दिशा + gust गति" : "flying streaks = real wind direction + gust speed"} · 🌀 {lang === "hi" ? "तीर = असली धारा" : "arrows = real current"}</div>
-        <div>🎣 {lang === "hi" ? "हरी चमक + मछलियाँ = असली chlorophyll hotspot" : "green glow + fish = real chlorophyll hotspot"}</div>
-        <div className="text-slate-500 italic">
+      {/* legend + honesty note — line-by-line reading guide, fisherman
+          language (every abbreviation spelt out, every symbol named) */}
+      <div className="absolute bottom-3 left-3 surface-2 px-3.5 py-2.5 text-[11px] text-slate-300 space-y-1.5 max-w-[430px] pointer-events-none leading-snug">
+        <div className="font-semibold text-slate-100 text-[12px]">
+          {lang === "hi" ? "🧭 3D समुद्र — ऐसे पढ़ें (सब असली data)" : "🧭 3D ocean — how to read it (all real data)"}
+        </div>
+        <div>🗺️ <b className="text-slate-100">{lang === "hi" ? "नीचे का नक्शा" : "Base map"}</b> = {mapTex
+          ? (lang === "hi" ? "ASLI OpenStreetMap — शहर, तट, सड़कें asli jagah पर" : "the REAL OpenStreetMap — cities, coast, roads at real places")
+          : (lang === "hi" ? "blue-sea mode (map photo network se नहीं आई) — बाकी सब real" : "blue-sea mode (map photo didn't arrive) — everything else still real")}</div>
+        <div>🌊 <b className="text-slate-100">{lang === "hi" ? "उठती-गिरती सतह" : "Rising/falling surface"}</b> = {lang === "hi" ? "लहरें — जहाँ ज़्यादा उठती है, असली data में वहाँ उतना rough पानी (hover करके exact मीटर देखो) · 🤍 सफेद झाग = सबसे rough jagah" : "waves — where it rises more, the real data says rougher water (hover for exact metres) · white foam = roughest spots"}</div>
+        <div>〰️ <b className="text-slate-100">{lang === "hi" ? "लंबी धीमी लहरें" : "Long slow rollers"}</b> = {lang === "hi" ? "swell — दूर के तूफान से आती लहरें" : "swell — waves arriving from far-away storms"}</div>
+        <div>💨 <b className="text-slate-100">{lang === "hi" ? "उड़ती धारियाँ" : "Flying streaks"}</b> = {lang === "hi" ? "हवा की असली दिशा में बहती streams — जितनी तेज़ गुज़रें, असली gust उतनी तेज़ (kn = knots, समुद्री रफ़्तार की इकाई)" : "streams flowing in the real wind direction — faster streaks = stronger real gusts (kn = knots, sea-speed unit)"}</div>
+        <div>🌀 <b className="text-slate-100">{lang === "hi" ? "तीर" : "Arrows"}</b> = {lang === "hi" ? "पानी की धारा (current) की असली दिशा और रफ़्तार" : "real direction & speed of the water current"}</div>
+        <div>🎣 <b className="text-slate-100">{lang === "hi" ? "हरी चमक + मछली का झुंड" : "Green glow + fish school"}</b> = {lang === "hi" ? "असली chlorophyll hotspot — plankton → baitfish → मछली, मछली पकड़ने की best jagah" : "real chlorophyll hotspot — plankton → baitfish → fish, the best fishing zone"}</div>
+        <div className="text-slate-500 italic border-t border-slate-700/40 pt-1.5">
           {lang === "hi"
-            ? "नक्शा और नंबर 100% असली; उठती-गिरती सतह सिर्फ समझाने का अंदाज़ है।"
-            : "Map and numbers are 100% real; the moving surface is just the explanation layer."}
+            ? "💯 नक्शा और हर नंबर 100% असली (satellite/मॉडल/API से); चलती सतह और 3D आकृतियाँ समझाने के लिए बनाई गई हैं — उनकी चाल भी असली data से आती है।"
+            : "💯 Map and every number are 100% real (satellite/model/API); the moving surface & 3D shapes are the explanation layer — their motion is also driven by the real data."}
         </div>
       </div>
-      <div className="absolute bottom-3 right-3 text-[10px] text-slate-500 pointer-events-none">
+      <div className="absolute bottom-3 right-3 text-[11px] text-slate-500 pointer-events-none">
         {lang === "hi"
           ? "drag = घुमाओ · scroll = zoom · hover = वहां की details · © OpenStreetMap"
           : "drag = orbit · scroll = zoom · hover = details · © OpenStreetMap"}
