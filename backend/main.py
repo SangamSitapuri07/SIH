@@ -245,6 +245,31 @@ def root() -> dict[str, Any]:
     }
 
 
+def _git_commit() -> str:
+    """Which checkout is this backend actually running from?
+
+    Resolved once at startup — shown in /api/v1/health + the UI header,
+    so ANY screenshot self-identifies the code behind it. Born from the
+    2026-09-07 loop: the user kept seeing an error string that only
+    exists in old code while new fixes were already pushed — impossible
+    to tell 'pull nahi hua' from 'fix kaam nahi kiya' without this.
+    """
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=5,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return "unknown"
+
+
+_GIT_COMMIT = _git_commit()
+
+
 @app.get("/api/v1/health")
 def health() -> dict[str, Any]:
     gfw_token_set = bool(os.environ.get("GFW_API_TOKEN"))
@@ -252,6 +277,7 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "version": "0.2.0",
+        "build_commit": _GIT_COMMIT,
         "gfw_token_configured": gfw_token_set,
         "credentials": {
             "gfw_token_configured": gfw_token_set,

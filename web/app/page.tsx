@@ -47,12 +47,13 @@ const SRC_ORDER = ["mosdac", "noaa_erddap", "esa_occci", "openmeteo", "gfw", "in
 
 function SourceChips() {
   const [sources, setSources] = useState<Record<string, string> | null>(null);
+  const [commit, setCommit] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     const pull = () => {
       fetchHealth()
-        .then((h) => { if (alive) setSources(h.data_sources ?? {}); })
+        .then((h) => { if (alive) { setSources(h.data_sources ?? {}); setCommit(h.build_commit ?? null); } })
         .catch(() => { if (alive) setSources(null); });
     };
     pull();
@@ -89,6 +90,16 @@ function SourceChips() {
           </span>
         );
       })}
+      {/* build stamp — every screenshot now proves WHICH checkout the
+          backend is running ("purana code chal raha tha" loop-killer) */}
+      {commit && (
+        <span
+          title={`backend build commit: ${commit} — pull + backend restart ke baad yahan latest hash dikhna chahiye`}
+          className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-1 rounded-full border border-slate-600/40 text-slate-500"
+        >
+          ⎇ {commit}
+        </span>
+      )}
     </div>
   );
 }
