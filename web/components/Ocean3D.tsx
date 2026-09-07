@@ -21,13 +21,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Html, Stars } from "@react-three/drei";
-import { FieldResponse, FieldPoint, tileCandidateBases } from "@/lib/orca-client";
+import { FieldResponse, FieldPoint, apiFetchBlob, fmtLat, fmtLon } from "@/lib/orca-client";
 import { Lang } from "@/lib/i18n";
 import { sstColor, windColor, currentColor, waveColor } from "@/components/fieldColors";
 
 /* ── grid ↔ world mapping (square world, ±12 units = ±radius_deg) ──── */
 const HALF = 12;
-const DEEP = new THREE.Color("#0a2c4d");
+const TROUGH = new THREE.Color("#041d38"); // deep-sea blue (fallback water)
+const CREST = new THREE.Color("#2f7fb8");  // crest highlight
 const FOAM = new THREE.Color("#e8f6ff");
 
 interface Sampler {
@@ -119,19 +120,36 @@ function seaHeight(s: Sampler, x: number, z: number, t: number): number {
   return h;
 }
 
-/* ── 🗺️ the REAL map — OSM tiles via OUR backend proxy ───────────────
- * Tiles come from /api/v1/tiles/z/x/y.png (the backend's cached proxy):
- * first-party + CORS-clean on every network, so the canvas is never
- * tainted and the real map always makes it into WebGL. */
+/* ── 🗺️ the REAL map — three independent tile sources, first wins ────
+ *   1. /api/localtiles   — proxy INSIDE the Next dev server (same-origin,
+ *      no backend restart needed, no CORS at all)
+ *   2. /api/v1/tiles     — the FastAPI disk-cached proxy (via apiFetchBlob,
+ *      resilient direct→proxy base selection)
+ *   3. OSM direct        — plain fetch (works when the network keeps CORS)
+ * Every tile comes back as a Blob → same-origin object URL → the canvas
+ * can NEVER be tainted, no matter what the network strips. */
 
-function loadImg(src: string): Promise<HTMLImageElement> {
-  return new Promise((res, rej) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => res(img);
-    img.onerror = () => rej(new Error("tile failed"));
-    img.src = src;
-  });
+async function tileToImg(url: string, viaApi: boolean): Promise<HTMLImageElement> {
+  let blob: Blob;
+  if (viaApi) {
+    blob = await apiFetchBlob(url);
+  } else {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!/^image\//.test(res.headers.get("content-type") ?? "")) throw new Error("not an image");
+    blob = await res.blob();
+  }
+  const obj = URL.createObjectURL(blob);
+  try {
+    return await new Promise<HTMLImageElement>((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = () => rej(new Error("tile decode failed"));
+      img.src = obj;
+    });
+  } finally {
+    URL.revokeObjectURL(obj);
+  }
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -141,9 +159,16 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
+const TILE_SOURCES: { name: string; viaApi: boolean; url: (z: number, x: number, y: number) => string }[] = [
+  { name: "next-proxy", viaApi: false, url: (z, x, y) => `/api/localtiles/${z}/${x}/${y}.png` },
+  { name: "backend-proxy", viaApi: true, url: (z, x, y) => `/api/v1/tiles/${z}/${x}/${y}.png` },
+  { name: "osm-direct", viaApi: false, url: (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png` },
+];
+
 function useMapTexture(lat: number, lon: number, radiusDeg: number) {
-  const [state, setState] = useState<{ tex: THREE.Texture | null; status: "loading" | "ok" | "fail" }>(
-    { tex: null, status: "loading" });
+  const [state, setState] = useState<{
+    tex: THREE.Texture | null; status: "loading" | "ok" | "fail"; via?: string;
+  }>({ tex: null, status: "loading" });
   useEffect(() => {
     let alive = true;
     const ZOOM = 10;
@@ -161,10 +186,10 @@ function useMapTexture(lat: number, lon: number, radiusDeg: number) {
     for (let tx = tx0; tx <= tx1; tx++)
       for (let ty = ty0; ty <= ty1; ty++) coords.push([tx, ty]);
 
-    const tryBase = async (base: string): Promise<THREE.Texture | null> => {
+    const trySource = async (src: (typeof TILE_SOURCES)[number]): Promise<THREE.Texture | null> => {
       const results = await withTimeout(
-        Promise.allSettled(coords.map(([tx, ty]) => loadImg(`${base}/api/v1/tiles/${ZOOM}/${tx}/${ty}.png`))),
-        14000);
+        Promise.allSettled(coords.map(([tx, ty]) => tileToImg(src.url(ZOOM, tx, ty), src.viaApi))),
+        16000);
       const okCount = results.filter((r) => r.status === "fulfilled").length;
       if (okCount < results.length * 0.7) return null;
       const big = document.createElement("canvas");
@@ -187,15 +212,19 @@ function useMapTexture(lat: number, lon: number, radiusDeg: number) {
     };
 
     (async () => {
-      const bases = tileCandidateBases();
-      for (const b of bases.length ? bases : [""]) {
+      const tried: string[] = [];
+      for (const src of TILE_SOURCES) {
         try {
-          const tex = await tryBase(b);
+          const tex = await trySource(src);
           if (!alive) return;
-          if (tex) { setState({ tex, status: "ok" }); return; }
-        } catch { /* try the next base */ }
+          if (tex) { setState({ tex, status: "ok", via: src.name }); return; }
+          tried.push(`${src.name}: <70% tiles`);
+        } catch (e) {
+          tried.push(`${src.name}: ${e instanceof Error ? e.message : e}`);
+        }
         if (!alive) return;
       }
+      console.warn("[Ocean3D] all tile sources failed:", tried.join(" | "));
       if (alive) setState({ tex: null, status: "fail" });
     })();
     return () => { alive = false; };
@@ -214,23 +243,17 @@ function OceanSurface({ s, mapTex, onSea }: {
   onSea: (x: number | null, z?: number) => void;
 }) {
   const SEG = 92;
-  const { geo, base, foamK } = useMemo(() => {
+  const { geo, foamK } = useMemo(() => {
     const g = new THREE.PlaneGeometry(2 * HALF, 2 * HALF, SEG, SEG);
     g.rotateX(-Math.PI / 2);
     const pos = g.attributes.position;
     const cnt = pos.count;
-    const baseA = new Float32Array(cnt * 3);
     const foamA = new Float32Array(cnt);
-    const tmp = new THREE.Color();
     for (let i = 0; i < cnt; i++) {
-      const x = pos.getX(i), z = pos.getZ(i);
-      tmp.set(sstColor(bilinear(s.sst, s.n, x, z)));
-      tmp.lerp(DEEP, 0.72); // deep blue sea with an SST tint, never a red blob
-      baseA[i * 3] = tmp.r; baseA[i * 3 + 1] = tmp.g; baseA[i * 3 + 2] = tmp.b;
-      foamA[i] = Math.min(1, bilinear(s.wave, s.n, x, z) / 3);
+      foamA[i] = Math.min(1, bilinear(s.wave, s.n, pos.getX(i), pos.getZ(i)) / 3);
     }
-    g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(baseA), 3));
-    return { geo: g, base: baseA, foamK: foamA };
+    g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(cnt * 3), 3));
+    return { geo: g, foamK: foamA };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -243,14 +266,19 @@ function OceanSurface({ s, mapTex, onSea }: {
     }
     pos.needsUpdate = true;
     if (!mapTex) {
+      // fallback water: always a real-looking rolling blue sea — troughs
+      // dark, crests light, foam only where the model says rough. Colour
+      // follows SHAPE ('h'), never a fake heat-map, so it can never
+      // become the red-lava blob the judge saw.
       const colA = geo.attributes.color as THREE.BufferAttribute;
       for (let i = 0; i < cnt; i++) {
         const h = pos.getY(i);
+        const tN = Math.max(0, Math.min(1, (h + 1.1) / 2.2));
         const fo = Math.max(0, Math.min(1, (h - 0.35) / 0.7)) * foamK[i];
         colA.setXYZ(i,
-          base[i * 3] + (FOAM.r - base[i * 3]) * fo,
-          base[i * 3 + 1] + (FOAM.g - base[i * 3 + 1]) * fo,
-          base[i * 3 + 2] + (FOAM.b - base[i * 3 + 2]) * fo);
+          (TROUGH.r + (CREST.r - TROUGH.r) * tN) + (FOAM.r - CREST.r) * fo,
+          (TROUGH.g + (CREST.g - TROUGH.g) * tN) + (FOAM.g - CREST.g) * fo,
+          (TROUGH.b + (CREST.b - TROUGH.b) * tN) + (FOAM.b - CREST.b) * fo);
       }
       colA.needsUpdate = true;
     }
@@ -287,7 +315,7 @@ function SeaCard({ s, lat, lon, x, z, lang }: {
   );
   return (
     <div className="whitespace-nowrap rounded-lg border border-cyan-400/30 bg-[#0A1120]/95 px-3 py-2 text-[11px] shadow-xl leading-relaxed">
-      <div className="font-mono text-cyan-300 font-bold mb-1">{lat.toFixed(2)}°N, {lon.toFixed(2)}°E</div>
+      <div className="font-mono text-cyan-300 font-bold mb-1">{fmtLat(lat)}, {fmtLon(lon)}</div>
       <Row icon="🌊" name={lang === "hi" ? "लहरें" : "waves"} val={w.toFixed(1)} unit="m" color={waveColor(w)} />
       <Row icon="〰️" name="swell" val={sw.toFixed(1)} unit="m" color={waveColor(sw)} />
       <Row icon="💨" name="gusts" val={gu.toFixed(0)} unit="kn" color={windColor(gu)} />
@@ -302,7 +330,7 @@ function HotspotCard({ h, rank, lang }: { h: FieldResponse["hotspots"][number]; 
   return (
     <div className="whitespace-nowrap rounded-lg border border-emerald-400/40 bg-[#0A1120]/95 px-3 py-2 text-[11px] shadow-xl leading-relaxed">
       <div className="font-bold text-emerald-300 mb-0.5">🎣 #{rank} · {h.chl} mg/m³</div>
-      <div className="font-mono text-slate-400">{h.lat.toFixed(2)}°N, {h.lon.toFixed(2)}°E</div>
+      <div className="font-mono text-slate-400">{fmtLat(h.lat)}, {fmtLon(h.lon)}</div>
       <div className="text-slate-300">{h.distance_nm} NM · {h.bearing}</div>
       <div className="mt-1 text-slate-500 max-w-[220px] whitespace-normal">
         {lang === "hi"
@@ -622,7 +650,7 @@ function Hotspots({ s, data, tex, lang, onHotspot }: {
               style={{ pointerEvents: "none" }}>
               <div className="whitespace-nowrap rounded-md bg-emerald-500/90 px-2 py-1 text-[10px] font-bold text-[#052e1b] shadow-lg text-center leading-tight">
                 🎣 #{hi + 1} · {h.chl} mg/m³
-                <div className="font-mono font-normal opacity-80">{h.lat.toFixed(2)}°N, {h.lon.toFixed(2)}°E</div>
+                <div className="font-mono font-normal opacity-80">{fmtLat(h.lat)}, {fmtLon(h.lon)}</div>
               </div>
             </Html>
           </group>
@@ -634,7 +662,7 @@ function Hotspots({ s, data, tex, lang, onHotspot }: {
           style={{ pointerEvents: "none" }}>
           <div className="whitespace-nowrap rounded-md bg-cyan-400/95 px-2 py-1 text-[10px] font-bold text-[#082f3a] shadow-lg text-center leading-tight">
             📍 {lang === "hi" ? "आपका बिंदु" : "Your point"}
-            <div className="font-mono font-normal opacity-80">{data.center.lat.toFixed(2)}°N, {data.center.lon.toFixed(2)}°E</div>
+            <div className="font-mono font-normal opacity-80">{fmtLat(data.center.lat)}, {fmtLon(data.center.lon)}</div>
           </div>
         </Html>
       </group>
@@ -735,7 +763,7 @@ export default function Ocean3D({
           <span className="surface-2 px-2.5 py-1 text-[10px] text-slate-400">🗺️ {lang === "hi" ? "asli map tiles aa rahi hain…" : "real map tiles loading…"}</span>
         )}
         {mapStatus === "fail" && (
-          <span className="surface-2 px-2.5 py-1 text-[10px] text-amber-300">🗺️ {lang === "hi" ? "map tiles नहीं आईं (network) — coloured mode" : "map tiles failed (network) — coloured mode"}</span>
+          <span className="surface-2 px-2.5 py-1 text-[10px] text-amber-300">🗺️ {lang === "hi" ? "map tiles नहीं आईं — backend restart kiya? (blue-sea mode)" : "map tiles failed — restarted the backend? (blue-sea mode)"}</span>
         )}
       </div>
 

@@ -20,7 +20,7 @@ import { MapContainer, TileLayer, CircleMarker, Tooltip, Polyline } from "react-
 import "leaflet/dist/leaflet.css";
 import LineChart from "@/components/LineChart";
 import { Lang } from "@/lib/i18n";
-import { fetchField, FieldPoint, FieldResponse } from "@/lib/orca-client";
+import { fetchField, FieldPoint, FieldResponse, fmtLat, fmtLon } from "@/lib/orca-client";
 import { chlColor, waveColor, windColor, currentColor, sstColor } from "@/components/fieldColors";
 
 const Ocean3D = dynamic(() => import("@/components/Ocean3D"), { ssr: false });
@@ -141,7 +141,7 @@ export default function FieldExplorer({
           <h2 className="text-base font-bold text-white shrink-0">
             🔬 {lang === "hi" ? "विज़ुअल एक्सप्लोरर" : "Visual Explorer"}
           </h2>
-          <span className="text-[11px] text-slate-500 font-mono shrink-0">{lat.toFixed(2)}°N, {lon.toFixed(2)}°E · ±1.2°</span>
+          <span className="text-[11px] text-slate-500 font-mono shrink-0">{fmtLat(lat)}, {fmtLon(lon)} · ±1.2°</span>
           {/* view toggle: 2D map vs living 3D ocean (same real data) */}
           <div className="flex gap-1 bg-[#0E1729] border border-[#1C2A45] rounded-lg p-1 shrink-0">
             <button
@@ -240,7 +240,7 @@ export default function FieldExplorer({
                 >
                   <Tooltip>
                     <div className="text-xs">
-                      <strong>{p.lat.toFixed(2)}°, {p.lon.toFixed(2)}°</strong><br />
+                      <strong>{fmtLat(p.lat)}, {fmtLon(p.lon)}</strong><br />
                       {p.chl != null && <>🎣 chl: <b>{p.chl}</b> mg/m³<br /></>}
                       {p.wave_m != null && <>🌊 waves: <b>{p.wave_m}</b> m · swell {p.swell_m ?? "—"} m<br /></>}
                       {p.wind_kn != null && <>💨 wind: <b>{p.wind_kn}</b> kn · gusts <b>{p.gust_kn ?? "—"}</b> kn<br /></>}
@@ -286,7 +286,7 @@ export default function FieldExplorer({
                 {data.hotspots.map((h, i) => (
                   <li key={i} className="surface px-3 py-2 text-xs flex items-center justify-between gap-2">
                     <span className="text-slate-200 font-medium">
-                      #{i + 1} · {h.lat.toFixed(2)}°N, {h.lon.toFixed(2)}°E
+                      #{i + 1} · {fmtLat(h.lat)}, {fmtLon(h.lon)}
                     </span>
                     <span className="text-slate-400 text-right">
                       <b className="text-emerald-300">{h.chl}</b> mg/m³<br />

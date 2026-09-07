@@ -257,6 +257,20 @@ async function apiFetch(path: string, init: RequestInit): Promise<Response> {
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
+/** First-party binary fetch (tiles) — same resilient base selection as
+ *  the JSON API; the blob result is turned into a same-origin object URL,
+ *  so canvases reading it are never tainted (CORS disappears). */
+export async function apiFetchBlob(path: string): Promise<Blob> {
+  const res = await apiFetch(path, {});
+  if (!res.ok) throw new Error(apiErrorMessage(res.status, await res.text()));
+  return res.blob();
+}
+
+/** Hemisphere-aware coordinate labels (N/S, E/W) — a point south of the
+ *  equator must never be labelled "°N". */
+export const fmtLat = (lat: number): string => `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? "N" : "S"}`;
+export const fmtLon = (lon: number): string => `${Math.abs(lon).toFixed(2)}°${lon >= 0 ? "E" : "W"}`;
+
 /** Turn a non-OK response into a human-readable error. FastAPI error
  * bodies are JSON {"detail": "..."} — surface the DETAIL (it carries our
  * honest 504 retry hint: "still computing in background, retry in 10-30s

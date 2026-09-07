@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { Advisory, DemoZone, OrcaInsight, fetchAdvisory, fetchInsight } from "@/lib/orca-client";
+import { Advisory, DemoZone, OrcaInsight, fetchAdvisory, fetchInsight, fmtLat, fmtLon } from "@/lib/orca-client";
 import { t, Lang } from "@/lib/i18n";
 import LineChart from "@/components/LineChart";
 import { AGENT_EMOJI, AGENT_LABEL, RISK_COLOR, SEVERITY_COLOR } from "@/components/agentMeta";
@@ -144,7 +144,7 @@ export default function AdvisoryCard({
           </button>
         </div>
         <div className="mt-2 text-xs opacity-80">
-          {t(lang, "advisory_for")} {zone.name} ({zone.lat.toFixed(2)}°N, {zone.lon.toFixed(2)}°E) ·{" "}
+          {t(lang, "advisory_for")} {zone.name} ({fmtLat(zone.lat)}, {fmtLon(zone.lon)}) ·{" "}
           {t(lang, "valid_until")} {advisory.valid_until.slice(11, 16)} UTC
         </div>
       </div>
