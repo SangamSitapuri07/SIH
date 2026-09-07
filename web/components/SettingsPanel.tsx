@@ -55,11 +55,11 @@ export default function SettingsPanel({
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-[#0A1628] p-4 space-y-4 max-w-2xl">
+    <div className="h-full overflow-y-auto bg-[#070D1A] p-4 space-y-4 max-w-2xl">
       <h2 className="font-bold text-slate-100">{t(lang, "settings_title")}</h2>
 
       {/* language */}
-      <section className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+      <section className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-4">
         <h3 className="text-sm font-semibold text-slate-200 mb-2">🗣️ {t(lang, "language")}</h3>
         <div className="flex gap-2">
           {LANGS.map((l) => (
@@ -67,7 +67,7 @@ export default function SettingsPanel({
               key={l.id}
               onClick={() => setLang(l.id)}
               className={`rounded-full px-4 py-1.5 text-sm border ${
-                lang === l.id ? "bg-cyan-600 text-white border-cyan-500" : "bg-[#132544] border-[#24457A] text-slate-300"
+                lang === l.id ? "bg-cyan-600 text-white border-cyan-500" : "bg-[#131E35] border-[#2B4066] text-slate-300"
               }`}
             >
               {l.label}
@@ -78,10 +78,10 @@ export default function SettingsPanel({
       </section>
 
       {/* home port */}
-      <section className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+      <section className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-4">
         <h3 className="text-sm font-semibold text-slate-200 mb-2">⚓ {t(lang, "home_port")}</h3>
         <select
-          className="bg-[#0A1628] border border-[#24457A] text-slate-200 rounded px-3 py-2 text-sm w-full"
+          className="bg-[#070D1A] border border-[#2B4066] text-slate-200 rounded px-3 py-2 text-sm w-full"
           value={zone.name}
           onChange={(e) => {
             const z = INDIAN_COASTAL_ZONES.find((x) => x.name === e.target.value);
@@ -100,7 +100,7 @@ export default function SettingsPanel({
       </section>
 
       {/* GFW deep data toggle */}
-      <section className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+      <section className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-4">
         <h3 className="text-sm font-semibold text-slate-200 mb-2">🚢 {t(lang, "gfw_title")}</h3>
         <label className="flex items-start gap-2 cursor-pointer">
           <input
@@ -124,7 +124,7 @@ export default function SettingsPanel({
       </section>
 
       {/* system status / data freshness */}
-      <section className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+      <section className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-4">
         <h3 className="text-sm font-semibold text-slate-200 mb-2">📊 {t(lang, "data_freshness")}</h3>
         {!health ? (
           <p className="text-sm text-red-400">backend unreachable on /api/v1/health</p>
@@ -168,7 +168,7 @@ export default function SettingsPanel({
       </section>
 
       {/* feedback */}
-      <section className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+      <section className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-4">
         <h3 className="text-sm font-semibold text-slate-200 mb-2">💬 {t(lang, "feedback_title")}</h3>
         {fbDone ? (
           <p className="text-sm text-emerald-300">{t(lang, "feedback_thanks")}</p>
@@ -177,7 +177,7 @@ export default function SettingsPanel({
             <textarea
               value={fb}
               onChange={(e) => setFb(e.target.value)}
-              className="w-full bg-[#0A1628] border border-[#24457A] text-slate-200 placeholder:text-slate-600 rounded px-3 py-2 text-sm"
+              className="w-full bg-[#070D1A] border border-[#2B4066] text-slate-200 placeholder:text-slate-600 rounded px-3 py-2 text-sm"
               rows={2}
               placeholder={lang === "hi" ? "टिप्पणी (वैकल्पिक)…" : "comment (optional)…"}
             />
@@ -190,7 +190,7 @@ export default function SettingsPanel({
         )}
       </section>
 
-      <section className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4 text-xs text-slate-400">
+      <section className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-4 text-xs text-slate-400">
         <h3 className="text-sm font-semibold text-slate-200 mb-1">⚖️ {t(lang, "disclaimer_title")}</h3>
         {lang === "hi"
           ? "ORCA एक सलाहकार सहायक है — समुद्र में उतरने का अंतिम फैसला नाव के मालिक का है। रवाना होने से पहले नवीनतम INCOIS/IMD बुलेटिन ज़रूर देखें।"

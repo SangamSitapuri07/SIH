@@ -18,6 +18,14 @@ import AskOrca from "@/components/AskOrca";
 import AdvisoryCard from "@/components/AdvisoryCard";
 import AlertsPanel from "@/components/AlertsPanel";
 import SettingsPanel from "@/components/SettingsPanel";
+import {
+  IconMap,
+  IconChat,
+  IconShield,
+  IconBell,
+  IconSettings,
+  IconWave,
+} from "@/components/icons";
 
 // react-leaflet uses window/document — client-only
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
@@ -54,8 +62,9 @@ function SourceChips() {
 
   if (sources === null) {
     return (
-      <span className="text-[10px] sm:text-[11px] font-semibold px-2.5 py-1 rounded-md bg-red-500/10 border border-red-500/40 text-red-300">
-        backend ●DOWN
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-300">
+        <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+        backend down
       </span>
     );
   }
@@ -69,13 +78,14 @@ function SourceChips() {
           <span
             key={k}
             title={v}
-            className={`text-[10px] sm:text-[11px] font-semibold px-2.5 py-1 rounded-md border ${
+            className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border ${
               live
-                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-                : "bg-amber-500/10 border-amber-500/30 text-amber-300"
-            } ${i > 3 ? "hidden lg:inline-block" : i > 1 ? "hidden sm:inline-block" : ""}`}
+                ? "bg-emerald-400/10 border-emerald-400/25 text-emerald-300"
+                : "bg-amber-400/10 border-amber-400/25 text-amber-300"
+            } ${i > 3 ? "hidden lg:inline-flex" : i > 1 ? "hidden sm:inline-flex" : ""}`}
           >
-            {SRC_LABEL[k] ?? k} {live ? "●LIVE" : "●SETUP"}
+            <span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-emerald-400 chip-dot" : "bg-amber-400"}`} />
+            {SRC_LABEL[k] ?? k}
           </span>
         );
       })}
@@ -151,35 +161,44 @@ export default function Home() {
       });
   };
 
-  const TABS: { id: Tab; label: string; icon: string }[] = [
-    { id: "map", label: t(lang, "tab_map"), icon: "🗺️" },
-    { id: "ask", label: t(lang, "tab_ask"), icon: "💬" },
-    { id: "advisory", label: t(lang, "tab_advisory"), icon: "🛡️" },
-    { id: "alerts", label: t(lang, "tab_alerts"), icon: "🚨" },
-    { id: "settings", label: t(lang, "tab_settings"), icon: "⚙️" },
+  const TABS: { id: Tab; label: string; icon: (cls: string) => JSX.Element }[] = [
+    { id: "map", label: t(lang, "tab_map"), icon: (c) => <IconMap size={19} className={c} /> },
+    { id: "ask", label: t(lang, "tab_ask"), icon: (c) => <IconChat size={19} className={c} /> },
+    { id: "advisory", label: t(lang, "tab_advisory"), icon: (c) => <IconShield size={19} className={c} /> },
+    { id: "alerts", label: t(lang, "tab_alerts"), icon: (c) => <IconBell size={19} className={c} /> },
+    { id: "settings", label: t(lang, "tab_settings"), icon: (c) => <IconSettings size={19} className={c} /> },
   ];
 
   return (
-    <div className="h-screen flex overflow-hidden bg-[#0A1628] text-slate-200">
+    <div className="h-screen flex overflow-hidden bg-[#070D1A] text-[#DBE4F3]">
       {/* left icon rail */}
-      <aside className="w-14 sm:w-16 shrink-0 flex flex-col items-center gap-1.5 py-3 bg-[#081120] border-r border-[#1E3356]">
-        <div className="mb-2 text-2xl" title="ORCA">🐋</div>
-        {TABS.map(({ id, label, icon }) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            title={label}
-            className={`w-11 sm:w-12 flex flex-col items-center gap-0.5 py-2 rounded-lg transition ${
-              tab === id
-                ? "bg-[#123055] text-cyan-300 shadow-[inset_0_0_0_1px_#22d3ee33]"
-                : "text-slate-500 hover:bg-[#0E1D36] hover:text-slate-300"
-            }`}
-          >
-            <span className="text-lg leading-none">{icon}</span>
-            <span className="text-[9px] font-medium leading-none">{label}</span>
-          </button>
-        ))}
-        <div className="mt-auto text-[9px] text-slate-600 [writing-mode:vertical-rl] rotate-180 select-none">
+      <aside className="w-[60px] sm:w-[64px] shrink-0 flex flex-col items-center gap-1 py-4 bg-[#0A1120] border-r border-[#16233C]">
+        <div
+          className="mb-3 h-9 w-9 rounded-xl bg-gradient-to-br from-cyan-500/25 to-blue-600/25 border border-cyan-400/30 flex items-center justify-center text-cyan-300"
+          title="ORCA"
+        >
+          <IconWave size={20} />
+        </div>
+        {TABS.map(({ id, label, icon }) => {
+          const active = tab === id;
+          return (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              title={label}
+              className={`relative w-11 sm:w-12 flex flex-col items-center gap-1 py-2.5 rounded-xl transition-all duration-150 ${
+                active
+                  ? "bg-cyan-400/10 text-cyan-300"
+                  : "text-[#4D5D80] hover:bg-white/[0.04] hover:text-[#9FB0D1]"
+              }`}
+            >
+              {active && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-r-full bg-cyan-400" />}
+              {icon("")}
+              <span className="text-[9px] font-medium leading-none tracking-wide">{label}</span>
+            </button>
+          );
+        })}
+        <div className="mt-auto pb-1 text-[8px] font-medium tracking-[0.2em] text-[#34446A] [writing-mode:vertical-rl] rotate-180 select-none">
           SIH 2026 · PS 176
         </div>
       </aside>
@@ -187,22 +206,21 @@ export default function Home() {
       {/* main column */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* header */}
-        <header className="shrink-0 bg-[#0B1830] border-b border-[#1E3356] px-3 sm:px-4 py-2">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h1 className="text-lg font-extrabold tracking-wide text-white leading-tight">
-                ORCA <span className="text-[11px] font-medium text-cyan-400/90 tracking-normal">Marine Intelligence</span>
-              </h1>
-              <p className="text-[10px] text-slate-500 truncate">{t(lang, "app_tagline")}</p>
-            </div>
-            <SourceChips />
+        <header className="shrink-0 bg-[#0A1120]/95 border-b border-[#16233C] px-4 sm:px-5 h-14 flex items-center justify-between gap-3">
+          <div className="min-w-0 flex items-baseline gap-2.5">
+            <h1 className="text-[17px] font-bold tracking-tight text-white leading-none">
+              ORCA
+            </h1>
+            <span className="text-[11px] text-cyan-300/80 font-medium hidden sm:inline">Marine Intelligence</span>
+            <span className="text-[10px] text-[#4D5D80] truncate hidden md:inline">· {t(lang, "app_tagline")}</span>
           </div>
+          <SourceChips />
         </header>
 
         {/* alert ticker — any active warning scrolls by */}
         {ticker.length > 0 && (
-          <div className="shrink-0 bg-red-950/80 border-b border-red-800/60 text-red-200 text-xs px-4 py-1.5 flex items-center gap-3 overflow-hidden">
-            <span className="font-bold animate-pulse shrink-0">{t(lang, "ticker_prefix")}</span>
+          <div className="shrink-0 bg-red-500/10 border-b border-red-500/25 text-red-300 text-xs px-4 py-1.5 flex items-center gap-3 overflow-hidden">
+            <span className="font-semibold animate-pulse shrink-0">{t(lang, "ticker_prefix")}</span>
             <div className="whitespace-nowrap overflow-hidden text-ellipsis">
               {ticker.map((a) => `${a.simulated ? "[DEMO] " : ""}${lang === "hi" ? a.title_hi : a.title_en} (till ${a.valid_until.slice(11, 16)} UTC)`).join("  ·  ")}
             </div>
@@ -214,16 +232,16 @@ export default function Home() {
           <div className="h-full grid grid-cols-1 md:grid-cols-[2fr_1fr]">
             <div className="relative">
               <MapView zones={INDIAN_COASTAL_ZONES} selected={zone} onSelect={handleSelectZone} lang={lang} />
-              <div className="absolute bottom-4 left-4 bg-[#0E1D36]/90 backdrop-blur border border-[#1E3356] rounded-lg shadow-lg p-3 text-xs max-w-xs z-[1000]">
-                <div className="font-semibold text-slate-100 mb-1">
+              <div className="absolute bottom-4 left-4 surface-2 backdrop-blur shadow-xl px-3.5 py-2.5 text-xs max-w-xs z-[1000]">
+                <div className="font-semibold text-white mb-0.5">
                   {zone.name}
                 </div>
-                <div className="text-slate-400">
+                <div className="text-[#7D8DB0]">
                   {t(lang, "map_click_hint")}
                 </div>
               </div>
             </div>
-            <div className="bg-[#0B1830] border-l border-[#1E3356] overflow-hidden">
+            <div className="bg-[#0A1120] border-l border-[#16233C] overflow-hidden">
               <InsightPanel insight={insight} loading={insightLoading} zoneName={zone.name} lang={lang} />
             </div>
           </div>

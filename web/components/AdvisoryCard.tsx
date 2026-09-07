@@ -12,7 +12,7 @@ const VERDICT_STYLE: Record<string, { bg: string; ring: string; label_en: string
 
 function Tile({ label, value, sub, warn }: { label: string; value: string; sub?: string; warn?: boolean }) {
   return (
-    <div className={`rounded-lg border p-3 bg-[#0F1F3A] ${warn ? "border-amber-500/60 shadow-[0_0_12px_#f59e0b22]" : "border-[#1E3356]"}`}>
+    <div className={`rounded-lg border p-3 bg-[#0E1729] ${warn ? "border-amber-500/60 shadow-[0_0_12px_#f59e0b22]" : "border-[#1C2A45]"}`}>
       <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
       <div className={`text-lg font-bold ${warn ? "text-amber-300" : "text-slate-100"}`}>{value}</div>
       {sub && <div className="text-[11px] text-slate-500">{sub}</div>}
@@ -54,7 +54,7 @@ export default function AdvisoryCard({
 
   if (loading && !advisory) {
     return (
-      <div className="h-full flex items-center justify-center text-slate-400 bg-[#0A1628]">
+      <div className="h-full flex items-center justify-center text-slate-400 bg-[#070D1A]">
         <div className="text-center">
           <div className="text-3xl mb-2 animate-bounce">🌊</div>
           <p className="text-sm text-slate-300">{t(lang, "loading")}</p>
@@ -66,7 +66,7 @@ export default function AdvisoryCard({
 
   if (error) {
     return (
-      <div className="h-full flex items-center justify-center bg-[#0A1628]">
+      <div className="h-full flex items-center justify-center bg-[#070D1A]">
         <div className="text-center max-w-sm">
           <div className="text-3xl mb-2">🔌</div>
           <p className="text-sm text-slate-400 mb-3">{error}</p>
@@ -85,7 +85,7 @@ export default function AdvisoryCard({
   const sw = advisory.safe_window;
 
   return (
-    <div className="h-full overflow-y-auto bg-[#0A1628] p-4 space-y-4">
+    <div className="h-full overflow-y-auto bg-[#070D1A] p-4 space-y-4">
       {/* verdict banner: icon + shape + colour (readable by anyone) */}
       <div className={`rounded-xl ${st.bg} text-white p-5 shadow-lg ring-4 ${st.ring}`}>
         <div className="flex items-center justify-between">
@@ -124,7 +124,7 @@ export default function AdvisoryCard({
       </div>
 
       {/* safe window */}
-      <div className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+      <div className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-4">
         <h3 className="text-sm font-semibold text-slate-200 mb-1">⏱️ {t(lang, "safe_window")}</h3>
         {sw.found ? (
           <p className="text-sm text-slate-300">
@@ -139,7 +139,7 @@ export default function AdvisoryCard({
       </div>
 
       {/* reasons */}
-      <div className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4">
+      <div className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-4">
         <h3 className="text-sm font-semibold text-slate-200 mb-2">🔎 {t(lang, "reasons")}</h3>
         <ul className="space-y-1.5">
           {advisory.reasons.map((r, i) => (
@@ -157,7 +157,7 @@ export default function AdvisoryCard({
       </div>
 
       {/* sources footer — full transparency */}
-      <div className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] p-4 text-xs text-slate-500 space-y-1">
+      <div className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-4 text-xs text-slate-500 space-y-1">
         <div><span className="font-semibold text-slate-400">{t(lang, "sources")}:</span> {advisory.sources.join(" · ")}</div>
         {advisory.sources_failed.length > 0 && (
           <div><span className="font-semibold text-slate-400">{t(lang, "failed_sources")}:</span> {advisory.sources_failed.join(" · ")}</div>

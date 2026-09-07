@@ -122,7 +122,7 @@ export default function InsightPanel({ insight, loading, zoneName, lang }: Props
       </div>
 
       {/* Recommendation */}
-      <div className="rounded-lg border border-[#1E3356] bg-[#0F1F3A] px-4 py-3">
+      <div className="rounded-lg border border-[#1C2A45] bg-[#0E1729] px-4 py-3">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-cyan-400/80 mb-1">
           {t(lang, "panel_recommendation")}
         </div>
@@ -132,7 +132,7 @@ export default function InsightPanel({ insight, loading, zoneName, lang }: Props
       </div>
 
       {/* Summary */}
-      <div className="rounded-lg border border-[#1E3356] bg-[#0C1930] px-4 py-3">
+      <div className="rounded-lg border border-[#1C2A45] bg-[#0B1322] px-4 py-3">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
           {t(lang, "panel_summary")}
         </div>
@@ -185,8 +185,8 @@ export default function InsightPanel({ insight, loading, zoneName, lang }: Props
             return (
               <details
                 key={a.agent}
-                className={`rounded-lg border bg-[#0F1F3A] px-3 py-2 ${
-                  noData ? "border-[#16263F] opacity-60" : "border-[#1E3356]"
+                className={`rounded-lg border bg-[#0E1729] px-3 py-2 ${
+                  noData ? "border-[#16233C] opacity-60" : "border-[#1C2A45]"
                 }`}
               >
                 <summary className="cursor-pointer flex items-center gap-2 list-none">
@@ -194,7 +194,7 @@ export default function InsightPanel({ insight, loading, zoneName, lang }: Props
                     {AGENT_EMOJI[a.agent] || "•"} {label ? (lang === "hi" ? label.hi : label.en) : a.agent}
                   </span>
                   {noData ? (
-                    <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-md bg-[#132544] text-slate-500 border border-[#1E3356]">
+                    <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-md bg-[#131E35] text-slate-500 border border-[#1C2A45]">
                       {t(lang, "panel_no_data")}
                     </span>
                   ) : (

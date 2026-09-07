@@ -102,13 +102,13 @@ export default function AskOrca({
   return (
     <div className="h-full flex flex-col">
       {/* header */}
-      <div className="px-4 py-3 bg-[#0E1D36] text-slate-100 border-b border-[#1E3356]">
+      <div className="px-4 py-3 bg-[#0E1729] text-slate-100 border-b border-[#1C2A45]">
         <h2 className="font-bold">{t(lang, "ask_title")}</h2>
         <p className="text-xs text-slate-500">{t(lang, "ask_hint")}</p>
       </div>
 
       {/* messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#0A1628]">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#070D1A]">
         {messages.length === 0 && !busy && (
           <div className="text-center text-sm text-slate-500 mt-8">
             <div className="text-4xl mb-3">🐋</div>
@@ -126,13 +126,13 @@ export default function AskOrca({
               className={
                 m.role === "user"
                   ? "inline-block bg-cyan-700 text-white rounded-2xl rounded-br-sm px-4 py-2 max-w-[85%] text-left"
-                  : "inline-block bg-[#0F1F3A] border border-[#1E3356] rounded-2xl rounded-bl-sm px-4 py-3 max-w-[95%] shadow-lg"
+                  : "inline-block bg-[#0E1729] border border-[#1C2A45] rounded-2xl rounded-bl-sm px-4 py-3 max-w-[95%] shadow-lg"
               }
             >
               {m.role === "orca" && m.steps && m.steps.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-2">
                   {m.steps.map((s, j) => (
-                    <span key={j} className="text-[10px] bg-[#132544] border border-[#24457A] rounded-full px-2 py-0.5 text-slate-400">
+                    <span key={j} className="text-[10px] bg-[#131E35] border border-[#2B4066] rounded-full px-2 py-0.5 text-slate-400">
                       {s.summary}
                     </span>
                   ))}
@@ -163,15 +163,15 @@ export default function AskOrca({
         {/* live trace while running */}
         {busy && (
           <div className="text-left">
-            <div className="inline-block bg-[#0F1F3A] border border-[#1E3356] rounded-2xl rounded-bl-sm px-4 py-3 max-w-[95%] shadow-lg">
+            <div className="inline-block bg-[#0E1729] border border-[#1C2A45] rounded-2xl rounded-bl-sm px-4 py-3 max-w-[95%] shadow-lg">
               <div className="flex flex-wrap gap-1 mb-2">
                 {liveSteps.map((s, j) => (
-                  <span key={j} className="text-[10px] bg-[#123055] border border-cyan-500/40 rounded-full px-2 py-0.5 text-cyan-200 animate-pulse">
+                  <span key={j} className="text-[10px] bg-[#10233F] border border-cyan-500/40 rounded-full px-2 py-0.5 text-cyan-200 animate-pulse">
                     {s.summary}
                   </span>
                 ))}
                 {liveSteps.length === 0 && (
-                  <span className="text-[10px] bg-[#132544] rounded-full px-2 py-0.5 text-slate-500 animate-pulse">
+                  <span className="text-[10px] bg-[#131E35] rounded-full px-2 py-0.5 text-slate-500 animate-pulse">
                     {status || "connecting…"}
                   </span>
                 )}
@@ -187,14 +187,14 @@ export default function AskOrca({
       </div>
 
       {/* quick prompts + input */}
-      <div className="border-t border-[#1E3356] bg-[#0E1D36] p-3 space-y-2">
+      <div className="border-t border-[#1C2A45] bg-[#0E1729] p-3 space-y-2">
         <div className="flex flex-wrap gap-2">
           {quick.map((q) => (
             <button
               key={q}
               disabled={busy}
               onClick={() => ask(q)}
-              className="text-xs bg-[#132544] hover:bg-[#1A355E] border border-[#24457A] text-slate-300 rounded-full px-3 py-1 disabled:opacity-50"
+              className="text-xs bg-[#131E35] hover:bg-[#16243F] border border-[#2B4066] text-slate-300 rounded-full px-3 py-1 disabled:opacity-50"
             >
               {q}
             </button>
@@ -202,7 +202,7 @@ export default function AskOrca({
         </div>
         <div className="flex gap-2">
           <input
-            className="flex-1 bg-[#0A1628] border border-[#24457A] text-slate-100 placeholder:text-slate-600 rounded-lg px-3 py-2 text-sm outline-none focus:border-cyan-500/60"
+            className="flex-1 bg-[#070D1A] border border-[#2B4066] text-slate-100 placeholder:text-slate-600 rounded-lg px-3 py-2 text-sm outline-none focus:border-cyan-500/60"
             placeholder={t(lang, "ask_placeholder")}
             value={input}
             onChange={(e) => setInput(e.target.value)}

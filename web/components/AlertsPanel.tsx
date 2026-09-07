@@ -9,7 +9,7 @@ function AlertCard({ a, lang }: { a: OrcaAlert; lang: Lang }) {
   const warn = a.severity === "warning";
   return (
     <div
-      className={`rounded-lg border p-4 bg-[#0F1F3A] cursor-pointer ${warn ? "border-red-500/50 shadow-[0_0_14px_#ef444422]" : "border-amber-500/40"}`}
+      className={`rounded-lg border p-4 bg-[#0E1729] cursor-pointer ${warn ? "border-red-500/50 shadow-[0_0_14px_#ef444422]" : "border-amber-500/40"}`}
       onClick={() => setOpen((o) => !o)}
     >
       <div className="flex items-start justify-between gap-3">
@@ -91,7 +91,7 @@ export default function AlertsPanel({
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-[#0A1628] p-4 space-y-3">
+    <div className="h-full overflow-y-auto bg-[#070D1A] p-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-bold text-slate-100">{t(lang, "alerts_title")}</h2>
         <div className="flex gap-2">
