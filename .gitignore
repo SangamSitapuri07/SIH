@@ -28,3 +28,4 @@ web/.next/
 web/out/
 logs/
 data/mosdac_granules/
+data/tiles/

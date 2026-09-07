@@ -510,6 +510,48 @@ def get_field(
         raise HTTPException(status_code=500, detail=f"field fetch failed: {type(e).__name__}: {e}\n{traceback.format_exc()}")
 
 
+# ── OSM tile proxy: real map tiles for the 3D ocean surface ────────
+#
+# The 3D view drapes REAL OpenStreetMap tiles onto its animated surface
+# via a canvas texture — which requires clean CORS. On some home
+# networks the public CDN's CORS headers get stripped, the canvas is
+# silently tainted, WebGL refuses the texture and the scene falls back
+# to flat coloured water (seen live 2026-09-07: the "red sea" bug).
+# Serving the tiles from THIS backend makes them first-party and always
+# CORS-clean; the disk cache means each tile is fetched from OSM once.
+
+TILE_CACHE_DIR = Path("data") / "tiles"
+_TILE_HEADERS = {"User-Agent": "ORCA-SIH-2026/1.0 (student marine demo; interactive single-user map)"}
+
+
+@app.get("/api/v1/tiles/{z}/{x}/{y}.png")
+def osm_tile(z: int, x: int, y: int):
+    """Cached OpenStreetMap raster tile (PNG)."""
+    import urllib.request
+    from fastapi.responses import FileResponse
+
+    n = 1 << z if 0 <= z <= 19 else 0
+    if not n or not (0 <= x < n and 0 <= y < n):
+        raise HTTPException(400, "bad tile coordinates")
+    p = TILE_CACHE_DIR / str(z) / str(x) / f"{y}.png"
+    if not p.exists():
+        req = urllib.request.Request(
+            f"https://tile.openstreetmap.org/{z}/{x}/{y}.png", headers=_TILE_HEADERS)
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:
+                blob = r.read()
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(502, f"OSM tile fetch failed: {type(e).__name__}: {e}")
+        if not blob.startswith(b"\x89PNG"):
+            raise HTTPException(502, "OSM tile server returned a non-PNG response")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".png.tmp")
+        tmp.write_bytes(blob)
+        tmp.replace(p)
+    return FileResponse(str(p), media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
 # ── Phase-4: GeoJSON layers ──
 
 @app.get("/api/v1/layers")

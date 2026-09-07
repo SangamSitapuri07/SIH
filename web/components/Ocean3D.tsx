@@ -21,9 +21,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Html, Stars } from "@react-three/drei";
-import { FieldResponse, FieldPoint } from "@/lib/orca-client";
+import { FieldResponse, FieldPoint, tileCandidateBases } from "@/lib/orca-client";
 import { Lang } from "@/lib/i18n";
-import { sstColor, windColor, currentColor } from "@/components/fieldColors";
+import { sstColor, windColor, currentColor, waveColor } from "@/components/fieldColors";
 
 /* ── grid ↔ world mapping (square world, ±12 units = ±radius_deg) ──── */
 const HALF = 12;
@@ -32,7 +32,7 @@ const FOAM = new THREE.Color("#e8f6ff");
 
 interface Sampler {
   n: number;
-  wave: number[]; swell: number[]; sst: number[]; gust: number[];
+  wave: number[]; swell: number[]; sst: number[]; gust: number[]; cur: number[];
   gustMean: number; gustMax: number; waveMax: number; sstMean: number;
   windDirRad: number;  // mean flow-TO direction (compass radians)
   curDirMean: number;  // mean current flow-TO direction (degrees)
@@ -69,6 +69,7 @@ function buildSampler(points: FieldPoint[]): Sampler | null {
   const swell = fill(col("swell_m"), n, meanOf(col("swell_m"), 0.8));
   const sst = fill(col("sst_c"), n, meanOf(col("sst_c"), 28));
   const gust = fill(col("gust_kn"), n, meanOf(col("gust_kn"), 15));
+  const cur = fill(col("current_kn"), n, meanOf(col("current_kn"), 0.8));
 
   const circMean = (dirs: (number | null)[], toShift: number) => {
     const valid = dirs.filter((d): d is number => d != null);
@@ -81,7 +82,7 @@ function buildSampler(points: FieldPoint[]): Sampler | null {
     return Math.atan2(sx / valid.length, sy / valid.length);
   };
   return {
-    n, wave, swell, sst, gust,
+    n, wave, swell, sst, gust, cur,
     gustMean: meanOf(col("gust_kn"), 15),
     gustMax: Math.max(...gust),
     waveMax: Math.max(...wave),
@@ -118,7 +119,28 @@ function seaHeight(s: Sampler, x: number, z: number, t: number): number {
   return h;
 }
 
-/* ── 🗺️ the REAL map — OSM tiles stitched into one texture ─────────── */
+/* ── 🗺️ the REAL map — OSM tiles via OUR backend proxy ───────────────
+ * Tiles come from /api/v1/tiles/z/x/y.png (the backend's cached proxy):
+ * first-party + CORS-clean on every network, so the canvas is never
+ * tainted and the real map always makes it into WebGL. */
+
+function loadImg(src: string): Promise<HTMLImageElement> {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error("tile failed"));
+    img.src = src;
+  });
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, rej) => setTimeout(() => rej(new Error("tile timeout")), ms)),
+  ]);
+}
+
 function useMapTexture(lat: number, lon: number, radiusDeg: number) {
   const [state, setState] = useState<{ tex: THREE.Texture | null; status: "loading" | "ok" | "fail" }>(
     { tex: null, status: "loading" });
@@ -135,55 +157,62 @@ function useMapTexture(lat: number, lon: number, radiusDeg: number) {
     const y0 = lat2y(lat + radiusDeg), y1 = lat2y(lat - radiusDeg); // north → south
     const tx0 = Math.floor(x0 / 256), tx1 = Math.floor(x1 / 256);
     const ty0 = Math.floor(y0 / 256), ty1 = Math.floor(y1 / 256);
-    const cols = tx1 - tx0 + 1, rows = ty1 - ty0 + 1;
-    const big = document.createElement("canvas");
-    big.width = cols * 256; big.height = rows * 256;
-    const g = big.getContext("2d")!;
-    let done = 0, failed = 0;
-    const total = cols * rows;
+    const coords: [number, number][] = [];
+    for (let tx = tx0; tx <= tx1; tx++)
+      for (let ty = ty0; ty <= ty1; ty++) coords.push([tx, ty]);
 
-    const timer = setTimeout(() => {
-      if (alive) setState((st) => (st.status === "ok" ? st : { tex: null, status: "fail" }));
-    }, 9000);
-
-    const finish = () => {
-      if (!alive) return;
-      clearTimeout(timer);
-      if (failed / total > 0.3) { setState({ tex: null, status: "fail" }); return; }
+    const tryBase = async (base: string): Promise<THREE.Texture | null> => {
+      const results = await withTimeout(
+        Promise.allSettled(coords.map(([tx, ty]) => loadImg(`${base}/api/v1/tiles/${ZOOM}/${tx}/${ty}.png`))),
+        14000);
+      const okCount = results.filter((r) => r.status === "fulfilled").length;
+      if (okCount < results.length * 0.7) return null;
+      const big = document.createElement("canvas");
+      big.width = (tx1 - tx0 + 1) * 256; big.height = (ty1 - ty0 + 1) * 256;
+      const g = big.getContext("2d")!;
+      results.forEach((r, i) => {
+        if (r.status !== "fulfilled") return;
+        const [tx, ty] = coords[i];
+        g.drawImage(r.value, (tx - tx0) * 256, (ty - ty0) * 256);
+      });
+      // crop the EXACT ±radius degree box → texture covers the world square exactly
       const c2 = document.createElement("canvas");
       c2.width = 1024; c2.height = 1024;
-      const g2 = c2.getContext("2d")!;
-      // crop the EXACT ±radius degree box → texture covers the world square exactly
-      g2.drawImage(big, x0 - tx0 * 256, y0 - ty0 * 256, x1 - x0, y1 - y0, 0, 0, 1024, 1024);
+      c2.getContext("2d")!.drawImage(
+        big, x0 - tx0 * 256, y0 - ty0 * 256, x1 - x0, y1 - y0, 0, 0, 1024, 1024);
       const tex = new THREE.CanvasTexture(c2);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 4;
-      setState({ tex, status: "ok" });
+      return tex;
     };
 
-    for (let tx = tx0; tx <= tx1; tx++) {
-      for (let ty = ty0; ty <= ty1; ty++) {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => {
-          g.drawImage(img, (tx - tx0) * 256, (ty - ty0) * 256);
-          done++;
-          if (done + failed === total) finish();
-        };
-        img.onerror = () => {
-          failed++;
-          if (done + failed === total) finish();
-        };
-        img.src = `https://${"abc"[Math.floor(Math.random() * 3)]}.tile.openstreetmap.org/${ZOOM}/${tx}/${ty}.png`;
+    (async () => {
+      const bases = tileCandidateBases();
+      for (const b of bases.length ? bases : [""]) {
+        try {
+          const tex = await tryBase(b);
+          if (!alive) return;
+          if (tex) { setState({ tex, status: "ok" }); return; }
+        } catch { /* try the next base */ }
+        if (!alive) return;
       }
-    }
-    return () => { alive = false; clearTimeout(timer); };
+      if (alive) setState({ tex: null, status: "fail" });
+    })();
+    return () => { alive = false; };
   }, [lat, lon, radiusDeg]);
   return state;
 }
 
+/* ── hover info shared across the scene ────────────────────────────── */
+type HoverInfo =
+  | { kind: "sea"; lat: number; lon: number; x: number; z: number }
+  | { kind: "hotspot"; h: FieldResponse["hotspots"][number]; rank: number; x: number; z: number };
+
 /* ── 🌊 the living surface (real map OR honest coloured water) ─────── */
-function OceanSurface({ s, mapTex }: { s: Sampler; mapTex: THREE.Texture | null }) {
+function OceanSurface({ s, mapTex, onSea }: {
+  s: Sampler; mapTex: THREE.Texture | null;
+  onSea: (x: number | null, z?: number) => void;
+}) {
   const SEG = 92;
   const { geo, base, foamK } = useMemo(() => {
     const g = new THREE.PlaneGeometry(2 * HALF, 2 * HALF, SEG, SEG);
@@ -196,7 +225,7 @@ function OceanSurface({ s, mapTex }: { s: Sampler; mapTex: THREE.Texture | null 
     for (let i = 0; i < cnt; i++) {
       const x = pos.getX(i), z = pos.getZ(i);
       tmp.set(sstColor(bilinear(s.sst, s.n, x, z)));
-      tmp.lerp(DEEP, 0.58);
+      tmp.lerp(DEEP, 0.72); // deep blue sea with an SST tint, never a red blob
       baseA[i * 3] = tmp.r; baseA[i * 3 + 1] = tmp.g; baseA[i * 3 + 2] = tmp.b;
       foamA[i] = Math.min(1, bilinear(s.wave, s.n, x, z) / 3);
     }
@@ -229,11 +258,92 @@ function OceanSurface({ s, mapTex }: { s: Sampler; mapTex: THREE.Texture | null 
   });
 
   return (
-    <mesh geometry={geo}>
+    <mesh
+      geometry={geo}
+      onPointerMove={(e) => { e.stopPropagation(); onSea(e.point.x, e.point.z); }}
+      onPointerOut={() => onSea(null)}
+    >
       {mapTex
         ? <meshStandardMaterial map={mapTex} roughness={0.6} metalness={0.06} />
         : <meshStandardMaterial vertexColors roughness={0.42} metalness={0.12} />}
     </mesh>
+  );
+}
+
+/* ── 👆 hover card — "yahaan kya hai, kaisa hai" with REAL values ───── */
+function SeaCard({ s, lat, lon, x, z, lang }: {
+  s: Sampler; lat: number; lon: number; x: number; z: number; lang: Lang;
+}) {
+  const w = bilinear(s.wave, s.n, x, z);
+  const sw = bilinear(s.swell, s.n, x, z);
+  const gu = bilinear(s.gust, s.n, x, z);
+  const cu = bilinear(s.cur, s.n, x, z);
+  const st = bilinear(s.sst, s.n, x, z);
+  const Row = ({ icon, name, val, unit, color }: { icon: string; name: string; val: string; unit: string; color: string }) => (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-slate-400">{icon} {name}</span>
+      <span className="font-bold" style={{ color }}>{val}<span className="font-normal text-slate-500"> {unit}</span></span>
+    </div>
+  );
+  return (
+    <div className="whitespace-nowrap rounded-lg border border-cyan-400/30 bg-[#0A1120]/95 px-3 py-2 text-[11px] shadow-xl leading-relaxed">
+      <div className="font-mono text-cyan-300 font-bold mb-1">{lat.toFixed(2)}°N, {lon.toFixed(2)}°E</div>
+      <Row icon="🌊" name={lang === "hi" ? "लहरें" : "waves"} val={w.toFixed(1)} unit="m" color={waveColor(w)} />
+      <Row icon="〰️" name="swell" val={sw.toFixed(1)} unit="m" color={waveColor(sw)} />
+      <Row icon="💨" name="gusts" val={gu.toFixed(0)} unit="kn" color={windColor(gu)} />
+      <Row icon="🌀" name={lang === "hi" ? "धारा" : "current"} val={cu.toFixed(1)} unit="kn" color={currentColor(cu)} />
+      <Row icon="🌡️" name="SST" val={st.toFixed(1)} unit="°C" color={sstColor(st)} />
+      <div className="mt-1 text-[9px] text-slate-600 italic">{lang === "hi" ? "असली मॉडल/सैटेलाइट मान — अनुमान नहीं" : "real model/satellite values — not estimates"}</div>
+    </div>
+  );
+}
+
+function HotspotCard({ h, rank, lang }: { h: FieldResponse["hotspots"][number]; rank: number; lang: Lang }) {
+  return (
+    <div className="whitespace-nowrap rounded-lg border border-emerald-400/40 bg-[#0A1120]/95 px-3 py-2 text-[11px] shadow-xl leading-relaxed">
+      <div className="font-bold text-emerald-300 mb-0.5">🎣 #{rank} · {h.chl} mg/m³</div>
+      <div className="font-mono text-slate-400">{h.lat.toFixed(2)}°N, {h.lon.toFixed(2)}°E</div>
+      <div className="text-slate-300">{h.distance_nm} NM · {h.bearing}</div>
+      <div className="mt-1 text-slate-500 max-w-[220px] whitespace-normal">
+        {lang === "hi"
+          ? "ज़्यादा chlorophyll = plankton का खाना → baitfish → मछली। असली NOAA सैटेलाइट मान।"
+          : "high chlorophyll = plankton food → baitfish → fish. Real NOAA satellite value."}
+      </div>
+    </div>
+  );
+}
+
+function HoverTip({ s, data, hoverRef, lang }: {
+  s: Sampler; data: FieldResponse;
+  hoverRef: React.MutableRefObject<HoverInfo | null>;
+  lang: Lang;
+}) {
+  const grp = useRef<THREE.Group>(null);
+  const [cell, setCell] = useState<HoverInfo | null>(null);
+  useFrame(({ clock }) => {
+    const g = grp.current;
+    const h = hoverRef.current;
+    if (!g) return;
+    if (!h) {
+      if (g.visible) { g.visible = false; if (cell) setCell(null); }
+      return;
+    }
+    g.visible = true;
+    const y = h.kind === "sea" ? seaHeight(s, h.x, h.z, clock.elapsedTime) + 1.5 : 2.1;
+    g.position.set(h.x, y, h.z);
+    const keyOf = (v: HoverInfo) => (v.kind === "sea" ? `${v.lat.toFixed(2)}|${v.lon.toFixed(2)}` : `hs${v.rank}`);
+    if (!cell || keyOf(cell) !== keyOf(h)) setCell(h);
+  });
+  return (
+    <group ref={grp} visible={false}>
+      {cell && (
+        <Html center distanceFactor={20} style={{ pointerEvents: "none" }} zIndexRange={[50, 0]}>
+          {cell.kind === "sea"
+            ? <SeaCard s={s} lat={cell.lat} lon={cell.lon} x={cell.x} z={cell.z} lang={lang} />
+            : <HotspotCard h={cell.h} rank={cell.rank} lang={lang} />}
+        </Html>
+      )}
+    </group>
   );
 }
 
@@ -477,8 +587,9 @@ function Beacon() {
   );
 }
 
-function Hotspots({ s, data, tex, lang }: {
+function Hotspots({ s, data, tex, lang, onHotspot }: {
   s: Sampler; data: FieldResponse; tex: THREE.Texture; lang: Lang;
+  onHotspot: (h: FieldResponse["hotspots"][number] | null, rank: number, x: number, z: number) => void;
 }) {
   return (
     <>
@@ -494,6 +605,13 @@ function Hotspots({ s, data, tex, lang }: {
         }
         return (
           <group key={hi} position={[x, 0.3, z]}>
+            {/* invisible hover catch-zone over the whole hotspot */}
+            <mesh position={[0, 0.5, 0]}
+              onPointerOver={(e) => { e.stopPropagation(); onHotspot(h, hi + 1, x, z); }}
+              onPointerOut={() => onHotspot(null, 0, 0, 0)}>
+              <cylinderGeometry args={[1.9, 1.9, 1.6, 12]} />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            </mesh>
             <PlanktonSwirl pos={pos} tex={tex} chl={h.chl} />
             {[0, 1, 2, 3].map((f) => (
               <Fish key={f} cx={0} cz={0} r={0.55 + f * 0.28}
@@ -534,6 +652,19 @@ export default function Ocean3D({
   const s = useMemo(() => buildSampler(data.met.points), [data]);
   const { tex: mapTex, status: mapStatus } = useMapTexture(
     data.center.lat, data.center.lon, data.radius_deg);
+  const hoverRef = useRef<HoverInfo | null>(null);
+  const onSea = (x: number | null, z?: number) => {
+    if (x == null || z == null) { hoverRef.current = null; return; }
+    hoverRef.current = {
+      kind: "sea",
+      lat: data.center.lat - (z / HALF) * data.radius_deg,
+      lon: data.center.lon + (x / HALF) * data.radius_deg,
+      x, z,
+    };
+  };
+  const onHotspot = (h: FieldResponse["hotspots"][number] | null, rank: number, x: number, z: number) => {
+    hoverRef.current = h ? { kind: "hotspot", h, rank, x, z } : null;
+  };
   const tex = useMemo(() => {
     const c = document.createElement("canvas");
     c.width = c.height = 64;
@@ -571,11 +702,12 @@ export default function Ocean3D({
         <hemisphereLight args={["#3a6a96", "#0a1626", 0.55]} />
         <Stars radius={90} depth={40} count={1400} factor={2.4} saturation={0} fade speed={0.5} />
 
-        <OceanSurface s={s} mapTex={mapTex} />
+        <OceanSurface s={s} mapTex={mapTex} onSea={onSea} />
         <FoamSpecks s={s} tex={tex} />
         <WindStreaks s={s} tex={tex} />
         <CurrentArrows s={s} data={data} />
-        <Hotspots s={s} data={data} tex={tex} lang={lang} />
+        <Hotspots s={s} data={data} tex={tex} lang={lang} onHotspot={onHotspot} />
+        <HoverTip s={s} data={data} hoverRef={hoverRef} lang={lang} />
 
         <OrbitControls
           makeDefault
@@ -621,7 +753,9 @@ export default function Ocean3D({
         </div>
       </div>
       <div className="absolute bottom-3 right-3 text-[10px] text-slate-500 pointer-events-none">
-        {lang === "hi" ? "drag = घुमाओ · scroll = zoom · © OpenStreetMap" : "drag = orbit · scroll = zoom · © OpenStreetMap"}
+        {lang === "hi"
+          ? "drag = घुमाओ · scroll = zoom · hover = वहां की details · © OpenStreetMap"
+          : "drag = orbit · scroll = zoom · hover = details · © OpenStreetMap"}
       </div>
     </div>
   );

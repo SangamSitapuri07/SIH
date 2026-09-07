@@ -196,6 +196,13 @@ export interface ChatFinal {
 
 const BASE_KEY = "orca.apiBase";
 
+/** Base URLs to try for FIRST-PARTY assets (tiles) — same preference
+ *  order as the JSON API (direct backend → dev/proxy). Exposed for the
+ *  3D map texture, which loads <img> tags rather than fetch(). */
+export function tileCandidateBases(): string[] {
+  return candidateBases();
+}
+
 function candidateBases(): string[] {
   if (typeof window === "undefined") return [""]; // SSR: relative proxy
   const remembered = sessionStorage.getItem(BASE_KEY);
