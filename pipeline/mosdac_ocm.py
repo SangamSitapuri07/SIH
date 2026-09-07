@@ -235,13 +235,23 @@ def _find_cached_granule(rec_id: Any) -> Path | None:
     return None
 
 
-def _download_granule(session, rec_id: Any) -> tuple[Path | None, str | None, float]:
+def _download_granule(session, rec_id: Any,
+                      wall_cap_sec: float | None = None,
+                      idle_cap_sec: float | None = None) -> tuple[Path | None, str | None, float]:
     """Live-download one granule from MOSDAC (same-day disk cache).
 
     Returns (path, error, seconds). Streams with an idle-timeout and a
     hard size guard so a flaky demo link fails HONESTLY instead of
     hanging the /reason deadline.
+
+    wall_cap_sec / idle_cap_sec: the caller's REMAINING budget. Without
+    these a 70 s slow-stream after a 50 s login+search ran past the
+    outer 75 s job cap and surfaced as a nameless "timeout after 75s" —
+    now the download dies inside its own cap and says exactly why.
     """
+    wall_cap = MAX_DL_WALL_SEC if wall_cap_sec is None else max(5.0, min(MAX_DL_WALL_SEC, wall_cap_sec))
+    idle_cap = max(8.0, min(DOWNLOAD_IDLE_TIMEOUT, idle_cap_sec if idle_cap_sec else DOWNLOAD_IDLE_TIMEOUT))
+    connect_cap = max(5.0, min(20.0, wall_cap))
     started = time.time()
     hit = _find_cached_granule(rec_id)
     if hit is not None:
@@ -264,11 +274,11 @@ def _download_granule(session, rec_id: Any) -> tuple[Path | None, str | None, fl
     try:
         import requests  # local: pipeline dep already
         r = session.get(mosdac_auth.DOWNLOAD_URL, params={"id": rec_id},
-                        timeout=(20, DOWNLOAD_IDLE_TIMEOUT), stream=True)
+                        timeout=(connect_cap, idle_cap), stream=True)
         if r.status_code == 401:
             session = mosdac_auth.refresh(session)
             r = session.get(mosdac_auth.DOWNLOAD_URL, params={"id": rec_id},
-                            timeout=(20, DOWNLOAD_IDLE_TIMEOUT), stream=True)
+                            timeout=(connect_cap, idle_cap), stream=True)
         if r.status_code != 200:
             return None, f"download HTTP {r.status_code}", time.time() - started
 
@@ -289,12 +299,12 @@ def _download_granule(session, rec_id: Any) -> tuple[Path | None, str | None, fl
                         tmp.unlink(missing_ok=True)
                         return None, f"granule larger than {MAX_GRANULE_BYTES // 1_000_000} MB guard", time.time() - started
                     fh.write(chunk)
-                    if time.time() - started > MAX_DL_WALL_SEC:
+                    if time.time() - started > wall_cap:
                         fh.close()
                         tmp.unlink(missing_ok=True)
-                        return None, (f"download too slow (> {MAX_DL_WALL_SEC:.0f}s wall, "
-                                    f"{total // 1_000_000} MB so far) — network crawling; "
-                                    "try again shortly"), time.time() - started
+                        return None, (f"download too slow (> {wall_cap:.0f}s wall cap, "
+                                    f"{total / 1_000_000:.1f} MB so far) — network crawling; "
+                                    "try again shortly (partial files are never cached)"), time.time() - started
         # Publish ONLY on complete success: an interrupted run (network
         # drop, Ctrl+C, laptop lid) leaves a .part temp file, never a
         # broken "complete" granule in the cache. Caught live in the
@@ -623,20 +633,36 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
         }
 
     # 1) login
+    t_login = time.time()
     try:
         session = _get_session()
     except mosdac_auth.MosdacAuthError as e:
         return _fail(f"login: {str(e).splitlines()[0][:90]}")
+    login_secs = time.time() - t_login
 
     # 2) live search — newest granules overlapping the point
     end = datetime.now(timezone.utc).date()
     start = end - timedelta(days=SEARCH_DAYS)
     bbox = f"{lon - POINT_BBOX_DEG},{lat - POINT_BBOX_DEG},{lon + POINT_BBOX_DEG},{lat + POINT_BBOX_DEG}"
+    t_search = time.time()
     try:
         data = mosdac_auth.search(DATASET, start=start.isoformat(),
                                   end=end.isoformat(), bbox=bbox, count="40")
     except Exception as e:  # noqa: BLE001
         return _fail(f"search: {type(e).__name__}: {str(e)[:80]}")
+    search_secs = time.time() - t_search
+    print(f"[MOSDAC] login {login_secs:.1f}s · search {search_secs:.1f}s", file=sys.stderr)
+
+    # Stage guard: if login+search alone swallowed the time budget (slow
+    # link night), stop RIGHT HERE and name the stages — never drift
+    # into the download phase and get namelessly killed by the outer
+    # 75 s job cap ("timeout after 75s" with zero usable info).
+    if time.time() - t0 > JOB_BUDGET_SEC - 25:
+        return _fail(
+            f"login ({login_secs:.0f}s) + search ({search_secs:.0f}s) alone ate the "
+            f"{JOB_BUDGET_SEC:.0f}s budget — link is crawling right now; retry in a few "
+            "minutes (failure pauses for 10 min, success caches 6 h)"
+        )
 
     recs = _records(data)
     if not recs:
@@ -668,9 +694,21 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
     tried: list[str] = []
     skipped_info: list[dict[str, Any]] = []  # {date, why} per failed candidate
     for rec in candidates:
-        if time.time() - t0 > JOB_BUDGET_SEC - 15:
-            return _fail("time budget exhausted mid-download (slow link)")
-        path, derr, dl_secs = _download_granule(session, rec["id"])
+        elapsed = time.time() - t0
+        if elapsed > JOB_BUDGET_SEC - 25:
+            return _fail(
+                f"time budget exhausted before download finished (login {login_secs:.0f}s · "
+                f"search {search_secs:.0f}s · earlier candidates also slow) — link crawling; "
+                "retry in a few minutes (part-downloads are never cached)"
+            )
+        # Give THIS download exactly the budget that remains (minus parse
+        # headroom) so the chain always returns with a PRECISE reason
+        # inside the 75 s job cap instead of being namelessly killed.
+        wall_cap = min(MAX_DL_WALL_SEC, JOB_BUDGET_SEC - elapsed - 8)
+        path, derr, dl_secs = _download_granule(
+            session, rec["id"], wall_cap_sec=wall_cap, idle_cap_sec=min(45.0, wall_cap))
+        print(f"[MOSDAC] granule dl {dl_secs:.1f}s (cap {wall_cap:.0f}s)"
+              + (f" — FAIL: {str(derr)[:90]}" if derr else ""), file=sys.stderr)
         if path is None:
             tried.append(f"{rec['id']}: {derr}")
             skipped_info.append({"date": rec["date"], "why": str(derr)})

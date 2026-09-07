@@ -71,7 +71,9 @@ def _patch_live_world(monkeypatch, extractor_value):
             {"id": 991, "title": "E06OCM_L2C_LAC_OC_03SEP2026_x.h5"}]})
     monkeypatch.setattr(
         mosdac_ocm, "_download_granule",
-        lambda session, rid: ("/tmp/fake_mosdac_granule.h5", None, 12.3))
+        # **kw: the chain now passes the REMAINING time budget as
+        # wall_cap_sec / idle_cap_sec — the stub must accept it.
+        lambda session, rid, **kw: ("/tmp/fake_mosdac_granule.h5", None, 12.3))
     import pipeline.parser as parser
     import pipeline.extractors as extractors
     monkeypatch.setattr(parser, "parse", lambda path: object())
@@ -292,7 +294,7 @@ def test_live_chain_purges_truncated_cache_file(tmp_path, monkeypatch):
     poisoned.write_bytes(b"truncated")
     monkeypatch.setattr(
         mosdac_ocm, "_download_granule",
-        lambda session, rid: (poisoned, None, 0.0))
+        lambda session, rid, **kw: (poisoned, None, 0.0))
     import pipeline.parser as parser
     monkeypatch.setattr(
         parser, "parse",
@@ -482,3 +484,56 @@ def test_live_chain_skips_non_covering_granules(monkeypatch):
     res = mosdac_ocm._live_chain(20.9, 70.37)
     assert downloads == [], "must NOT download granules that don't cover the point"
     assert "NONE covers this point" in res["error"]
+
+
+def test_login_search_over_budget_fails_with_stage_names(monkeypatch):
+    """Slow-link night (2026-09-07): login+search swallowed the budget and
+    the chain drifted into the download phase, where the outer 75 s job
+    cap killed it facelessly ('timeout after 75s'). Now the chain stops
+    AT the stage and names it, with the measured timings in the error."""
+    _patch_live_world(monkeypatch, None)
+    seen_dl = {"called": False}
+    monkeypatch.setattr(
+        mosdac_ocm, "_download_granule",
+        lambda *a, **kw: seen_dl.__setitem__("called", True) or (None, "x", 0.0))
+    job = mosdac_ocm.JOB_BUDGET_SEC
+    clock = {"t": 1000.0}
+    real_time = mosdac_ocm.time.time
+
+    def fake_time():
+        # login ~20 s, then search pushes the clock past the stage guard
+        t = clock["t"]
+        clock["t"] += 20.0
+        return t
+
+    monkeypatch.setattr(mosdac_ocm.time, "time", fake_time)
+    try:
+        # sanity: the stubbed world + one record exists so only the BUDGET
+        # can be the reason to fail
+        res = mosdac_ocm._live_chain(20.9, 70.37)
+    finally:
+        monkeypatch.setattr(mosdac_ocm.time, "time", real_time)
+    assert res.get("value") is None
+    assert "login" in res["error"] and "search" in res["error"], res["error"]
+    assert "budget" in res["error"], res["error"]
+    assert not seen_dl["called"], "download must NOT start when the stage budget is spent"
+    print("✅ over-budget login+search fails at the stage, names measured timings")
+
+
+def test_download_receives_remaining_budget(monkeypatch):
+    """The per-candidate download must be handed what's LEFT of the job
+    budget — that's what keeps the whole chain inside the outer 75 s cap."""
+    _patch_live_world(monkeypatch, {"value": 0.5, "units": "mg m^-3", "distance_deg": 0.01})
+    caps = {}
+
+    def spy_dl(session, rid, **kw):
+        caps.update(kw)
+        return ("/tmp/fake_mosdac_granule.h5", None, 1.0)
+
+    monkeypatch.setattr(mosdac_ocm, "_download_granule", spy_dl)
+    res = mosdac_ocm._live_chain(20.9, 70.37)
+    assert res["value"] == 0.5
+    assert "wall_cap_sec" in caps and "idle_cap_sec" in caps, caps
+    assert 5.0 <= caps["wall_cap_sec"] <= mosdac_ocm.MAX_DL_WALL_SEC
+    assert caps["idle_cap_sec"] <= caps["wall_cap_sec"] + 38  # idle = min(45, wall)
+    print(f"✅ download bounded by remaining budget (wall {caps['wall_cap_sec']:.0f}s)")

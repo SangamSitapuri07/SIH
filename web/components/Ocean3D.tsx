@@ -161,7 +161,7 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 
 /** gentle worker-pool — OSM tile policy rate-limits heavy parallel grabs
  *  (the 2D map works precisely because browsers fetch ~6 at a time, so
- *  we fetch 4 at a time the same honest way) */
+ *  we fetch 5 at a time the same honest way) */
 async function fetchPool<T, R>(
   items: T[], size: number, worker: (item: T) => Promise<R>,
 ): Promise<PromiseSettledResult<R>[]> {
@@ -193,7 +193,8 @@ function useMapTexture(lat: number, lon: number, radiusDeg: number, attempt: num
   }>({ tex: null, status: "loading", reasons: [] });
   useEffect(() => {
     let alive = true;
-    const ZOOM = 9; // 4×4-ish tiles — gentle on OSM + fast on slow links
+    const ZOOM = 10; // ±1.2° ≈ 7×8 tiles — coastline sharp + city labels readable
+                     // (zoom 9 was safe but too soft to recognise places)
     const n = 2 ** ZOOM;
     const lat2y = (la: number) => {
       const r = (la * Math.PI) / 180;
@@ -210,8 +211,9 @@ function useMapTexture(lat: number, lon: number, radiusDeg: number, attempt: num
 
     const trySource = async (src: (typeof TILE_SOURCES)[number], why: (msg: string) => void): Promise<THREE.Texture | null> => {
       const results = await withTimeout(
-        fetchPool(coords, 4, ([tx, ty]) => tileToImg(src.url(ZOOM, tx, ty), src.viaApi)),
-        45000);
+        fetchPool(coords, 5, ([tx, ty]) => tileToImg(src.url(ZOOM, tx, ty), src.viaApi)),
+        75000);  // zoom-10 tile count needs a bigger window on slow links;
+                 // both proxies cache, so every later click is instant
       const okCount = results.filter((r) => r.status === "fulfilled").length;
       if (okCount < results.length * 0.7) {
         const firstErr = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
@@ -317,7 +319,13 @@ function OceanSurface({ s, mapTex, onSea }: {
       onPointerOut={() => onSea(null)}
     >
       {mapTex
-        ? <meshStandardMaterial map={mapTex} roughness={0.6} metalness={0.06} />
+        ? /* meshBASIC: unlit + toneMapped off — renders the OSM tiles at
+             native brightness. The old meshStandardMaterial was LIT by
+             the dim night-scene lights, so the real map rendered as a
+             dark navy wash that looked identical to the blue-sea
+             fallback (user: "map implement nahi ho raha" even though the
+             tiles had loaded fine — the chip said so). */
+          <meshBasicMaterial map={mapTex} toneMapped={false} fog={false} />
         : <meshStandardMaterial vertexColors roughness={0.42} metalness={0.12} />}
     </mesh>
   );
