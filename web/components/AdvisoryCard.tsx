@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { Advisory, DemoZone, fetchAdvisory } from "@/lib/orca-client";
+import { Advisory, DemoZone, OrcaInsight, fetchAdvisory, fetchInsight } from "@/lib/orca-client";
 import { t, Lang } from "@/lib/i18n";
-import Sparkline from "@/components/Sparkline";
+import LineChart from "@/components/LineChart";
+import { AGENT_EMOJI, AGENT_LABEL, RISK_COLOR, SEVERITY_COLOR } from "@/components/agentMeta";
 
 const AdvisoryMap = dynamic(() => import("@/components/AdvisoryMap"), { ssr: false });
 const FieldExplorer = dynamic(() => import("@/components/FieldExplorer"), { ssr: false });
@@ -30,15 +31,43 @@ export default function AdvisoryCard({
   lang,
   advisory,
   setAdvisory,
+  insight,
+  insightLoading,
 }: {
   zone: DemoZone;
   lang: Lang;
   advisory: Advisory | null;
   setAdvisory: (a: Advisory | null) => void;
+  /** 10-agent insight fetched for the Map tab — reused here when the
+      coordinates match, so both tabs tell the same story. */
+  insight?: OrcaInsight | null;
+  insightLoading?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [explorerOpen, setExplorerOpen] = useState(false);
+  const [localInsight, setLocalInsight] = useState<OrcaInsight | null>(null);
+  const [localInsightLoading, setLocalInsightLoading] = useState(false);
+  const [localInsightErr, setLocalInsightErr] = useState<string | null>(null);
+
+  const insightMatchesZone =
+    insight &&
+    Math.abs(insight.zone.lat - zone.lat) < 0.01 &&
+    Math.abs(insight.zone.lon - zone.lon) < 0.01;
+  const effInsight = insightMatchesZone ? insight : localInsight;
+  const agentsBusy = (insightMatchesZone ? insightLoading : localInsightLoading) ?? false;
+
+  const loadAgents = async () => {
+    setLocalInsightLoading(true);
+    setLocalInsightErr(null);
+    try {
+      setLocalInsight(await fetchInsight(zone.lat, zone.lon));
+    } catch (e) {
+      setLocalInsightErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLocalInsightLoading(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -54,6 +83,8 @@ export default function AdvisoryCard({
   };
 
   useEffect(() => {
+    setLocalInsight(null);
+    setLocalInsightErr(null);
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zone.lat, zone.lon]);
@@ -134,29 +165,82 @@ export default function AdvisoryCard({
         </div>
       ) : null}
 
-      {/* 48 h trend strips — same arrays the verdict rules read */}
-      {advisory.hourly_chart && advisory.hourly_chart.labels.length > 1 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {/* 48 h evidence charts — the EXACT arrays the verdict rules read,
+          drawn with real axes so a flat line at 1.6 m still tells a story */}
+      {advisory.hourly_chart && advisory.hourly_chart.labels.length > 1 && (() => {
+        const hc = advisory.hourly_chart;
+        const has = (a?: (number | null)[] | null) => !!a && a.some((v) => v != null);
+        const ChartCard = ({ title, children, hint }: { title: string; children: React.ReactNode; hint?: string }) => (
+          <div className="rounded-lg border border-[#1C2A45] bg-[#0B1322] p-3">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">{title}</div>
+            {children}
+            {hint && <div className="text-[9px] text-slate-600 mt-0.5 leading-snug">{hint}</div>}
+          </div>
+        );
+        return (
           <div className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-3">
-            <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">
-              🌊 {lang === "hi" ? "लहरें — अगले 48 घंटे" : "Waves — next 48 h"} (m)
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300/90">
+                📈 {lang === "hi" ? "अगले 48 घंटे — घंटे-दर-घंटे, असली मॉडल डेटा" : "Next 48 h — hour by hour, real model data"}
+              </div>
+              <div className="text-[9px] text-slate-600">Open-Meteo · ECMWF / MeteoFrance · UTC</div>
             </div>
-            <Sparkline values={advisory.hourly_chart.wave_m} warnAt={2.5} dangerAt={4.0} unit=" m" color="#22d3ee" />
-            <div className="text-[9px] text-slate-600 mt-0.5">
-              <span className="text-amber-400/80">- -</span> 2.5 m caution · <span className="text-red-400/80">- -</span> 4 m unsafe
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <ChartCard
+                title={`🌊 ${lang === "hi" ? "लहरें + swell" : "Waves + swell"}`}
+                hint={lang === "hi" ? "2.5 m से ऊपर छोटी नाव के लिए मुश्किल · 4 m = खतरनाक" : "2.5 m+ rough for small boats · 4 m = unsafe"}>
+                <LineChart
+                  labels={hc.labels} unit=" m"
+                  series={[
+                    { label: lang === "hi" ? "लहरें" : "waves", values: hc.wave_m, color: "#22d3ee" },
+                    ...(has(hc.swell_m) ? [{ label: "swell", values: hc.swell_m!, color: "#818cf8", dashed: true }] : []),
+                  ]}
+                  thresholds={[
+                    { value: 2.5, color: "#f59e0b", label: "2.5 caution" },
+                    { value: 4, color: "#ef4444", label: "4 unsafe" },
+                  ]}
+                />
+              </ChartCard>
+              <ChartCard
+                title={`💨 ${lang === "hi" ? "हवा + झोंके (gusts)" : "Wind + gusts"}`}
+                hint={lang === "hi" ? "20 kn = तेज़ हवा · 34 kn = तूफ़ान चेतावनी (gale)" : "20 kn = strong breeze · 34 kn = gale warning"}>
+                <LineChart
+                  labels={hc.labels} unit=" kn"
+                  series={[
+                    { label: lang === "hi" ? "हवा" : "wind", values: hc.wind_kn, color: "#a78bfa" },
+                    { label: "gusts", values: hc.gust_kn, color: "#f472b6", dashed: true },
+                  ]}
+                  thresholds={[
+                    { value: 20, color: "#f59e0b", label: "20 caution" },
+                    { value: 34, color: "#ef4444", label: "34 gale" },
+                  ]}
+                />
+              </ChartCard>
+              {has(hc.current_kn) && (
+                <ChartCard
+                  title={`🌀 ${lang === "hi" ? "समुद्री धारा (current)" : "Surface current"}`}
+                  hint={lang === "hi" ? "0.5-2.5 kn आम · 3 kn+ बहुत तेज़ — ज़ाल डालते समय ध्यान" : "0.5-2.5 kn typical · 3 kn+ very strong — mind your drift sets"}>
+                  <LineChart
+                    labels={hc.labels} unit=" kn"
+                    series={[{ label: "current", values: hc.current_kn!, color: "#34d399" }]}
+                    thresholds={[{ value: 3, color: "#f59e0b", label: "3 strong" }]}
+                  />
+                </ChartCard>
+              )}
+              {has(hc.sst_c) && (
+                <ChartCard
+                  title={`🌡️ ${lang === "hi" ? "समुद्र का तापमान (SST)" : "Sea surface temp (SST)"}`}
+                  hint={lang === "hi" ? "marine-model SST · मछली आमतौर पर 26-29°C बैंड पसंद करती है" : "marine-model SST · baitfish usually like the 26-29°C band"}>
+                  <LineChart
+                    labels={hc.labels} unit="°C"
+                    series={[{ label: "SST", values: hc.sst_c!, color: "#fbbf24" }]}
+                  />
+                </ChartCard>
+              )}
             </div>
           </div>
-          <div className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-3">
-            <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">
-              💨 {lang === "hi" ? "हवा (gusts) — अगले 48 घंटे" : "Wind gusts — next 48 h"} (kn)
-            </div>
-            <Sparkline values={advisory.hourly_chart.gust_kn} warnAt={28} dangerAt={34} unit=" kn" color="#a78bfa" />
-            <div className="text-[9px] text-slate-600 mt-0.5">
-              <span className="text-amber-400/80">- -</span> 28 kn caution · <span className="text-red-400/80">- -</span> 34 kn gale
-            </div>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* mini location map — where am I, which way is the PFZ */}
       <AdvisoryMap
@@ -190,7 +274,8 @@ export default function AdvisoryCard({
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
         <Tile label={`🌊 ${t(lang, "waves")} (${t(lang, "now")})`} value={v.wave_height_m != null ? `${v.wave_height_m} m` : "—"} warn={(v.wave_height_m ?? 0) >= 2.5} sub={`${t(lang, "peak_48h")}: ${advisory.outlook_48h?.wave_max_m ?? "—"} m · ${t(lang, "swell")}: ${v.swell_m ?? "—"} m`} />
         <Tile label={`💨 ${t(lang, "wind")} (${t(lang, "now")})`} value={v.wind_kts != null ? `${Math.round(v.wind_kts)} kn` : "—"} sub={`${t(lang, "gusts")}: ${v.gust_kts != null ? Math.round(v.gust_kts) : "—"} kn · ${t(lang, "peak_48h")}: ${advisory.outlook_48h?.gust_max_kn != null ? Math.round(advisory.outlook_48h.gust_max_kn) : "—"} kn`} warn={(v.gust_kts ?? 0) >= 28} />
-        <Tile label={`🌡️ ${t(lang, "sst")}`} value={v.sst_c != null ? `${v.sst_c.toFixed(1)} °C` : "—"} />
+        <Tile label={`🌡️ ${t(lang, "sst")}`} value={v.sst_c != null ? `${v.sst_c.toFixed(1)} °C` : "—"}
+          sub={v.sst_source ? (v.sst_source.includes("marine model") ? "marine model (hourly)" : "daily SST record") : undefined} />
         <Tile label={`🌀 ${t(lang, "current")}`} value={v.current_kn != null ? `${v.current_kn} kn` : "—"} sub={v.current_dir ?? undefined} />
         <Tile label={`🛰️ ${t(lang, "chlorophyll")}`} value={v.chlorophyll_mg_m3 != null ? `${v.chlorophyll_mg_m3.toFixed(2)} mg/m³` : "—"} sub={v.pfz_advisory_date ? `PFZ: ${v.pfz_advisory_date}` : undefined} />
         <Tile label={`🎣 ${t(lang, "nearest_pfz")}`} value={v.nearest_pfz_nm != null ? `${v.nearest_pfz_nm} NM` : "—"} sub={v.nearest_pfz_bearing ? `${v.nearest_pfz_bearing} · INCOIS` : "none nearby today"} />
@@ -228,6 +313,82 @@ export default function AdvisoryCard({
             </li>
           ))}
         </ul>
+      </div>
+
+      {/* 10-agent board — the full multi-agent analysis, same insight the
+          Map-tab panel uses. Every agent's verdict + findings in one place. */}
+      <div className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-4">
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
+          <h3 className="text-sm font-semibold text-slate-200">
+            🧠 {lang === "hi" ? "10 एजेंट्स की पूरी राय" : "Full 10-agent breakdown"}
+          </h3>
+          {effInsight && (
+            <span className={`text-[10px] px-2 py-0.5 rounded-md border ${RISK_COLOR[effInsight.overall_risk] || RISK_COLOR.unknown}`}>
+              {lang === "hi" ? "कुल जोखिम" : "overall"}: {effInsight.overall_risk.toUpperCase()}
+            </span>
+          )}
+        </div>
+        {effInsight ? (
+          <>
+            {effInsight.recommendation && (
+              <p className="text-xs text-cyan-200/90 bg-cyan-500/5 border border-cyan-500/20 rounded-md px-3 py-2 mb-2 leading-relaxed">
+                💡 {effInsight.recommendation}
+              </p>
+            )}
+            <div className="space-y-1.5">
+              {[...effInsight.agents]
+                .sort((a, b) => (a.risk_level === "unknown" ? 1 : 0) - (b.risk_level === "unknown" ? 1 : 0))
+                .map((a) => {
+                  const noData = a.risk_level === "unknown";
+                  const label = AGENT_LABEL[a.agent];
+                  return (
+                    <details key={a.agent}
+                      className={`rounded-md border px-3 py-2 bg-[#0B1322] ${noData ? "border-[#16233C] opacity-65" : "border-[#1C2A45]"}`}>
+                      <summary className="cursor-pointer flex items-center gap-2 list-none">
+                        <span className="text-sm">{AGENT_EMOJI[a.agent] || "•"}</span>
+                        <span className="min-w-0 flex-1 text-xs font-medium text-slate-200 leading-snug break-words">
+                          {label ? (lang === "hi" ? label.hi : label.en) : a.agent}
+                        </span>
+                        <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-md border ${RISK_COLOR[a.risk_level] || RISK_COLOR.unknown}`}>
+                          {noData ? (lang === "hi" ? "डेटा नहीं" : "no data") : a.risk_level}
+                        </span>
+                      </summary>
+                      <div className="mt-1.5 text-[11px] text-slate-400 leading-relaxed">{a.summary}</div>
+                      {a.findings.length > 0 && (
+                        <ul className="mt-1.5 space-y-1">
+                          {a.findings.map((f, i) => (
+                            <li key={i} className={`text-[11px] leading-relaxed ${SEVERITY_COLOR[f.severity] || ""}`}>
+                              <span className="font-mono opacity-60">[{f.severity}]</span> {f.msg}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </details>
+                  );
+                })}
+            </div>
+            <div className="mt-2 text-[10px] text-slate-600">
+              {lang === "hi" ? "एजेंट विश्लेषण समय" : "agents ran"}: {new Date(effInsight.fetched_at).toLocaleString()}
+            </div>
+          </>
+        ) : (
+          <div className="text-xs text-slate-500 space-y-2">
+            <p>
+              {agentsBusy
+                ? (lang === "hi" ? "⏳ 10 एजेंट लाइव डेटा पर काम कर रहे हैं… (10-30 सेकंड)" : "⏳ 10 agents working on live data… (10-30 s)")
+                : (lang === "hi"
+                    ? "Map tab पर point click करने से यहाँ अपने-आप आ जाता है — या अभी चलाएँ:"
+                    : "Click a point on the Map tab and it appears here automatically — or run it now:")}
+            </p>
+            {!agentsBusy && (
+              <button onClick={loadAgents}
+                className="rounded-md border border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-xs font-semibold px-3 py-2 transition">
+                🧠 {lang === "hi" ? "10-एजेंट analysis अभी लोड करें" : "Load the 10-agent analysis now"}
+              </button>
+            )}
+            {localInsightErr && <p className="text-red-400/80">⚠️ {localInsightErr}</p>}
+          </div>
+        )}
       </div>
 
       {/* sources footer — full transparency */}

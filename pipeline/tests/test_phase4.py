@@ -335,4 +335,59 @@ def test_field_build_error_tolerance(monkeypatch):
     assert out["chl"]["error"] and "chl dead" in out["chl"]["error"]
     assert out["met"]["n"] == 1
     assert out["hotspots"] == []  # honest empty, not a crash
-print('field explorer tests added')
+
+
+# ── Rich chart series (48 h evidence arrays) ─────────────────────────
+
+def test_chart_series_exposes_all_variables():
+    """Every agent-visible chart array must come from the SAME hourly data."""
+    fcst = dict(FAKE_FORECAST)
+    fcst["hourly"] = {**FAKE_FORECAST["hourly"], "sst_c": [28.4, 28.5]}
+    out = fc.chart_series(fcst, hours=2, step=1)
+    for key in ("wave_m", "swell_m", "wind_kn", "gust_kn", "current_kn", "sst_c", "rain_mm"):
+        assert key in out, f"chart series missing {key}"
+        assert len(out[key]) == len(out["labels"]) >= 1
+    # _now_index lands on the LAST past hour for these 2026-09-03 times
+    assert out["current_kn"][0] == 0.58
+    assert out["sst_c"][0] == 28.5
+
+
+def test_chart_series_tolerates_old_cached_entries():
+    """A forecast cached before SST existed must not crash the charts."""
+    out = fc.chart_series(dict(FAKE_FORECAST), hours=2, step=1)  # no sst_c key at all
+    assert out["sst_c"] == [None] * len(out["labels"])
+    assert out["wave_m"][0] is not None
+
+
+def test_advisory_sst_falls_back_to_marine_model(monkeypatch):
+    """When the daily SST record source is down, the hourly marine-model
+    SST is used — and honestly labelled as such."""
+    _patch_calm(monkeypatch)
+    monkeypatch.setattr("pipeline.advisory.zone_snapshot_cached",
+                        lambda *a, **k: {**FAKE_SNAPSHOT, "sst_mean": None, "sst_max": None})
+    fcst = dict(FAKE_FORECAST)
+    fcst["now"] = {**FAKE_FORECAST["now"], "sst_c": 28.7}
+    monkeypatch.setattr(fc, "get_point_forecast", lambda *a, **k: fcst)
+    adv = build_advisory(20.9, 70.37)
+    assert adv["variables"]["sst_c"] == 28.7
+    assert "marine model" in adv["variables"]["sst_source"]
+
+
+def test_field_met_grid_parses_sst(monkeypatch):
+    """The multi-point marine call returns per-cell SST; it must land on points."""
+    from pipeline import field_explorer as fx
+
+    def fake_http(url, params, timeout=15.0):
+        n = len(params["latitude"].split(","))
+        if "marine" in url:
+            return [{"current": {"wave_height": 1.5, "swell_wave_height": 0.9,
+                                 "ocean_current_velocity": 0.5,
+                                 "sea_surface_temperature": 28.9}}] * n
+        return [{"current": {"wind_speed_10m": 11.0, "wind_gusts_10m": 14.0}}] * n
+
+    monkeypatch.setattr(fx, "_http_json", fake_http)
+    out = fx.fetch_met_grid(19.0, 72.0)
+    assert out["n"] == fx.GRID_TARGET_N ** 2
+    p = out["points"][0]
+    assert p["sst_c"] == 28.9
+    assert p["current_kn"] == round(0.5 * 1.943844, 2)

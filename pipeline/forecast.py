@@ -44,7 +44,8 @@ def _fetch_now(lat: float, lon: float, days: int) -> dict[str, Any]:
     marine = _http_json(MARINE_URL, {
         "latitude": f"{lat:.4f}",
         "longitude": f"{lon:.4f}",
-        "hourly": "wave_height,swell_wave_height,ocean_current_velocity,ocean_current_direction",
+        "hourly": ("wave_height,swell_wave_height,ocean_current_velocity,"
+                   "ocean_current_direction,sea_surface_temperature"),
         "forecast_days": str(days),
         "timezone": "UTC",
     })
@@ -76,6 +77,7 @@ def _fetch_now(lat: float, lon: float, days: int) -> dict[str, Any]:
         "swell_height_m": col(mh, "swell_wave_height"),
         "current_kn": current_kn,
         "current_dir_deg": col(mh, "ocean_current_direction"),
+        "sst_c": col(mh, "sea_surface_temperature"),
         "wind_kn": col(wh, "wind_speed_10m"),
         "gust_kn": col(wh, "wind_gusts_10m"),
         "rain_mm": col(wh, "precipitation"),
@@ -119,7 +121,7 @@ def _summarize(data: dict[str, Any]) -> dict[str, Any]:
     i = _now_index(times)
 
     def now(key: str):
-        col = h[key]
+        col = h.get(key) or []
         return col[i] if i < len(col) else None
 
     out = dict(data)
@@ -129,6 +131,7 @@ def _summarize(data: dict[str, Any]) -> dict[str, Any]:
         "swell_height_m": now("swell_height_m"),
         "current_kn": now("current_kn"),
         "current_dir_deg": now("current_dir_deg"),
+        "sst_c": now("sst_c"),
         "wind_kn": now("wind_kn"),
         "gust_kn": now("gust_kn"),
         "rain_mm": now("rain_mm"),
@@ -148,15 +151,18 @@ def _summarize(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def chart_series(forecast: dict[str, Any], hours: int = 48, step: int = 3) -> dict[str, Any]:
-    """Downsampled hourly series for UI sparklines (next `hours` hours).
+    """Downsampled hourly series for UI charts (next `hours` hours).
 
-    Same real arrays the advisory verdict uses — the chart is a VIEW of
-    the verdict's own data, never a separate fetch.
+    Same real arrays the advisory verdict uses — every chart the user
+    sees is literally the evidence the verdict was built from: waves,
+    swell, wind, gusts, surface current, sea-surface temperature, rain.
     """
+    empty = {"labels": [], "wave_m": [], "swell_m": [], "wind_kn": [],
+             "gust_kn": [], "current_kn": [], "sst_c": [], "rain_mm": []}
     h = forecast.get("hourly", {})
     times = h.get("time", [])
     if not times:
-        return {"labels": [], "wave_m": [], "wind_kn": [], "gust_kn": [], "rain_mm": []}
+        return empty
     i = _now_index(times)
     end = min(len(times), i + hours)
     idx = list(range(i, end, step))
@@ -168,8 +174,11 @@ def chart_series(forecast: dict[str, Any], hours: int = 48, step: int = 3) -> di
     return {
         "labels": [times[k][5:] for k in idx],  # "MM-DDTHH:MM"
         "wave_m": take("wave_height_m"),
+        "swell_m": take("swell_height_m"),
         "wind_kn": take("wind_kn"),
         "gust_kn": take("gust_kn"),
+        "current_kn": take("current_kn"),
+        "sst_c": take("sst_c"),
         "rain_mm": take("rain_mm"),
     }
 

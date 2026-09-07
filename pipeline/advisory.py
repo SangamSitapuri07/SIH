@@ -93,7 +93,19 @@ def build_advisory(
     wind_now = now_f.get("wind_kn")
     gust_now = now_f.get("gust_kn")
     current_kn = now_f.get("current_kn")
-    sst_c = snap.get("sst_mean") if snap.get("sst_mean") is not None else snap.get("sst_max")
+    # SST: first the daily point record (ZoneSnapshot); if that source is
+    # down, fall back to the hourly marine-model SST the SAME forecast
+    # fetch already returned — honestly labelled by source.
+    snap_sst = snap.get("sst_mean") if snap.get("sst_mean") is not None else snap.get("sst_max")
+    if snap_sst is not None:
+        sst_c = snap_sst
+        sst_source = "Open-Meteo daily SST record (point)"
+    elif now_f.get("sst_c") is not None:
+        sst_c = now_f.get("sst_c")
+        sst_source = "Open-Meteo marine model (hourly forecast SST)"
+    else:
+        sst_c = None
+        sst_source = None
     chl = snap.get("chlorophyll")
 
     # ── 3. Cyclones (JTWC) ──
@@ -352,6 +364,7 @@ def build_advisory(
             "wind_kts": wind_now,
             "gust_kts": gust_now,
             "sst_c": sst_c,
+            "sst_source": sst_source,
             "current_kn": current_kn,
             "current_dir": _deg_to_compass(now_f.get("current_dir_deg")),
             "chlorophyll_mg_m3": chl,

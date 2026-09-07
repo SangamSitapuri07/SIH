@@ -252,7 +252,8 @@ export default function Home() {
         </div>
 
         <div className="flex-1 overflow-hidden" hidden={tab !== "advisory"}>
-          <AdvisoryCard zone={zone} lang={lang} advisory={advisory} setAdvisory={setAdvisory} />
+          <AdvisoryCard zone={zone} lang={lang} advisory={advisory} setAdvisory={setAdvisory}
+            insight={insight} insightLoading={insightLoading} />
         </div>
 
         <div className="flex-1 overflow-hidden" hidden={tab !== "alerts"}>

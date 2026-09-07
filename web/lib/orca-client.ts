@@ -112,6 +112,7 @@ export interface Advisory {
     wind_kts?: number | null;
     gust_kts?: number | null;
     sst_c?: number | null;
+    sst_source?: string | null;
     current_kn?: number | null;
     current_dir?: string | null;
     chlorophyll_mg_m3?: number | null;
@@ -128,8 +129,11 @@ export interface Advisory {
   hourly_chart?: {
     labels: string[];
     wave_m: (number | null)[];
+    swell_m?: (number | null)[];
     wind_kn: (number | null)[];
     gust_kn: (number | null)[];
+    current_kn?: (number | null)[];
+    sst_c?: (number | null)[];
     rain_mm: (number | null)[];
   } | null;
   /** Plain-language lines a non-technical reader can act on. */
@@ -334,7 +338,8 @@ export const fetchAdvisory = (lat: number, lon: number) =>
 export interface FieldPoint {
   lat: number; lon: number;
   chl?: number; wave_m?: number | null; swell_m?: number | null;
-  current_kn?: number | null; wind_kn?: number | null; gust_kn?: number | null;
+  current_kn?: number | null; sst_c?: number | null;
+  wind_kn?: number | null; gust_kn?: number | null;
 }
 export interface FieldResponse {
   type: "field";

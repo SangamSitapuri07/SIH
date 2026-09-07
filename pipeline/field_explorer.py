@@ -148,7 +148,8 @@ def fetch_met_grid(lat: float, lon: float) -> dict[str, Any]:
     marine = _as_list(_http_json(MARINE_URL, {
         "latitude": lats,
         "longitude": lons,
-        "current": "wave_height,swell_wave_height,ocean_current_velocity",
+        "current": ("wave_height,swell_wave_height,ocean_current_velocity,"
+                    "sea_surface_temperature"),
         "timezone": "UTC",
     }))
     weather = _as_list(_http_json(FORECAST_URL, {
@@ -171,6 +172,7 @@ def fetch_met_grid(lat: float, lon: float) -> dict[str, Any]:
             "wave_m": mc.get("wave_height"),
             "swell_m": mc.get("swell_wave_height"),
             "current_kn": round(ocv * 1.943844, 2) if isinstance(ocv, (int, float)) else None,
+            "sst_c": mc.get("sea_surface_temperature"),
             "wind_kn": wc.get("wind_speed_10m"),
             "gust_kn": wc.get("wind_gusts_10m"),
         })

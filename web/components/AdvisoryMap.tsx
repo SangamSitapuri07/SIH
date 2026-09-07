@@ -4,6 +4,8 @@
  * Mini map for the advisory card — where am I, and which way is the
  * official INCOIS PFZ? Read-only, single-purpose, no zone clutter.
  * PFZ direction comes from the advisory's real bearing+distance.
+ * Basemap = real OpenStreetMap tiles (same as the main map tab) —
+ * CARTO dark tiles started serving "API KEY REQUIRED" watermarks.
  */
 import { MapContainer, TileLayer, CircleMarker, Polyline, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -44,16 +46,18 @@ export default function AdvisoryMap({
       <MapContainer
         center={mid}
         zoom={hasPfz ? 7 : 8}
-        style={{ height: 200, width: "100%", background: "#0A1120" }}
+        style={{ height: 220, width: "100%", background: "#0A1120" }}
         zoomControl={false}
         dragging={false}
         scrollWheelZoom={false}
         doubleClickZoom={false}
         boxZoom={false}
         keyboard={false}
-        attributionControl={false}
       >
-        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+        <TileLayer
+          attribution="© OpenStreetMap"
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
         {/* you are here — pulsing cyan target */}
         <CircleMarker center={[lat, lon]} radius={8}
           pathOptions={{ color: "#22d3ee", weight: 2.5, fillColor: "#22d3ee", fillOpacity: 0.35 }}>
