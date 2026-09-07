@@ -585,6 +585,25 @@ def get_chlorophyll(lat: float, lon: float, date: str | None = None) -> dict[str
     )
 
 
+def _fail_message(why: str) -> str:
+    """Compose the user-facing failure line, capped but NEVER cut
+    mid-word (external reviewer flagged a literal 'no v' truncation,
+    2026-09-07): prefer ending at a '; or ' candidate boundary, else
+    at a whole word, and always say so with '; +more' / '…'."""
+    prefix = "MOSDAC OCM-3 live fetch failed ("
+    suffix = ") — NOAA primary is used"
+    budget = 260 - len(prefix) - len(suffix)
+    if len(why) <= budget:
+        return prefix + why + suffix
+    cut = why[:budget]
+    sep = cut.rfind("; or ")
+    if sep > budget // 2:
+        cut = cut[:sep] + "; +more"
+    else:
+        cut = cut.rsplit(" ", 1)[0] + "…"
+    return prefix + cut + suffix
+
+
 _LAST_TRIED: list[str] = []       # per-candidate skip reasons of last chain run
 _LAST_USED_PATH: str | None = None  # granule file that yielded the last value
 
@@ -599,7 +618,7 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
 
     def _fail(why: str) -> dict[str, Any]:
         return {
-            "error": f"MOSDAC OCM-3 live fetch failed ({why}) — NOAA primary is used"[:180],
+            "error": _fail_message(why),
             "source": SOURCE_LABEL,
         }
 

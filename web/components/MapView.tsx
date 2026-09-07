@@ -211,6 +211,30 @@ export default function MapView({
         );
       })}
 
+      {/* selected point — pulsing crosshair so the analysed spot is unmistakable */}
+      {selected && (
+        <>
+          <CircleMarker
+            center={[selected.lat, selected.lon]}
+            radius={9}
+            pathOptions={{ color: "#22d3ee", weight: 2.5, fillColor: "#22d3ee", fillOpacity: 0.35 }}
+          >
+            <Popup>
+              <div>
+                <strong>📍 {selected.name}</strong><br />
+                {selected.lat.toFixed(3)}°N, {selected.lon.toFixed(3)}°E<br />
+                <em>{lang === "hi" ? "यहाँ का विश्लेषण दाहिने पैनल में" : "analysis for this point is in the right panel"}</em>
+              </div>
+            </Popup>
+          </CircleMarker>
+          <CircleMarker
+            center={[selected.lat, selected.lon]}
+            radius={20}
+            pathOptions={{ color: "#22d3ee", weight: 1, dashArray: "4 4", fillOpacity: 0, opacity: 0.5 }}
+          />
+        </>
+      )}
+
       {/* zone markers */}
       {zones.map((z) => (
         <Marker key={z.name} position={[z.lat, z.lon]} eventHandlers={{ click: () => onSelect(z) }}>
@@ -229,12 +253,13 @@ export default function MapView({
 
       {/* layer toggles + actions (top-right overlay) */}
       <div className="leaflet-top leaflet-right">
-        <div className="leaflet-control bg-white/95 rounded shadow p-2 m-2 space-y-1 w-[220px]">
-          <div className="text-xs font-semibold text-slate-600">{t(lang, "map_layers")}</div>
+        <div className="leaflet-control bg-[#0E1729]/95 border border-[#1C2A45] text-slate-200 rounded-lg shadow-xl p-2.5 m-2 space-y-1.5 w-[220px] backdrop-blur">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{t(lang, "map_layers")}</div>
           {LAYER_KEYS.map(({ key, label }) => (
-            <label key={key} className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+            <label key={key} className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer hover:text-slate-100">
               <input
                 type="checkbox"
+                className="accent-cyan-400"
                 checked={!!enabled[key]}
                 onChange={(e) => setEnabled((s) => ({ ...s, [key]: e.target.checked }))}
               />
@@ -243,19 +268,19 @@ export default function MapView({
           ))}
           <button
             onClick={loadLayers}
-            className="w-full mt-1 text-xs bg-slate-100 hover:bg-slate-200 rounded px-2 py-1"
+            className="w-full mt-1 text-xs bg-[#131E35] hover:bg-[#16243F] border border-[#2B4066] rounded px-2 py-1"
           >
             ↻ {t(lang, "refresh")}
           </button>
           <button
             onClick={locateMe}
-            className="w-full text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded px-2 py-1"
+            className="w-full text-xs bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded px-2 py-1"
           >
             {t(lang, "my_location")}
           </button>
-          {layersErr && <div className="text-[10px] text-red-600">{layersErr}</div>}
+          {layersErr && <div className="text-[10px] text-red-400">{layersErr}</div>}
           {layers && (
-            <div className="text-[10px] text-slate-400">
+            <div className="text-[10px] text-slate-500">
               {layers.features.length} features · {layers.sources.join(", ")}
             </div>
           )}

@@ -147,6 +147,33 @@ def _summarize(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def chart_series(forecast: dict[str, Any], hours: int = 48, step: int = 3) -> dict[str, Any]:
+    """Downsampled hourly series for UI sparklines (next `hours` hours).
+
+    Same real arrays the advisory verdict uses — the chart is a VIEW of
+    the verdict's own data, never a separate fetch.
+    """
+    h = forecast.get("hourly", {})
+    times = h.get("time", [])
+    if not times:
+        return {"labels": [], "wave_m": [], "wind_kn": [], "gust_kn": [], "rain_mm": []}
+    i = _now_index(times)
+    end = min(len(times), i + hours)
+    idx = list(range(i, end, step))
+
+    def take(key: str) -> list:
+        col = h.get(key) or []
+        return [col[k] if k < len(col) else None for k in idx]
+
+    return {
+        "labels": [times[k][5:] for k in idx],  # "MM-DDTHH:MM"
+        "wave_m": take("wave_height_m"),
+        "wind_kn": take("wind_kn"),
+        "gust_kn": take("gust_kn"),
+        "rain_mm": take("rain_mm"),
+    }
+
+
 def find_safe_window(
     forecast: dict[str, Any],
     wave_ok_m: float = 2.5,

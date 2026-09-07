@@ -123,6 +123,18 @@ export interface Advisory {
     pfz_advisory_date?: string | null;
   };
   outlook_48h?: Record<string, number | null>;
+  /** Downsampled hourly forecast (next 48h, every ~3h) — same arrays the
+      verdict uses, rendered as sparklines. */
+  hourly_chart?: {
+    labels: string[];
+    wave_m: (number | null)[];
+    wind_kn: (number | null)[];
+    gust_kn: (number | null)[];
+    rain_mm: (number | null)[];
+  } | null;
+  /** Plain-language lines a non-technical reader can act on. */
+  plain_en?: string[];
+  plain_hi?: string[];
   safe_window: { found: boolean; from_utc?: string; to_utc?: string; hours?: number; note?: string };
   sources: string[];
   sources_failed: string[];

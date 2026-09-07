@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Advisory, DemoZone, fetchAdvisory } from "@/lib/orca-client";
 import { t, Lang } from "@/lib/i18n";
+import Sparkline from "@/components/Sparkline";
 
 const VERDICT_STYLE: Record<string, { bg: string; ring: string; label_en: string; label_hi: string }> = {
   go: { bg: "bg-green-600", ring: "ring-green-300", label_en: "GO", label_hi: "जा सकते हैं" },
@@ -111,6 +112,46 @@ export default function AdvisoryCard({
           {t(lang, "valid_until")} {advisory.valid_until.slice(11, 16)} UTC
         </div>
       </div>
+
+      {/* plain-language card — the one block a non-technical reader needs */}
+      {(advisory.plain_en?.length || advisory.plain_hi?.length) ? (
+        <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/5 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300/90 mb-1.5">
+            🗣️ {lang === "hi" ? "सीधी-सादी भाषा में" : "In plain words"}
+          </div>
+          <div className="space-y-1">
+            {(lang === "hi" ? advisory.plain_hi : advisory.plain_en)?.map((line, i) => (
+              <p key={i} className={`text-sm leading-relaxed ${i === 0 ? "font-semibold text-slate-100" : "text-slate-300"}`}>
+                {line}
+              </p>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* 48 h trend strips — same arrays the verdict rules read */}
+      {advisory.hourly_chart && advisory.hourly_chart.labels.length > 1 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-3">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">
+              🌊 {lang === "hi" ? "लहरें — अगले 48 घंटे" : "Waves — next 48 h"} (m)
+            </div>
+            <Sparkline values={advisory.hourly_chart.wave_m} warnAt={2.5} dangerAt={4.0} unit=" m" color="#22d3ee" />
+            <div className="text-[9px] text-slate-600 mt-0.5">
+              <span className="text-amber-400/80">- -</span> 2.5 m caution · <span className="text-red-400/80">- -</span> 4 m unsafe
+            </div>
+          </div>
+          <div className="rounded-lg border border-[#1C2A45] bg-[#0E1729] p-3">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">
+              💨 {lang === "hi" ? "हवा (gusts) — अगले 48 घंटे" : "Wind gusts — next 48 h"} (kn)
+            </div>
+            <Sparkline values={advisory.hourly_chart.gust_kn} warnAt={28} dangerAt={34} unit=" kn" color="#a78bfa" />
+            <div className="text-[9px] text-slate-600 mt-0.5">
+              <span className="text-amber-400/80">- -</span> 28 kn caution · <span className="text-red-400/80">- -</span> 34 kn gale
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* variable tiles — every number is live */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">

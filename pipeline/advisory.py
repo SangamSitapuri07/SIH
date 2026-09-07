@@ -84,6 +84,9 @@ def build_advisory(
     now_f = point_fc.get("now", {}) or {}
     n24 = point_fc.get("next24h", {}) or {}
     n48 = point_fc.get("next48h", {}) or {}
+    # Sparkline view of the SAME arrays the rules below read — the chart
+    # the user sees is literally the evidence the verdict was built from.
+    hourly_chart = fc.chart_series(point_fc) if point_fc else None
 
     wave_now = now_f.get("wave_height_m")
     swell_now = now_f.get("swell_height_m")
@@ -280,6 +283,42 @@ def build_advisory(
     else:
         verdict = "go"
 
+    # ── Plain-language "samjhaane wali" summary ──
+    # Fisherman-first: 3 short sentences a non-technical reader can act on.
+    # Generated deterministically from the SAME variables + verdict —
+    # no LLM, no paraphrasing that could drift from the numbers.
+    plain_en: list[str] = []
+    plain_hi: list[str] = []
+    if verdict == "go":
+        plain_en.append("✅ It looks safe to sail.")
+        plain_hi.append("✅ Samundar mein jaana THEEK lag raha hai.")
+    elif verdict == "caution":
+        plain_en.append("⚠️ You may go, but only with extra care — stay close to shore.")
+        plain_hi.append("⚠️ Jaa sakte hain, par bahut savdhani se — kinaare ke paas rahiye.")
+    else:
+        plain_en.append("⛔ Do NOT sail today. Stay on land.")
+        plain_hi.append("⛔ Aaj samundar mein MAT jaiye. Zameen par rahiye.")
+    top = sorted(
+        [r for r in reasons if r["severity"] in ("no_go", "caution")],
+        key=lambda r: 0 if r["severity"] == "no_go" else 1,
+    )[:2]
+    for r in top:
+        plain_en.append(f"Why: {r['msg']}")
+        plain_hi.append(f"Wajah: {r['msg']}")
+    if not top and wave_now is not None and wind_now is not None:
+        plain_en.append(
+            f"Waves ~{wave_now:.1f} m and wind ~{wind_now:.0f} kn — both within safe limits."
+        )
+        plain_hi.append(
+            f"Lehren ~{wave_now:.1f} m aur hawa ~{wind_now:.0f} kn — dono safe seema ke andar."
+        )
+    sw = safe_window
+    if sw.get("found") and verdict != "no_go":
+        _w0 = str(sw.get("from_utc") or "")[5:16].replace("T", " ")
+        _w1 = str(sw.get("to_utc") or "")[5:16].replace("T", " ")
+        plain_en.append(f"Best window: {_w0} → {_w1} UTC (the calmest stretch).")
+        plain_hi.append(f"Sabse achha samay: {_w0} se {_w1} UTC tak (sabse shaant samay).")
+
     vt = {
         "go": {
             "icon": "✅", "color": "green",
@@ -324,6 +363,9 @@ def build_advisory(
             "pfz_advisory_date": pfz_info.get("advisory_date"),
         },
         "outlook_48h": n48,
+        "hourly_chart": hourly_chart,
+        "plain_en": plain_en,
+        "plain_hi": plain_hi,
         "safe_window": safe_window,
         "sources": sources_used,
         "sources_failed": sources_failed,

@@ -422,6 +422,32 @@ def test_records_date_from_dcdate():
 
 # ── client-side coverage filter (the Maldives-scene lesson) ────────────
 
+def test_fail_message_never_cuts_mid_word():
+    """Reviewer catch 2026-09-07: the long multi-granule failure string was
+    sliced with [:180] and ended literally 'no v'. Must end at a boundary."""
+    from pipeline.mosdac_ocm import _fail_message
+    why = (
+        "35 outside-area granule(s) skipped. "
+        "18367074: no valid pixel near point [direct-reader: all fill/masked within 40 cells of point]; or "
+        "18360750: no valid pixel near point [direct-reader: all fill/masked within 40 cells of point]; or "
+        "18358001: no valid pixel near point"
+    )
+    msg = _fail_message(why)
+    assert len(msg) <= 260
+    assert msg.endswith(") — NOAA primary is used")
+    body = msg[len("MOSDAC OCM-3 live fetch failed ("):-len(") — NOAA primary is used")]
+    assert not body.endswith("no v"), msg
+    assert body.endswith("+more") or body.endswith("…") or body.endswith("point]") or body.endswith("point"), msg
+    # full first candidate stays intact
+    assert "18367074: no valid pixel near point" in body
+
+
+def test_fail_message_short_passthrough():
+    from pipeline.mosdac_ocm import _fail_message
+    msg = _fail_message("login failed: HTTP 401")
+    assert msg == "MOSDAC OCM-3 live fetch failed (login failed: HTTP 401) — NOAA primary is used"
+
+
 def test_boundbox_contains_comma_format():
     bb = "65.0,18.0,72.5,23.5"  # minLon,minLat,maxLon,maxLat
     assert mosdac_ocm._boundbox_contains(bb, 20.9, 70.37) is True
