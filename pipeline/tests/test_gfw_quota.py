@@ -107,3 +107,28 @@ def test_error_never_cached(isolated_gfw_state):
     gfw._cache_put_success("gfw:k", {"error": "HTTP 429"})
     assert gfw._cache_get("gfw:k") is None
     print("✅ errors never cached")
+
+
+def test_cache_served_during_cooldown(isolated_gfw_state, monkeypatch):
+    """A pause must never hide data we already cached — cache beats cooldown."""
+    gfw._note_429(_fake_429({"Retry-After": "600"}))
+    assert gfw._rate_limit_remaining() > 0
+    monkeypatch.setenv("GFW_API_TOKEN", "dummy-token")
+    key = "gfw:effort:20.90,70.37,0.50,2026-08-04,2026-09-03"
+    gfw._cache_put_success(key, {"hours": 47.3, "vessel_ids": 12})
+    r = gfw.get_fishing_effort(20.9, 70.37, "2026-08-04", "2026-09-03")
+    assert r is not None and r["hours"] == 47.3
+    assert "paused" in r["cache"], r["cache"]
+    # and the fake _make_request must never have fired — no monkeypatched stub even set
+    print("✅ cache wins over cooldown:", r["cache"])
+
+
+def test_uncached_point_waits_during_cooldown(isolated_gfw_state, monkeypatch):
+    """No cached copy → the paused error must SAY that (honest scope)."""
+    gfw._note_429(_fake_429({"Retry-After": "600"}))
+    assert gfw._rate_limit_remaining() > 0
+    monkeypatch.setenv("GFW_API_TOKEN", "dummy-token")
+    r = gfw.get_fishing_effort(10.0, 75.0, "2026-08-01", "2026-09-01")
+    assert r is not None and r.get("rate_limited") is True
+    assert "No cached copy" in r["error"], r["error"]
+    print("✅ uncached point honestly waits during cooldown")

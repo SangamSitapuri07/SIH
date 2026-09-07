@@ -197,7 +197,7 @@ def _harvest_rl_headers(headers) -> dict[str, str]:
 # clicks structurally unable to trip the limiter. (Root cause of the
 # 2026-09-04 repeated-429 loop on the user's laptop: 8-pin prewarm fired
 # 16 report calls within ~30 s of every backend start.)
-_MIN_CALL_GAP_SEC = 4.0
+_MIN_CALL_GAP_SEC = 6.0  # bumped 4s→6s (2026-09-07): still saw burst 429s
 _last_call_ts = 0.0
 
 
@@ -403,23 +403,29 @@ def get_fishing_effort(
 
     # Quota guard — honest pause + 6 h success cache (only for the
     # shared default-token path; explicit-token callers are one-offs).
+    # CACHE FIRST, cooldown second: a pause must never hide data we
+    # already have on disk — only fresh fetches are paused.
     cache_key: str | None = None
     if token is None:
+        cache_key = f"gfw:effort:{lat:.2f},{lon:.2f},{radius_deg:.2f},{start_date},{end_date}"
+        hit = _cache_get(cache_key)
+        if hit is not None:
+            note = "hit (6h)"
+            if _rate_limit_remaining() > 0:
+                note += " — served while GFW calls are paused"
+            return {**hit, "cache": note}
         remaining = _rate_limit_remaining()
         if remaining > 0:
             return {
                 "error": (
                     f"GFW quota hit earlier (HTTP 429) — auto-paused for "
                     f"~{int(remaining)}s more; free-tier limit, not a bug. "
-                    f"Last good data is served from cache where available."
+                    f"No cached copy exists for this exact point/date, so "
+                    f"this point waits for the pause to end."
                 ),
                 "source": "GFW",
                 "rate_limited": True,
             }
-        cache_key = f"gfw:effort:{lat:.2f},{lon:.2f},{radius_deg:.2f},{start_date},{end_date}"
-        hit = _cache_get(cache_key)
-        if hit is not None:
-            return {**hit, "cache": "hit (6h)"}
 
     actual_start, actual_end = _clamp_date_range(start_date, end_date)
     print(f"[GFW] Querying {actual_start} to {actual_end}", file=sys.stderr)
@@ -574,20 +580,25 @@ def get_fishing_vessels_in_region(
     # Same quota guard as get_fishing_effort (shared cooldown + cache).
     cache_key: str | None = None
     if token is None:
+        cache_key = f"gfw:fleet:{lat:.2f},{lon:.2f},{radius_deg:.2f},{start_date},{end_date}"
+        hit = _cache_get(cache_key)
+        if hit is not None:
+            note = "hit (6h)"
+            if _rate_limit_remaining() > 0:
+                note += " — served while GFW calls are paused"
+            return {**hit, "cache": note}
         remaining = _rate_limit_remaining()
         if remaining > 0:
             return {
                 "error": (
                     f"GFW quota hit earlier (HTTP 429) — auto-paused for "
-                    f"~{int(remaining)}s more; free-tier limit, not a bug."
+                    f"~{int(remaining)}s more; free-tier limit, not a bug. "
+                    f"No cached copy exists for this exact point/date, so "
+                    f"this point waits for the pause to end."
                 ),
                 "source": "GFW",
                 "rate_limited": True,
             }
-        cache_key = f"gfw:fleet:{lat:.2f},{lon:.2f},{radius_deg:.2f},{start_date},{end_date}"
-        hit = _cache_get(cache_key)
-        if hit is not None:
-            return {**hit, "cache": "hit (6h)"}
 
     if end_date is None:
         end_date = (date.today() - timedelta(days=GFW_LATEST_DELAY_DAYS)).isoformat()
@@ -754,8 +765,19 @@ def _selftest() -> int:
           f"Veraval box 20.40-21.40 N, 69.87-70.87 E, {start}..{end}")
 
     effort = get_fishing_effort(20.9, 70.37, start.isoformat(), end.isoformat())
+    if effort and effort.get("cache"):
+        print(f"[GFW self-test] ✅ effort served from CACHE while calls are paused: "
+              f"{effort.get('hours')} fishing hours, {effort.get('vessel_ids')} vessels")
+        print("                (this proves the restart-proof cache works — no fresh API call burned)")
     if not effort or "error" in effort:
-        print("[GFW self-test] effort FAILED:", (effort or {}).get("error", "no response"))
+        err = (effort or {}).get("error", "no response")
+        if (effort or {}).get("rate_limited"):
+            print("[GFW self-test] ⏸ calls paused right now:", err)
+            print("                Wait for the pause to end, then re-run this self-test.")
+            print("                (The pause is shared with the backend via data/gfw_cache.json")
+            print("                 — that is the restart-proof fix working, not a failure.)")
+            return 3
+        print("[GFW self-test] effort FAILED:", err)
         return 1
     print(f"[GFW self-test] ✅ effort: {effort.get('hours')} fishing hours, "
           f"{effort.get('vessel_ids')} vessels in 30 days")
