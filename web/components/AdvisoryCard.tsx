@@ -7,6 +7,7 @@ import { t, Lang } from "@/lib/i18n";
 import Sparkline from "@/components/Sparkline";
 
 const AdvisoryMap = dynamic(() => import("@/components/AdvisoryMap"), { ssr: false });
+const FieldExplorer = dynamic(() => import("@/components/FieldExplorer"), { ssr: false });
 
 const VERDICT_STYLE: Record<string, { bg: string; ring: string; label_en: string; label_hi: string }> = {
   go: { bg: "bg-green-600", ring: "ring-green-300", label_en: "GO", label_hi: "जा सकते हैं" },
@@ -37,6 +38,7 @@ export default function AdvisoryCard({
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [explorerOpen, setExplorerOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -164,6 +166,25 @@ export default function AdvisoryCard({
         pfzBearing={v.nearest_pfz_bearing}
         lang={lang}
       />
+
+      {/* visual explorer — one button opens the full sampled map */}
+      <button
+        onClick={() => setExplorerOpen(true)}
+        className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-300 font-semibold text-sm py-3 transition"
+      >
+        🔬 {lang === "hi"
+          ? "विज़ुअल एक्सप्लोरर खोलें — मछली-स्पॉट, लहरें, हवा नक्शे पर"
+          : "Open Visual Explorer — fish spots, waves & wind on a real map"}
+      </button>
+      {explorerOpen && (
+        <FieldExplorer
+          lat={zone.lat}
+          lon={zone.lon}
+          lang={lang}
+          trend={advisory.hourly_chart ?? null}
+          onClose={() => setExplorerOpen(false)}
+        />
+      )}
 
       {/* variable tiles — every number is live */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">

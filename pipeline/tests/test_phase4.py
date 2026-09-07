@@ -293,3 +293,46 @@ def test_compose_answer_contains_real_numbers(monkeypatch):
     assert "1.72" in text or "1.7" in text  # wave height number must appear
     assert "No cyclone" in text or "cyclone" in text.lower()
     assert "Sources:" in text
+
+
+# ── Field Explorer (offline) ─────────────────────────────────────────
+
+def test_field_grid_points_shape():
+    from pipeline import field_explorer as fx
+    pts = fx._grid_points(19.0, 72.0)
+    assert len(pts) == fx.GRID_TARGET_N ** 2
+    lats = {p[0] for p in pts}
+    lons = {p[1] for p in pts}
+    assert len(lats) == fx.GRID_TARGET_N and len(lons) == fx.GRID_TARGET_N
+    assert min(lats) < 19.0 < max(lats)
+    assert min(lons) < 72.0 < max(lons)
+
+
+def test_field_hotspots_ranked_and_labelled():
+    from pipeline import field_explorer as fx
+    pts = [
+        {"lat": 19.0, "lon": 72.5, "chl": 0.4},
+        {"lat": 19.4, "lon": 72.1, "chl": 6.2},   # top
+        {"lat": 18.6, "lon": 71.8, "chl": 2.1},
+        {"lat": 19.2, "lon": 71.4, "chl": 1.0},
+    ]
+    hs = fx._hotspots(pts, 19.0, 72.0, top=3)
+    assert len(hs) == 3
+    assert hs[0]["chl"] == 6.2  # sorted desc
+    for h in hs:
+        assert h["distance_km"] > 0 and h["distance_nm"] > 0
+        assert h["bearing"] in {"N","NNE","NE","ENE","E","ESE","SE","SSE",
+                                "S","SSW","SW","WSW","W","WNW","NW","NNW"}
+
+
+def test_field_build_error_tolerance(monkeypatch):
+    """One source down must never kill the whole field response."""
+    from pipeline import field_explorer as fx
+    monkeypatch.setattr(fx, "fetch_chl_grid", lambda *a: (_ for _ in ()).throw(ValueError("chl dead")))
+    monkeypatch.setattr(fx, "fetch_met_grid", lambda *a: {"points": [{"lat": 1, "lon": 2, "wave_m": 1.0}], "n": 1, "source": "mock"})
+    out = fx._build(19.0, 72.0)
+    assert out["type"] == "field"
+    assert out["chl"]["error"] and "chl dead" in out["chl"]["error"]
+    assert out["met"]["n"] == 1
+    assert out["hotspots"] == []  # honest empty, not a crash
+print('field explorer tests added')

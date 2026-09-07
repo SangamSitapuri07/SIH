@@ -329,6 +329,27 @@ export const fetchInsight = (lat: number, lon: number, date?: string) =>
 export const fetchAdvisory = (lat: number, lon: number) =>
   apiGet<Advisory>(`/api/v1/advisory?lat=${lat}&lon=${lon}${gfwQuery()}`, 120_000);
 
+// ── Field Explorer (real sampled grid spots) ────────────────────────
+
+export interface FieldPoint {
+  lat: number; lon: number;
+  chl?: number; wave_m?: number | null; swell_m?: number | null;
+  current_kn?: number | null; wind_kn?: number | null; gust_kn?: number | null;
+}
+export interface FieldResponse {
+  type: "field";
+  center: { lat: number; lon: number };
+  radius_deg: number;
+  chl: { points: FieldPoint[]; date?: string; n: number; source?: string; error?: string | null };
+  met: { points: FieldPoint[]; n: number; source?: string; error?: string | null };
+  hotspots: { lat: number; lon: number; chl: number; distance_km: number; distance_nm: number; bearing: string }[];
+  generated_at: string;
+  note: string;
+}
+
+export const fetchField = (lat: number, lon: number) =>
+  apiGet<FieldResponse>(`/api/v1/field?lat=${lat}&lon=${lon}`, 90_000);
+
 export interface LayersResponse {
   type: "FeatureCollection";
   generated_at: string;

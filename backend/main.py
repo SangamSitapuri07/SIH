@@ -491,6 +491,25 @@ def get_advisory(
         raise HTTPException(status_code=500, detail=f"advisory failed: {type(e).__name__}: {e}\n{traceback.format_exc()}")
 
 
+# ── Field Explorer: real sampled grid view (spots/waves/wind map) ──
+
+@app.get("/api/v1/field")
+def get_field(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+) -> dict[str, Any]:
+    """9x9 sampled grid of REAL chlorophyll + waves + wind around the
+    point, plus productivity hotspots. Drives the Visual Explorer map.
+    Cached 30 min per 0.1° centre; budgeted so a click always answers."""
+    from pipeline.field_explorer import get_field as _get_field
+    try:
+        return _with_deadline(lambda: _get_field(lat, lon), 60, "field")
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"field fetch failed: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+
+
 # ── Phase-4: GeoJSON layers ──
 
 @app.get("/api/v1/layers")
