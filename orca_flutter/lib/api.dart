@@ -73,6 +73,22 @@ class OrcaApi {
     throw Exception('HTTP ${r.statusCode}');
   }
 
+  /// (B4) TRANSIT VERDICT — "jahan se ho → point tak jaana safe?"
+  /// Verified course pe ~30km sampling + har point ka LIVE marine
+  /// forecast → go/caution/nogo. Pehli baar uncached ~5 parallel
+  /// fetches le sakta hai isliye 90s; baad me 30-min cache = instant.
+  static Future<Map<String, dynamic>> routeAdvisory(String base, double fromLat,
+      double fromLon, double toLat, double toLon) async {
+    final r = await http
+        .get(_u(base, '/api/v1/route-advisory', {
+          'from_lat': '$fromLat',
+          'from_lon': '$fromLon',
+          'to_lat': '$toLat',
+          'to_lon': '$toLon'
+        }))
+    throw Exception('HTTP ${r.statusCode}');
+  }
+
   /// (B1) 10-agent AI analysis — REAL /api/v1/reason (server deadline 110s).
   static Future<Map<String, dynamic>> reason(
       String base, double lat, double lon) async {

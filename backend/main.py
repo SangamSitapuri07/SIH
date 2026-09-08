@@ -571,6 +571,27 @@ def route_check(
         raise HTTPException(status_code=500, detail=f"route check failed: {type(e).__name__}: {e}")
 
 
+@app.get("/api/v1/route-advisory")
+def route_advisory(
+    from_lat: float = Query(..., ge=-90, le=90),
+    from_lon: float = Query(..., ge=-180, le=180),
+    to_lat: float = Query(..., ge=-90, le=90),
+    to_lon: float = Query(..., ge=-180, le=180),
+) -> dict[str, Any]:
+    """Whole-route safe/unsafe verdict: land-verified course sampled
+    every ~30 km, live marine forecast per sample point (fetched in
+    parallel, 30-min cached), folded to go/caution/nogo/unknown with
+    the exact thresholds the single-point advisory uses. Per-point
+    rows carry the observed numbers — evidence, not adjectives."""
+    from pipeline.ttlcache import cached
+    from pipeline.routeadvisory import route_advisory as compute
+    key = f"rtadv:{from_lat:.3f}:{from_lon:.3f}:{to_lat:.3f}:{to_lon:.3f}"
+    try:
+        return cached(key, 1800, lambda: compute(from_lat, from_lon, to_lat, to_lon))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"route advisory failed: {type(e).__name__}: {e}")
+
+
 @app.get("/api/v1/tiles/{z}/{x}/{y}.png")
 def osm_tile(z: int, x: int, y: int):
     """Cached OpenStreetMap raster tile (PNG)."""

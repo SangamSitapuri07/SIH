@@ -118,5 +118,18 @@
   "nav_return_badge": "RETURN-TO-HARBOUR",
   "home_explain": "Explain in detail",
   "sos_sms_fallback": "Direct SMS failed — opening SMS app",
-  "sos_net_note": "SMS & calls need NO internet — they use 2G signal (often works near coast). True satellite SMS needs special phone hardware, so ORCA uses: GPS position (satellite, free), SMS retry, VHF Ch-16 & flares. Nothing faked."
+  "sos_net_note": "SMS & calls need NO internet — they use 2G signal (often works near coast). True satellite SMS needs special phone hardware, so ORCA uses: GPS position (satellite, free), SMS retry, VHF Ch-16 & flares. Nothing faked.",
+  "rt_heading": "Route verdict",
+  "rt_go": "GO — route is clear",
+  "rt_caution": "GO CAREFULLY — rough in between",
+  "rt_nogo": "DON'T GO — danger on the route",
+  "rt_unknown": "No live data — can't be sure",
+  "rt_pts": "{} / {} points live",
+  "rt_km": "{} km",
+  "rt_window": "Good time to leave found",
+  "rt_land_blocked": "Straight course crosses land",
+  "rt_land_detour": "Real detour waypoint found",
+  "rt_land_unverified": "Course NOT land-verified",
+  "rt_loading": "Analysing the whole route…",
+  "rt_failed": "Route analysis failed"
 }

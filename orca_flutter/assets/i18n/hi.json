@@ -118,5 +118,18 @@
   "nav_return_badge": "बंदरगाह-वापसी",
   "home_explain": "विस्तार से समझाओ",
   "sos_sms_fallback": "सीधा SMS नहीं गया — SMS ऐप खोल रहे",
-  "sos_net_note": "SMS/call ko internet NAHI chahiye — yeh 2G signal pe chalte hain (kinnare paas aksar milti hai). Asli satellite SMS ke liye phone mein special hardware chahiye — isliye ORCA GPS position (satellite, free) + SMS retry + VHF Ch-16/flare pe chalta hai. Kuch fake nahi."
+  "sos_net_note": "SMS/call ko internet NAHI chahiye — yeh 2G signal pe chalte hain (kinnare paas aksar milti hai). Asli satellite SMS ke liye phone mein special hardware chahiye — isliye ORCA GPS position (satellite, free) + SMS retry + VHF Ch-16/flare pe chalta hai. Kuch fake nahi.",
+  "rt_heading": "जाने का फैसला",
+  "rt_go": "जाओ — रास्ता साफ़ है",
+  "rt_caution": "ध्यान से जाओ — बीच में कड़ा है",
+  "rt_nogo": "मत जाओ — रास्ते में ख़तरा",
+  "rt_unknown": "लाइव डेटा नहीं मिला — पक्का पता नहीं",
+  "rt_pts": "{} / {} पॉइंट लाइव",
+  "rt_km": "{} किमी",
+  "rt_window": "निकलने का अच्छा समय मिला",
+  "rt_land_blocked": "सीधा रास्ता ज़मीन से टकराता है",
+  "rt_land_detour": "घूमकर जाने का असली रास्ता मिला",
+  "rt_land_unverified": "रास्ता ज़मीन-जाँच से verify नहीं हुआ",
+  "rt_loading": "पूरे रास्ते की जाँच हो रही है…",
+  "rt_failed": "रास्ते की जाँच फेल हुई"
 }

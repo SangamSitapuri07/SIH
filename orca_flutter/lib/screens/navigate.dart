@@ -73,15 +73,48 @@ class _NavigateScreenState extends State<NavigateScreen>
       _route = null;
       _arrivedNotified = false;
       _maybeRouteCheck();
+      _rtAdv = null;
+      _rtAdvFor = null;
+      _rtAdvErr = null;
     }
     if (widget.app.navTarget == null) {
       _tgtAdv = null;
       _tgtAdvFor = null;
       _tgtAdvErr = null;
+      _rtAdv = null;
+      _rtAdvFor = null;
+      _rtAdvErr = null;
     } else {
       _maybeTgtAdv();
     }
     if (mounted) setState(() {});
+  }
+
+  // ── (B4) TRANSIT VERDICT — poore raste ka GO/CAUTION/NO-GO ──
+  Map<String, dynamic>? _rtAdv;
+  Object? _rtAdvErr;
+  Object? _rtAdvFor;
+
+  /// (B4) "jahan ho se is point tak jaana safe?" — POORA rasta
+  /// (~30km sampling + har point ka live marine data). GPS fix milte
+  /// hi chalta hai; cooldown isliye taaki har GPS tick pe fire na ho.
+  Future<void> _maybeRtAdv() async {
+    final tgt = widget.app.navTarget;
+    final fix = _fix;
+    if (tgt == null || fix == null) return;
+    if (_rtAdvFor == tgt) return; // one-shot per target (in-flight bhi)
+    _rtAdvFor = tgt;
+    try {
+      final r = await OrcaApi.routeAdvisory(
+          widget.settings.base, fix.latitude, fix.longitude, tgt.lat, tgt.lon);
+      if (mounted && widget.app.navTarget == tgt) {
+        setState(() => _rtAdv = r);
+      }
+    } catch (e) {
+      if (mounted && widget.app.navTarget == tgt) {
+        setState(() => _rtAdvErr = e);
+      }
+    }
   }
 
   /// (B3) "is point pe jaana safe hai?" — target ki REAL advisory
@@ -160,6 +193,7 @@ class _NavigateScreenState extends State<NavigateScreen>
     }
     _maybeRouteCheck();
     _checkArrival(fix);
+    _maybeRtAdv(); // (B4) fix milte hi transit verdict (one-shot per target)
     // wakelock: target hai to screen on rakho
     final wantWake = widget.app.navTarget != null;
     if (wantWake != _wakeOn) {
@@ -533,6 +567,9 @@ class _NavigateScreenState extends State<NavigateScreen>
                 _tgtAdv = null;
                 _tgtAdvFor = null;
                 _tgtAdvErr = null;
+                _rtAdv = null;
+                _rtAdvFor = null;
+                _rtAdvErr = null;
                 if (_wakeOn) WakelockPlus.disable();
                 _wakeOn = false;
                 setState(() {});
@@ -596,6 +633,177 @@ class _NavigateScreenState extends State<NavigateScreen>
               style: t.textTheme.bodySmall
                   ?.copyWith(color: OrcaTheme.warnAmber)),
         ),
+      // ── (B4) TRANSIT VERDICT — poore raste ka final faisla ──
+      if (widget.app.navTarget != null)
+        if (_rtAdv != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+            child: Builder(builder: (ctx) {
+              final r = _rtAdv!;
+              final v = (r['verdict'] as Map?) ?? const {};
+              final level = '${v['level']}';
+              final col = level == 'go'
+                  ? OrcaTheme.okGreen
+                  : level == 'nogo'
+                      ? OrcaTheme.dangerRed
+                      : level == 'caution'
+                          ? OrcaTheme.warnAmber
+                          : t.colorScheme.secondary;
+              final titleKey = level == 'go'
+                  ? 'rt_go'
+                  : level == 'nogo'
+                      ? 'rt_nogo'
+                      : level == 'caution'
+                          ? 'rt_caution'
+                          : 'rt_unknown';
+              final pts = ((r['points'] as List?) ?? const []);
+              String m(dynamic x, String u, [int dp = 1]) =>
+                  x is num ? '${x.toStringAsFixed(dp)}$u' : '—';
+              Color dot(String s) => s == 'good'
+                  ? OrcaTheme.okGreen
+                  : s == 'danger'
+                      ? OrcaTheme.dangerRed
+                      : s == 'caution'
+                          ? OrcaTheme.warnAmber
+                          : Colors.grey;
+              final landOk = r['land_ok'];
+              return Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: col.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: col.withOpacity(0.7), width: 1.5),
+                ),
+                child:
+                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Icon(Icons.alt_route_rounded, color: col, size: 22),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('rt_heading'.tr(),
+                          style: t.textTheme.bodySmall
+                              ?.copyWith(color: t.colorScheme.secondary)),
+                    ),
+                    Text(
+                        'rt_pts'.tr(args: [
+                          '${v['points_known'] ?? 0}',
+                          '${v['points_total'] ?? 0}'
+                        ]),
+                        style: t.textTheme.bodySmall
+                            ?.copyWith(color: t.colorScheme.secondary)),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text(titleKey.tr(),
+                      style: t.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900, color: col, fontSize: 22)),
+                  if (landOk == false || r['detour'] == true || landOk == null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        landOk == false
+                            ? 'rt_land_blocked'.tr()
+                            : r['detour'] == true
+                                ? 'rt_land_detour'.tr()
+                                : 'rt_land_unverified'.tr(),
+                        style: t.textTheme.bodySmall?.copyWith(
+                            color: r['detour'] == true
+                                ? OrcaTheme.okGreen
+                                : OrcaTheme.warnAmber,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  const Divider(height: 14),
+                  for (final p in pts)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 1.5),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Icon(Icons.circle, size: 10, color: dot('${p['state']}')),
+                              const SizedBox(width: 6),
+                              Text('rt_km'.tr(args: ['${p['sail_km'] ?? 0}']),
+                                  style: t.textTheme.bodySmall
+                                      ?.copyWith(fontWeight: FontWeight.w800)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '${p['state']}' == 'unknown'
+                                      ? '—'
+                                      : '🌊 ${m(p['wave_m'], 'm')}  💨 ${m(p['wind_kn'], 'kn', 0)}',
+                                  style: t.textTheme.bodySmall,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ]),
+                            if (p['why'] != null || p['note'] != null)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 16),
+                                child: Text('${p['why'] ?? p['note']}',
+                                    style: t.textTheme.bodySmall?.copyWith(
+                                        color: ('${p['state']}' == 'danger')
+                                            ? OrcaTheme.dangerRed
+                                            : t.colorScheme.secondary,
+                                        fontSize: 11)),
+                              ),
+                          ]),
+                    ),
+                  if ((r['safe_window_at_start'] as Map?)?['found'] == true) ...[
+                    const Divider(height: 12),
+                    Text('⏱ ${'rt_window'.tr()}: ${r['safe_window_at_start']['note'] ?? ''}',
+                        style: t.textTheme.bodySmall
+                            ?.copyWith(color: OrcaTheme.okGreen, fontSize: 11)),
+                  ],
+                  if ((((r['sources_used'] as List?) ?? const []).isNotEmpty) ||
+                      (((r['sources_failed'] as List?) ?? const []).isNotEmpty))
+                    ExpansionTile(
+                      dense: true,
+                      tilePadding: EdgeInsets.zero,
+                      title: Text('ai_sources_ok'.tr(),
+                          style: t.textTheme.bodySmall
+                              ?.copyWith(color: t.colorScheme.secondary, fontSize: 11)),
+                      children: [
+                        for (final s in ((r['sources_used'] as List?) ?? const []))
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text('✔ $s',
+                                style: t.textTheme.bodySmall
+                                    ?.copyWith(fontSize: 11, color: OrcaTheme.okGreen)),
+                          ),
+                        for (final s in ((r['sources_failed'] as List?) ?? const []))
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text('✘ $s',
+                                style: t.textTheme.bodySmall
+                                    ?.copyWith(fontSize: 11, color: OrcaTheme.dangerRed)),
+                          ),
+                      ],
+                    ),
+                ]),
+              );
+            }),
+          )
+        else if (_rtAdvErr != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+            child: Text('rt_failed'.tr(),
+                style: t.textTheme.bodySmall
+                    ?.copyWith(color: OrcaTheme.warnAmber)),
+          )
+        else if (_fix != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+            child: Row(children: [
+              const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+              const SizedBox(width: 8),
+              Text('rt_loading'.tr(),
+                  style: t.textTheme.bodySmall
+                      ?.copyWith(color: t.colorScheme.secondary)),
+            ]),
+          ),
       // ── HUD ──
       Expanded(
         child: _gpsErr != null
