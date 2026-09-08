@@ -368,7 +368,7 @@ export interface FieldResponse {
   type: "field";
   center: { lat: number; lon: number };
   radius_deg: number;
-  chl: { points: FieldPoint[]; date?: string; n: number; source?: string; error?: string | null };
+  chl: { points: FieldPoint[]; date?: string; n: number; source?: string; error?: string | null; land_masked?: number; land_mask?: string };
   met: { points: FieldPoint[]; n: number; source?: string; error?: string | null };
   hotspots: { lat: number; lon: number; chl: number; distance_km: number; distance_nm: number; bearing: string }[];
   generated_at: string;

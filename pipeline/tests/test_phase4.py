@@ -337,6 +337,65 @@ def test_field_build_error_tolerance(monkeypatch):
     assert out["hotspots"] == []  # honest empty, not a crash
 
 
+def test_field_land_pixels_masked_from_grid(monkeypatch):
+    """Regression (2026-09-08 demo): NOAA DINEOF can report chl ON LAND
+    (coastal bleed / lagoon pixels, e.g. 5.568 mg/m3 at 19.29N 84.38E
+    Ganjam district). That pixel must never reach the map or ranking."""
+    import csv
+    import io
+
+    from pipeline import field_explorer as fx
+    csv_text = (
+        "time,altitude,latitude,longitude,chlor_a\n"
+        "UTC,m,degrees_north,degrees_east,mg m^-3\n"
+        "2026-09-05T12:00:00Z,0.0,19.2875,84.3875,5.568\n"   # LAND (Ganjam, Odisha)
+        "2026-09-05T12:00:00Z,0.0,19.0,86.5,2.0\n"           # sea
+        "2026-09-05T12:00:00Z,0.0,19.0375,86.5375,3.5\n"     # sea (top)
+        "2026-09-05T12:00:00Z,0.0,19.5,86.2,NaN\n"           # no data
+    )
+    rows = list(csv.DictReader(io.StringIO(csv_text)))
+    monkeypatch.setattr(fx, "_fetch_csv", lambda url: rows)
+    out = fx.fetch_chl_grid(19.5, 85.5)
+    assert sorted(p["chl"] for p in out["points"]) == [2.0, 3.5]  # land pixel dropped
+    assert out["land_masked"] == 1
+    assert out["n"] == 2
+    hs = fx._hotspots(out["points"], 19.5, 85.5, top=3)
+    assert hs and all(abs(h["chl"] - 5.568) > 1e-9 for h in hs)
+
+
+def test_field_hotspots_never_rank_land(monkeypatch):
+    """Belt-and-braces: even a hand-built on-land point cannot rank as a
+    'fishing hotspot' (verified real GLOBE 1 km mask, not a mock)."""
+    from pipeline import field_explorer as fx
+    pts = [
+        {"lat": 19.96, "lon": 85.04, "chl": 12.477},  # LAND (Nayagarh, Odisha)
+        {"lat": 21.29, "lon": 86.29, "chl": 10.566},  # LAND (Balasore side)
+        {"lat": 19.0,  "lon": 86.5,  "chl": 1.0},     # open sea
+    ]
+    hs = fx._hotspots(pts, 19.5, 85.5, top=3)
+    assert len(hs) == 1 and hs[0]["chl"] == 1.0
+
+
+def test_field_met_grid_carries_land_flag(monkeypatch):
+    """Every met cell must carry its real land/sea flag for honest UI labels."""
+    from pipeline import field_explorer as fx
+    n = fx.GRID_TARGET_N ** 2
+    fake_marine = [{"current": {"wave_height": 1.0}}] * n
+    fake_wx = [{"current": {"wind_speed_10m": 5}}] * n
+    calls = []
+
+    def fake_http(url, params, timeout=15.0):
+        calls.append(url)
+        return fake_marine if "marine" in url else fake_wx
+
+    monkeypatch.setattr(fx, "_http_json", fake_http)
+    out = fx.fetch_met_grid(19.5, 85.5)   # Odisha coast box: mix of land+sea
+    assert out["n"] == n
+    flags = {p["land"] for p in out["points"]}
+    assert flags - {True, False, None} == set()   # only honest tri-state
+    assert True in flags and False in flags        # box really spans the coast
+
+
 # ── Rich chart series (48 h evidence arrays) ─────────────────────────
 
 def test_chart_series_exposes_all_variables():

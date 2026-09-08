@@ -12,6 +12,11 @@ module answers with a sampled grid (~10x10) of REAL values:
 Both calls are cached 30 min per rounded centre. The hotspot ranking is
 transparent: "fish-attracting productivity" = chlorophyll percentile of
 the sampled grid — productively labelled as a proxy, never a fish census.
+
+Land guard: NOAA's DINEOF grid sometimes reports chl ON LAND (coastal
+bleed/sediment pixels, inland lakes/lagoons). Those pixels are real
+numbers but NOT fishing spots, so every chl cell is checked against the
+GLOBE 1 km land mask (pipeline/landmask.py) before it can rank or draw.
 """
 from __future__ import annotations
 
@@ -25,6 +30,7 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any
 
+from pipeline import landmask
 from pipeline.erddap_chl import ERDDAP_BASE, _fetch_csv
 from pipeline.ttlcache import cached
 
@@ -93,6 +99,7 @@ def fetch_chl_grid(lat: float, lon: float) -> dict[str, Any]:
 
     points: list[dict[str, Any]] = []
     date_seen: str | None = None
+    land_masked = 0
     for row in rows:
         raw = row.get("chlor_a")
         if raw in (None, "", "NaN", "nan"):
@@ -103,18 +110,32 @@ def fetch_chl_grid(lat: float, lon: float) -> dict[str, Any]:
             continue
         if v <= 0:
             continue
+        plat = round(float(row["latitude"]), 4)
+        plon = round(float(row["longitude"]), 4)
+        # On-land DINEOF pixels (coastal bleed, lakes/lagoons) are real
+        # numbers but never fishing spots — drop them (GLOBE 1 km mask).
+        # None (mask unavailable) = no information = KEEP the pixel.
+        if landmask.is_land(plat, plon) is True:
+            land_masked += 1
+            continue
         points.append({
-            "lat": round(float(row["latitude"]), 4),
-            "lon": round(float(row["longitude"]), 4),
+            "lat": plat,
+            "lon": plon,
             "chl": round(v, 3),
         })
         if date_seen is None and row.get("time"):
             date_seen = row["time"][:10]
 
+    if land_masked:
+        print(f"[Field] land-mask: {land_masked} on-land chl pixels dropped "
+              f"(GLOBE 1 km — coastal bleed/lagoon, not fishing spots)", file=sys.stderr)
+
     return {
         "points": points,
         "date": date_seen or "unknown",
         "n": len(points),
+        "land_masked": land_masked,
+        "land_mask": "GLOBE 1 km (real)" if landmask.enabled() else "unavailable",
         "source": "NOAA ERDDAP VIIRS DINEOF (9 km, gap-filled)",
     }
 
@@ -169,6 +190,10 @@ def fetch_met_grid(lat: float, lon: float) -> dict[str, Any]:
         points.append({
             "lat": p[0],
             "lon": p[1],
+            # real GLOBE 1 km land check — True/False/None(unknown), so the
+            # UI can honestly mark on-land cells (values are the nearest
+            # sea cell's, which IS useful right at the coast)
+            "land": landmask.is_land(p[0], p[1]),
             "wave_m": mc.get("wave_height"),
             "swell_m": mc.get("swell_wave_height"),
             "current_kn": round(ocv * 1.943844, 2) if isinstance(ocv, (int, float)) else None,
@@ -193,8 +218,12 @@ def _hotspots(chl_points: list[dict[str, Any]], lat: float, lon: float,
 
     Labelled honestly: this is a plankton→baitfish→fish chain proxy,
     NOT an AIS/fishery catch count (that is GFW's role, shown separately).
+
+    Sea-only: even if an on-land pixel slips past fetch_chl_grid's mask
+    (e.g. a hand-built list), it can never rank as a "fishing hotspot".
     """
-    ranked = sorted(chl_points, key=lambda p: -p["chl"])[:top]
+    sea = [p for p in chl_points if landmask.is_land(p["lat"], p["lon"]) is not True]
+    ranked = sorted(sea, key=lambda p: -p["chl"])[:top]
     out = []
     for p in ranked:
         d = _haversine_km(lat, lon, p["lat"], p["lon"])
@@ -240,6 +269,9 @@ def _build(lat: float, lon: float) -> dict[str, Any]:
         "note": (
             "Chlorophyll hotspots mark plankton-rich water that attracts "
             "baitfish (productivity proxy — not a direct fish count). "
+            "On-land pixels (coastal bleed, lakes/lagoons like Chilika) "
+            "are excluded with the real GLOBE 1 km land mask, so a "
+            "hotspot can never sit on dry ground. "
             "Waves/wind are sampled at the same grid cells."
         ),
     }
