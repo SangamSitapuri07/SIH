@@ -1,9 +1,0 @@
-node_modules/
-.expo/
-dist/
-android/
-ios/
-*.apk
-*.aab
-local.properties
-.env

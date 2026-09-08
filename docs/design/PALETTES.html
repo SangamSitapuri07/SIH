@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<title>ORCA — Tagda Palette Options</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif}
+  body{background:#111;color:#eee;padding:28px 16px}
+  h1{font-size:22px;text-align:center;margin-bottom:6px}
+  .sub{text-align:center;color:#999;font-size:13px;margin-bottom:28px}
+  .pal{max-width:420px;margin:0 auto 40px;border-radius:20px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.5)}
+  .pal .head{padding:14px 16px;font-weight:700;letter-spacing:.5px;font-size:14px;display:flex;justify-content:space-between;align-items:center}
+  .mock{padding:14px}
+  .strip{display:flex;gap:6px;font-size:10px;opacity:.85;margin-bottom:10px;align-items:center}
+  .dot{width:9px;height:9px;border-radius:50%}
+  .verdict{border-radius:16px;padding:16px;margin-bottom:10px}
+  .v-q{font-size:13px;opacity:.85}
+  .v-big{font-size:30px;font-weight:800;margin:4px 0 2px}
+  .v-sub{font-size:12px;opacity:.9}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .chip{font-size:10px;padding:4px 9px;border-radius:999px;border:1px solid}
+  .tiles{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px}
+  .tile{border-radius:12px;padding:10px}
+  .tile .t-l{font-size:10px;opacity:.75}
+  .tile .t-v{font-size:18px;font-weight:700;margin-top:2px}
+  .btnrow{display:flex;gap:8px}
+  .btn{flex:1;text-align:center;padding:12px 0;border-radius:12px;font-weight:700;font-size:13px}
+  .sos{flex:1;text-align:center;padding:12px 0;border-radius:12px;font-weight:800;font-size:13px;color:#fff}
+  .codes{display:flex;gap:4px;padding:10px 14px 14px}
+  .sw{flex:1;height:26px;border-radius:7px;font-size:9px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.85);font-family:monospace}
+</style>
+</head>
+<body>
+<h1>🐋 ORCA — 4 Tagda Palettes</h1>
+<p class="sub">Har option ka same mini Home-mock — jo feel best lage wo le lenge · tokens adapt ho jaayenge</p>
+
+<!-- ═══════ PALETTE 1 : NEON TIDE ═══════ -->
+<div class="pal" style="background:#060B18;border:1px solid #12395B">
+  <div class="head" style="color:#7FE7FF">OPTION 1 — ⚡ NEON TIDE <span style="font-weight:400;font-size:11px;color:#5C7A99">electric cyan × violet · gamer-modern</span></div>
+  <div class="mock" style="background:#060B18;color:#E8F1FF">
+    <div class="strip"><span class="dot" style="background:#00E676"></span> ऑनलाइन (ONLINE) &nbsp; <span class="dot" style="background:#00E5FF"></span> 🛰 ±21 m</div>
+    <div class="verdict" style="background:linear-gradient(135deg,#0D1526,#0B2B3F);border:1px solid #00E5FF55">
+      <div class="v-q">आज समुद्र में जाना (Go out today?)</div>
+      <div class="v-big" style="color:#00E676">THEEK है ✅</div>
+      <div class="v-sub">लहरें 1.2 m · हवा 12 kn · SST 28.2 °C</div>
+      <div class="chips">
+        <span class="chip" style="border-color:#00E5FF;color:#7FE7FF">Open-Meteo · abhi</span>
+        <span class="chip" style="border-color:#7C4DFF;color:#B79CFF">NOAA chl · 2h</span>
+        <span class="chip" style="border-color:#00E676;color:#7CFFB2">GLOBE ✓</span>
+      </div>
+    </div>
+    <div class="tiles">
+      <div class="tile" style="background:#0D1526"><div class="t-l">लहरें</div><div class="t-v" style="color:#00E5FF">1.2 m</div></div>
+      <div class="tile" style="background:#0D1526"><div class="t-l">हवा</div><div class="t-v" style="color:#B79CFF">12 kn</div></div>
+      <div class="tile" style="background:#0D1526"><div class="t-l">SST</div><div class="t-v" style="color:#FFB300">28.2°</div></div>
+    </div>
+    <div class="btnrow">
+      <div class="btn" style="background:#00E5FF;color:#04222E">🧭 यहां जाओ</div>
+      <div class="sos" style="background:#FF3D57">🆘 SOS</div>
+    </div>
+  </div>
+  <div class="codes" style="background:#04070F">
+    <span class="sw" style="background:#060B18">bg 060B18</span><span class="sw" style="background:#0D1526">card 0D1526</span><span class="sw" style="background:#00E5FF;color:#042">00E5FF</span><span class="sw" style="background:#7C4DFF">7C4DFF</span><span class="sw" style="background:#00E676;color:#042">00E676</span><span class="sw" style="background:#FF3D57">FF3D57</span>
+  </div>
+</div>
+
+<!-- ═══════ PALETTE 2 : SINDHU SAFFRON ═══════ -->
+<div class="pal" style="background:#0A1220;border:1px solid #B45309">
+  <div class="head" style="color:#FFB86B">OPTION 2 — 🪔 SINDHU SAFFRON <span style="font-weight:400;font-size:11px;color:#8A93A8">marigold × cerulean · desi coast-guard</span></div>
+  <div class="mock" style="background:#0A1220;color:#F5EFE2">
+    <div class="strip"><span class="dot" style="background:#2DC653"></span> ऑनलाइन (ONLINE) &nbsp; <span class="dot" style="background:#00B4D8"></span> 🛰 ±21 m</div>
+    <div class="verdict" style="background:linear-gradient(135deg,#14213D,#3A2A10);border:1px solid #FF993355">
+      <div class="v-q">आज समुद्र में जाना (Go out today?)</div>
+      <div class="v-big" style="color:#2DC653">THEEK है ✅</div>
+      <div class="v-sub">लहरें 1.2 m · हवा 12 kn · SST 28.2 °C</div>
+      <div class="chips">
+        <span class="chip" style="border-color:#FF9933;color:#FFB86B">Open-Meteo · abhi</span>
+        <span class="chip" style="border-color:#00B4D8;color:#6FE3FF">NOAA chl · 2h</span>
+        <span class="chip" style="border-color:#2DC653;color:#8AEFAD">GLOBE ✓</span>
+      </div>
+    </div>
+    <div class="tiles">
+      <div class="tile" style="background:#14213D"><div class="t-l">लहरें</div><div class="t-v" style="color:#6FE3FF">1.2 m</div></div>
+      <div class="tile" style="background:#14213D"><div class="t-l">हवा</div><div class="t-v" style="color:#FFB86B">12 kn</div></div>
+      <div class="tile" style="background:#14213D"><div class="t-l">SST</div><div class="t-v" style="color:#F9C74F">28.2°</div></div>
+    </div>
+    <div class="btnrow">
+      <div class="btn" style="background:#FF9933;color:#241300">🧭 यहां जाओ</div>
+      <div class="sos" style="background:#E63946">🆘 SOS</div>
+    </div>
+  </div>
+  <div class="codes" style="background:#060B16">
+    <span class="sw" style="background:#0A1220">bg 0A1220</span><span class="sw" style="background:#14213D">card 14213D</span><span class="sw" style="background:#FF9933;color:#420">FF9933</span><span class="sw" style="background:#00B4D8">00B4D8</span><span class="sw" style="background:#2DC653;color:#031">2DC653</span><span class="sw" style="background:#E63946">E63946</span>
+  </div>
+</div>
+
+<!-- ═══════ PALETTE 3 : BIOLUMINESCENCE ═══════ -->
+<div class="pal" style="background:#08071C;border:1px solid #00F5D4">
+  <div class="head" style="color:#8CF5E4">OPTION 3 — 🌌 BIOLUMINESCENCE <span style="font-weight:400;font-size:11px;color:#6E6E9E">mint-glow × orchid · deep-sea glow</span></div>
+  <div class="mock" style="background:#08071C;color:#EFEEFF">
+    <div class="strip"><span class="dot" style="background:#4ADE80"></span> ऑनलाइन (ONLINE) &nbsp; <span class="dot" style="background:#00F5D4"></span> 🛰 ±21 m</div>
+    <div class="verdict" style="background:linear-gradient(135deg,#14142B,#083336);border:1px solid #00F5D455;box-shadow:0 0 26px #00F5D422 inset">
+      <div class="v-q">आज समुद्र में जाना (Go out today?)</div>
+      <div class="v-big" style="color:#4ADE80">THEEK है ✅</div>
+      <div class="v-sub">लहरें 1.2 m · हवा 12 kn · SST 28.2 °C</div>
+      <div class="chips">
+        <span class="chip" style="border-color:#00F5D4;color:#8CF5E4">Open-Meteo · abhi</span>
+        <span class="chip" style="border-color:#9B5DE5;color:#CBA6FF">NOAA chl · 2h</span>
+        <span class="chip" style="border-color:#4ADE80;color:#9CF3B4">GLOBE ✓</span>
+      </div>
+    </div>
+    <div class="tiles">
+      <div class="tile" style="background:#14142B"><div class="t-l">लहरें</div><div class="t-v" style="color:#8CF5E4">1.2 m</div></div>
+      <div class="tile" style="background:#14142B"><div class="t-l">हवा</div><div class="t-v" style="color:#CBA6FF">12 kn</div></div>
+      <div class="tile" style="background:#14142B"><div class="t-l">SST</div><div class="t-v" style="color:#FEE440;color:#FEE440">28.2°</div></div>
+    </div>
+    <div class="btnrow">
+      <div class="btn" style="background:#00F5D4;color:#03302B">🧭 यहां जाओ</div>
+      <div class="sos" style="background:#F15BB5">🆘 SOS</div>
+    </div>
+  </div>
+  <div class="codes" style="background:#050414">
+    <span class="sw" style="background:#08071C">bg 08071C</span><span class="sw" style="background:#14142B">card 14142B</span><span class="sw" style="background:#00F5D4;color:#043">00F5D4</span><span class="sw" style="background:#9B5DE5">9B5DE5</span><span class="sw" style="background:#4ADE80;color:#042">4ADE80</span><span class="sw" style="background:#F15BB5">F15BB5</span>
+  </div>
+</div>
+
+<!-- ═══════ PALETTE 4 : TOKYO NIGHT ═══════ -->
+<div class="pal" style="background:#1A1B26;border:1px solid #7AA2F7">
+  <div class="head" style="color:#9FB8FF">OPTION 4 — 🗼 TOKYO NIGHT <span style="font-weight:400;font-size:11px;color:#565F89">periwinkle ink · premium dev-aesthetic</span></div>
+  <div class="mock" style="background:#1A1B26;color:#C0CAF5">
+    <div class="strip"><span class="dot" style="background:#9ECE6A"></span> ऑनलाइन (ONLINE) &nbsp; <span class="dot" style="background:#7DCFFF"></span> 🛰 ±21 m</div>
+    <div class="verdict" style="background:linear-gradient(135deg,#24283B,#1F2340);border:1px solid #7AA2F744">
+      <div class="v-q">आज समुद्र में जाना (Go out today?)</div>
+      <div class="v-big" style="color:#9ECE6A">THEEK है ✅</div>
+      <div class="v-sub">लहरें 1.2 m · हवा 12 kn · SST 28.2 °C</div>
+      <div class="chips">
+        <span class="chip" style="border-color:#7DCFFF;color:#7DCFFF">Open-Meteo · abhi</span>
+        <span class="chip" style="border-color:#BB9AF7;color:#CDB4FA">NOAA chl · 2h</span>
+        <span class="chip" style="border-color:#9ECE6A;color:#C3E88D">GLOBE ✓</span>
+      </div>
+    </div>
+    <div class="tiles">
+      <div class="tile" style="background:#24283B"><div class="t-l">लहरें</div><div class="t-v" style="color:#7DCFFF">1.2 m</div></div>
+      <div class="tile" style="background:#24283B"><div class="t-l">हवा</div><div class="t-v" style="color:#CDB4FA">12 kn</div></div>
+      <div class="tile" style="background:#24283B"><div class="t-l">SST</div><div class="t-v" style="color:#FF9E64">28.2°</div></div>
+    </div>
+    <div class="btnrow">
+      <div class="btn" style="background:#7AA2F7;color:#141525">🧭 यहां जाओ</div>
+      <div class="sos" style="background:#F7768E;color:#23060C">🆘 SOS</div>
+    </div>
+  </div>
+  <div class="codes" style="background:#16161E">
+    <span class="sw" style="background:#1A1B26">bg 1A1B26</span><span class="sw" style="background:#24283B">card 24283B</span><span class="sw" style="background:#7AA2F7">7AA2F7</span><span class="sw" style="background:#BB9AF7">BB9AF7</span><span class="sw" style="background:#9ECE6A;color:#231">9ECE6A</span><span class="sw" style="background:#F7768E">F7768E</span>
+  </div>
+</div>
+
+<p class="sub">SOS hamesha alag-se-hilega (red/pink family) — har palette mein intentionally alag hai baaki accents se.<br>Dhoop mode (yellow #FFE600 on pure black) sab pe same rahega — wo suntan-tested fix hai, palette se aage.</p>
+</body>
+</html>

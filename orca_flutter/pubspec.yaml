@@ -1,0 +1,30 @@
+name: orca_marine
+description: ORCA — Marine EcOsystem Reasoning with Collaborative Agents (SIH 2026, ISRO PS SIH26176). Fisherman-first Android app. Real data only, koi dummy nahi.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.4.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  easy_localization: ^3.0.7+1   # i18n engine — 11 complete language JSONs
+  shared_preferences: ^2.3.2   # settings persist (mode, zoom, base-url, lang)
+  http: ^1.2.2                 # FastAPI client (real endpoints only)
+  connectivity_plus: ^6.1.0    # StatusStrip online/offline
+  url_launcher: ^6.3.1         # SOS tel:1554 (zero-network call intent)
+  # D2+: fl_chart · flutter_map+latlong2 · geolocator · wakelock_plus
+  # D4+: telephony · flutter_foreground_task · flutter_local_notifications · vibration
+  # D6+: google_mlkit_translation · path_provider (offline packs)
+  # D7 : webview_flutter (Ocean3D)
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/i18n/

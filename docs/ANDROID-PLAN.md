@@ -1,4 +1,11 @@
-# ORCA Android — Native App Plan (locked 2026-09-08)
+# ORCA Android — Native App Plan — ⚠️ SUPERSEDED (2026-09-08)
+
+> **User ne FLUTTER choose kar liya. Active plan = `docs/FLUTTER-PLAN.md`.**
+> Ye doc history/reference ke liye hai — UX wireframes, theme tokens, aur risk-gate approach Flutter plan mein carry-forward hue hain.
+
+---
+
+# (archived) RN/Expo Plan (locked 2026-09-08, same day superseded)
 
 **Decisions (user-locked):** native rewrite · all native extras (direct SMS,
 background GPS, geofence notifications, haptics) · Hindi default UI ·
