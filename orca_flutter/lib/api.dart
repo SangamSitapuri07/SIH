@@ -10,8 +10,14 @@ class OrcaApi {
   /// Default = laptop LAN (dev). Info tab se editable, persisted.
   static const defaultBase = '192.168.1.5:8000';
 
-  static Uri _u(String base, String path, [Map<String, String>? q]) =>
-      Uri.parse('http://$base$path').replace(queryParameters: q);
+  static Uri _u(String base, String path, [Map<String, String>? q]) {
+    // LAN: '192.168.1.137:8000' (http add hota hai) · Cloud/Tunnel:
+    // 'https://xyz.ngrok-free.app' (scheme waise hi use hota hai)
+    var b = base.trim();
+    if (b.endsWith('/')) b = b.substring(0, b.length - 1);
+    if (!b.startsWith('http')) b = 'http://$b';
+    return Uri.parse('$b$path').replace(queryParameters: q);
+  }
 
   /// GET /api/v1/health → Map on HTTP 200, else throws.
   /// (backend main.py:273 — plain /health exist hi nahi karta, 404 aata)
