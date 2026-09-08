@@ -183,11 +183,11 @@ Offline packs = inhi endpoints ka last-good JSON phone mein cache + 71 harbours 
 | Din | Kaam | Gate |
 |-----|------|------|
 | **D1** ✅ DONE (2026-09-08) | `orca_flutter/` scaffold: bottom-nav 5 tabs, theme (**light-white default + dark + dhoop**), api client, StatusStrip (net + mode/lang/zoom 1-tap), Info backend editor + live health check, **i18n engine + first-launch picker + 11/11 COMPLETE JSONs (44 keys each)** + **textScaler zoom 0.85–1.75× live** | Laptop pe `flutter run` verify pending (user) |
-| **D2** | Home: verdict card + quick tiles + fl_chart 48h charts + jagah picker (GPS/manual) | Real advisory se numbers match (web se cross-check) |
-| **D3** | नक्शा: flutter_map + hotspot markers + grid + long-press card + OpenSeaMap toggle | Tiles load, GLOBE-verified hotspots |
-| **D4** | नेविगेट: GPS watch + route-check + HUD + **direct SMS (telephony)** + haptics | **GATE CHECK**: `flutter run` smooth + SMS phone se seedha gaya. Slip → extras D6/D7 pe, core pehle freeze |
-| **D5** | Geofence (foreground service) + local notifications + trip trace persist | App minimize pe bhi breadcrumb + alert |
-| **D6** | Offline packs (last-good JSON cache) + SOS polish + **translator model downloads manage UI** + dhoop/light/dark teeno modes ka final QA | Airplane mode test: SOS panel + cached advisory + translator (offline model) sab chale |
+| **D2** ✅ CODE DONE | Home: verdict card (backend color/headline/plain_hi-en), 5 metric tiles, fl_chart 48h (waves+wind), sources/failed chips, 📍 मेरी जगह chip (GPS/manual/default-Veraval), offline pack (last-good + red cache banner), Translate button (ML Kit real) | Laptop pe `flutter run` verify pending |
+| **D3** ✅ CODE DONE | नक्शा: flutter_map + OSM + OpenSeaMap toggle, met-grid dots (land cells grey), hotspot markers+cards+caveat strip, long-press mini-card, bottom-sheet list, "🧭 यहां जाओ" → Nav jump | "`flutter run`" |
+| **D4** ✅ CODE DONE | नेविगेट: GPS stream + route-check + verified polyline (cyan/red/amber) + HUD (NM/°/ETA/kn/xtrack + steer hints) + arrival notif (<0.3NM, flutter_local_notifications) + trace breadcrumb + wakelock + **SOS direct SMS (telephony, real)** | SAME — GATE CHECK laptop/phone pe |
+| **D5** ✅ CODE DONE | Trace persist (prefs, 3000 pts, 20m jitter) + arrival notification + off-course banner (>0.5NM) + Nav SOS shortcut | (bg geofence service = optional D7 polish) |
+| **D6** ✅ CODE DONE | Offline packs (advisory+field last-good JSON + honest banner) + SOS full (position deg-min, 1554, contact+SMS, 71 harbours nearest-3, VHF/no-signal card) + **translator REAL (ML Kit model download + demo translate + unsupported honest state)** + दानव/charter card |  |
 | **D7** | 3D WebView (Ocean3D) + **saari 11 language JSONs complete + proofread** + UI reference ke hisaab se final polish + **freeze** + release-shape APK | Har language mein 5 screens walkthrough; Judges demo checklist |
 
 ---

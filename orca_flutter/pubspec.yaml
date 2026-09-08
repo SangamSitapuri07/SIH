@@ -10,14 +10,19 @@ dependencies:
   flutter:
     sdk: flutter
   easy_localization: ^3.0.7+1   # i18n engine — 11 complete language JSONs
-  shared_preferences: ^2.3.2   # settings persist (mode, zoom, base-url, lang)
+  shared_preferences: ^2.3.2   # settings persist (mode, zoom, base-url, lang, packs)
   http: ^1.2.2                 # FastAPI client (real endpoints only)
   connectivity_plus: ^6.1.0    # StatusStrip online/offline
   url_launcher: ^6.3.1         # SOS tel:1554 (zero-network call intent)
-  # D2+: fl_chart · flutter_map+latlong2 · geolocator · wakelock_plus
-  # D4+: telephony · flutter_foreground_task · flutter_local_notifications · vibration
-  # D6+: google_mlkit_translation · path_provider (offline packs)
-  # D7 : webview_flutter (Ocean3D)
+  fl_chart: ^0.69.0            # Home 48h forecast chart
+  flutter_map: ^7.0.2          # Map/Navigate — OSM + OpenSeaMap tiles
+  latlong2: ^0.9.1             # LatLng for flutter_map
+  geolocator: ^13.0.1          # GPS fix + position stream
+  telephony: ^0.2.0            # SOS direct SMS (Android, real)
+  google_mlkit_translation: ^0.13.0  # offline on-device translator
+  flutter_local_notifications: ^17.2.2  # arrival notification
+  wakelock_plus: ^1.2.8        # screen on while navigating
+  # D7+: webview_flutter (Ocean3D) · flutter_foreground_task (bg geofence)
 
 dev_dependencies:
   flutter_test:
