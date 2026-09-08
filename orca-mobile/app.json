@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "ORCA",
+    "slug": "orca-marine",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "orca",
+    "backgroundColor": "#070D1A",
+    "primaryColor": "#22d3ee",
+    "description": "ORCA — Marine Intelligence for Indian fisherfolk. SIH 2026 PS 176. Real data only, koi dummy nahi.",
+    "android": {
+      "package": "in.sih2026.orca",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "INTERNET"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "ORCA ko samudri guidance ke liye aapka GPS chahiye (boat position, navigate mode). Background me sirf tab jab Navigate/Trace chalu ho.",
+          "locationWhenInUsePermission": "ORCA ko samudri guidance ke liye aapka GPS chahiye."
+        }
+      ]
+    ]
+  },
+  "note": "SEND_SMS + FOREGROUND_SERVICE_LOCATION + POST_NOTIFICATIONS D4 pe aayenge jab direct-SMS/background-GPS milega (dev build). Permissions Hindi me likhi hain — fisher ko samajh aaye."
+}
