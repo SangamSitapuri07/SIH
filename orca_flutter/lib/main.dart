@@ -2,6 +2,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
 import 'picker.dart';
+import 'screens/ai_tab.dart';
 import 'screens/home.dart';
 import 'screens/info.dart';
 import 'screens/map_screen.dart';
@@ -108,6 +109,7 @@ class _HomeShellState extends State<HomeShell> {
       HomeScreen(settings: widget.settings, app: widget.app),
       MapScreen(settings: widget.settings, app: widget.app),
       NavigateScreen(settings: widget.settings, app: widget.app),
+      AiTab(settings: widget.settings, app: widget.app),
       SosScreen(settings: widget.settings, app: widget.app),
       InfoScreen(settings: widget.settings, app: widget.app),
     ];
@@ -140,6 +142,7 @@ class _BottomBar extends StatelessWidget {
       (Icons.home_rounded, 'tab_home', false),
       (Icons.map_rounded, 'tab_map', false),
       (Icons.explore_rounded, 'tab_nav', false),
+      (Icons.psychology_alt_rounded, 'tab_ai', false),
       (Icons.sos_rounded, 'tab_sos', true),
       (Icons.info_outline_rounded, 'tab_info', false),
     ];

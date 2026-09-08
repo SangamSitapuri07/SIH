@@ -415,7 +415,7 @@ class _NavigateScreenState extends State<NavigateScreen>
             child: FilledButton.icon(
               style: FilledButton.styleFrom(
                   backgroundColor: OrcaTheme.dangerRed),
-              onPressed: () => widget.app.jumpTab?.call(3),
+              onPressed: () => widget.app.jumpTab?.call(4),
               icon: const Icon(Icons.sos_rounded,
                   size: 18, color: Colors.white),
               label: const Text('SOS',

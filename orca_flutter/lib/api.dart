@@ -72,4 +72,43 @@ class OrcaApi {
     }
     throw Exception('HTTP ${r.statusCode}');
   }
+
+  /// (B1) 10-agent AI analysis — REAL /api/v1/reason (server deadline 110s).
+  static Future<Map<String, dynamic>> reason(
+      String base, double lat, double lon) async {
+    final r = await http
+        .get(_u(base, '/api/v1/reason', {'lat': '$lat', 'lon': '$lon'}))
+        .timeout(const Duration(seconds: 120));
+    if (r.statusCode == 200) {
+      return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    }
+    throw Exception('HTTP ${r.statusCode}');
+  }
+
+  /// Agent registry — /api/v1/agents (names + roles; UI labels fallback).
+  static Future<Map<String, dynamic>> agentRegistry(String base) async {
+    final r = await http
+        .get(_u(base, '/api/v1/agents'))
+        .timeout(const Duration(seconds: 8));
+    if (r.statusCode == 200) {
+      return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    }
+    throw Exception('HTTP ${r.statusCode}');
+  }
+
+  /// Map search — OSM Nominatim (real geocoder, no key). Offline = throw,
+  /// UI honest reason dikhata hai (koi fake suggestion nahi).
+  static Future<List<Map<String, dynamic>>> geocode(String q) async {
+    final r = await http
+        .get(Uri.https('nominatim.openstreetmap.org', '/search',
+            {'q': q, 'format': 'json', 'limit': '5'}),
+        headers: const {'User-Agent': 'ORCA-SIH26176/0.2 (student project)'})
+        .timeout(const Duration(seconds: 12));
+    if (r.statusCode == 200) {
+      return (jsonDecode(utf8.decode(r.bodyBytes)) as List)
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
+    }
+    throw Exception('HTTP ${r.statusCode}');
+  }
 }
