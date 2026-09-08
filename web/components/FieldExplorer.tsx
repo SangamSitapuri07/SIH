@@ -142,7 +142,7 @@ export default function FieldExplorer({
 
   // ── marine navigation state (all REAL: phone GPS + haversine + the
   //    backend's GLOBE-mask route verification; nothing simulated) ──
-  type GpsFix = { lat: number; lon: number; acc: number; speed: number | null; ts: number };
+  type GpsFix = { lat: number; lon: number; acc: number; speed: number | null; heading: number | null; ts: number };
   type Hotspot = FieldResponse["hotspots"][number];
   const [gpsOn, setGpsOn] = useState(false);
   const [gps, setGps] = useState<GpsFix | null>(null);
@@ -153,9 +153,36 @@ export default function FieldExplorer({
   const [seaMarks, setSeaMarks] = useState(false);
   const watchRef = useRef<number | null>(null);
 
+  // ── trip TRACE: breadcrumb track of where the boat actually went.
+  //    Points are the device's own GPS fixes (20 m jitter filter), kept
+  //    in localStorage so a browser refresh never loses the day. ──
+  type TrackPt = [number, number, number]; // lat, lon, epoch-ms
+  const [tripOn, setTripOn] = useState(false);
+  const [track, setTrack] = useState<TrackPt[]>([]);
+  const [tripStart, setTripStart] = useState<number | null>(null);
+
+  useEffect(() => {   // restore a saved trip after refresh (local data only)
+    try {
+      const raw = localStorage.getItem("orca_trip_track");
+      if (raw) {
+        const j = JSON.parse(raw);
+        if (Array.isArray(j.points) && j.points.length > 1) {
+          setTrack(j.points);
+          setTripStart(j.started ?? null);
+        }
+      }
+    } catch { /* storage blocked — trace just won't persist */ }
+  }, []);
+
+  const clearTrip = () => {
+    setTrack([]); setTripStart(null);
+    try { localStorage.removeItem("orca_trip_track"); } catch { /* ok */ }
+  };
+
   const stopGps = () => {
     if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null; }
     setGpsOn(false);
+    setTripOn(false);
   };
   const startGps = () => {
     setGpsErr(null);
@@ -175,7 +202,8 @@ export default function FieldExplorer({
     watchRef.current = navigator.geolocation.watchPosition(
       (fix) => setGps({
         lat: fix.coords.latitude, lon: fix.coords.longitude,
-        acc: fix.coords.accuracy, speed: fix.coords.speed, ts: fix.timestamp,
+        acc: fix.coords.accuracy, speed: fix.coords.speed,
+        heading: fix.coords.heading, ts: fix.timestamp,
       }),
       (e) => {
         setGpsErr(lang === "hi"
@@ -189,6 +217,32 @@ export default function FieldExplorer({
   useEffect(() => () => {           // unmount cleanup
     if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
   }, []);
+
+  // breadcrumb recorder: appends each REAL fix while trip is on
+  useEffect(() => {
+    if (!gps || !tripOn) return;
+    setTrack((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && haversineKm(last[0], last[1], gps.lat, gps.lon) < 0.02) return prev; // <20 m = GPS jitter
+      const next = [...prev, [gps.lat, gps.lon, gps.ts] as TrackPt].slice(-3000);
+      try {
+        localStorage.setItem("orca_trip_track",
+          JSON.stringify({ points: next, started: tripStart ?? gps.ts }));
+      } catch { /* storage full/blocked — trace still lives in memory */ }
+      return next;
+    });
+    setTripStart((s) => s ?? gps.ts);
+  }, [gps, tripOn, tripStart]);
+
+  const trip = useMemo(() => {
+    if (track.length < 2) return null;
+    let km = 0;
+    for (let i = 1; i < track.length; i++) {
+      km += haversineKm(track[i - 1][0], track[i - 1][1], track[i][0], track[i][1]);
+    }
+    const durMin = tripStart ? Math.max(1, Math.round((track[track.length - 1][2] - tripStart) / 60000)) : null;
+    return { nm: km / 1.852, pts: track.length, durMin };
+  }, [track, tripStart]);
 
   // navigation origin: LIVE GPS when on, else the map's anchor point —
   // always labelled, never pretending to be the boat when it isn't.
@@ -220,7 +274,13 @@ export default function FieldExplorer({
     const b = route?.legs?.[route.legs.length - 1] ?? [navTarget.lat, navTarget.lon];
     const xtkKm = haversineKm(a[0], a[1], b[0], b[1]) > 0.5
       ? crossTrackKm(origin.lat, origin.lon, a[0], a[1], b[0], b[1]) : 0;
-    return { dNm: dKm / 1.852, brg, spKn, etaMin, xtkKm, arrived: dKm / 1.852 < 0.3 };
+    // real steering hint from the GPS's own heading (only while moving)
+    let turn: { dir: string; deg: number } | null = null;
+    if (gps?.heading != null && spKn != null && spKn > 1) {
+      const dev = ((brg - gps.heading + 540) % 360) - 180; // signed -180..180
+      if (Math.abs(dev) >= 8) turn = { dir: dev > 0 ? "RIGHT" : "LEFT", deg: Math.round(Math.abs(dev)) };
+    }
+    return { dNm: dKm / 1.852, brg, spKn, etaMin, xtkKm, turn, arrived: dKm / 1.852 < 0.3 };
   }, [navTarget, origin.lat, origin.lon, gps, route]);
 
   useEffect(() => {
@@ -314,6 +374,25 @@ export default function FieldExplorer({
               >
                 ⚓ {lang === "hi" ? "समुद्री निशान" : "Sea marks"}
               </button>
+              <button
+                onClick={() => {
+                  if (tripOn) { setTripOn(false); }
+                  else {
+                    if (!gpsOn) startGps();          // trace needs real fixes
+                    setTripOn(true);
+                  }
+                }}
+                title={lang === "hi"
+                  ? "Trip TRACE: boat jahan-jahan gayi, breadcrumb line banti jayegi (GPS fixes, refresh pe bhi saved)"
+                  : "trip TRACE: breadcrumb line of where the boat really went (GPS fixes, refresh-safe)"}
+                className={`text-[11px] rounded-md px-2.5 py-1.5 border transition shrink-0 ${
+                  tripOn
+                    ? "bg-orange-500/20 text-orange-300 border-orange-400/50 font-semibold animate-pulse"
+                    : "bg-[#0E1729] text-slate-300 border-[#1C2A45] hover:text-white"
+                }`}
+              >
+                🛤️ {lang === "hi" ? (tripOn ? "Trace चालू" : "Trip trace") : (tripOn ? "Tracing" : "Trip trace")}
+              </button>
             </>
           )}
           {/* layer switcher (map view) — wraps on small screens */}
@@ -381,6 +460,13 @@ export default function FieldExplorer({
                 attribution="&copy; OpenSeaMap contributors"
                 url="https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png"
                 opacity={0.95}
+              />
+            )}
+            {/* trip TRACE: breadcrumb line of real GPS fixes */}
+            {track.length > 1 && (
+              <Polyline
+                positions={track.map((p) => [p[0], p[1]] as [number, number])}
+                pathOptions={{ color: "#fb923c", weight: 3, opacity: 0.85 }}
               />
             )}
             {/* live GPS fix: blue dot + REAL accuracy radius (meters) */}
@@ -463,6 +549,24 @@ export default function FieldExplorer({
             </div>
           )}
 
+          {/* trip TRACE stats chip (bottom-right, refresh-safe record) */}
+          {trip && (
+            <div className="absolute bottom-3 right-3 z-[1000] surface-2 px-3 py-2 text-[10px] text-slate-300 space-y-0.5 max-w-[240px]">
+              <div className="font-semibold text-orange-300">
+                🛤️ {lang === "hi" ? "trip trace" : "trip trace"} {tripOn ? (lang === "hi" ? "(record हो रहा)" : "(recording)") : (lang === "hi" ? "(saved)" : "(saved)")}
+              </div>
+              <div>
+                {trip.nm.toFixed(1)} NM · {trip.pts} GPS fixes
+                {trip.durMin != null && (
+                  <> · {trip.durMin >= 60 ? `${Math.floor(trip.durMin / 60)}h ${trip.durMin % 60}m` : `${trip.durMin} min`}</>
+                )}
+              </div>
+              <button onClick={clearTrip} className="text-red-300/80 hover:text-red-200 underline">
+                {lang === "hi" ? "trace मिटाओ" : "clear trace"}
+              </button>
+            </div>
+          )}
+
           {/* 🧭 NAVIGATION HUD — real marine guidance: course line,
               distance/bearing/ETA from the device's OWN position. */}
           {navTarget && nav && (
@@ -520,6 +624,15 @@ export default function FieldExplorer({
                 {!routeBusy && route?.ok === null && `⚠️ ${lang === "hi" ? "UNVERIFIED — land mask उपलब्ध नहीं; सावधानी से जाएं" : "UNVERIFIED — land mask unavailable"}`}
                 {!routeBusy && !route && (lang === "hi" ? "route check fail — network?" : "route check failed — network?")}
               </div>
+              {/* steering hint from the GPS's own heading (while moving) */}
+              {!nav.arrived && nav.turn && (
+                <div className="rounded bg-cyan-500/15 border border-cyan-400/40 px-2 py-1.5 text-cyan-100 font-bold text-center">
+                  {nav.turn.dir === "RIGHT" ? "↱" : "↰"} {nav.turn.deg}° {lang === "hi"
+                    ? (nav.turn.dir === "RIGHT" ? "दाएं घुड़ो" : "बाएं घुड़ो")
+                    : `turn ${nav.turn.dir.toLowerCase()}`}
+                  <span className="font-normal text-[10px] text-slate-400"> · GPS heading vs course</span>
+                </div>
+              )}
               {/* arrival + off-course — real guidance moments */}
               {nav.arrived ? (
                 <div className="rounded bg-emerald-500/20 border border-emerald-400/50 px-2 py-1.5 text-emerald-200 font-bold text-center">
