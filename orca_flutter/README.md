@@ -45,7 +45,11 @@ sabse upar ye permissions paste karo** (location/SMS/notification/sensors):
 <uses-feature android:name="android.hardware.telephony" android:required="false"/>
 ```
 
-Aur `<application android:label="ORCA"` set karo.
+Aur `<application>` tag mein yeh do attributes set karo:
+`android:label="ORCA"` aur **`android:usesCleartextTraffic="true"`**
+(Android 9+ default HTTP block karta hai — laptop backend http:// hai,
+yeh nahi dala to har API call fail hoga. Pura ready-made manifest
+chat/mail se paste kar lo, phir bas `flutter run`.)
 
 ## Notes
 
