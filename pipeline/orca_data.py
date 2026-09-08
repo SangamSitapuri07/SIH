@@ -342,7 +342,15 @@ def zone_snapshot(
             chl = chl2
             got_noaa = True
         else:
-            err_noaa = err2 or err_noaa or "NOAA: no data"
+            # ONE clean bullet, not two confusing ones: when both the
+            # requested date AND the lag analysis failed, say so once.
+            if err2 and err_noaa:
+                err_noaa = (
+                    "NOAA ERDDAP (today + 3-day-lag both tried): "
+                    + str(err2).split(": ", 1)[-1]
+                )
+            else:
+                err_noaa = err2 or err_noaa or "NOAA: no data"
 
     if got_noaa and isinstance(chl, dict):
         snap["chlorophyll"] = chl.get("value")

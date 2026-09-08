@@ -198,8 +198,10 @@ function useMapTexture(lat: number, lon: number, radiusDeg: number, attempt: num
   }>({ tex: null, status: "loading", reasons: [], done: 0, total: 0 });
   useEffect(() => {
     let alive = true;
-    const ZOOM = 10; // ±1.2° ≈ 7×8 tiles — coastline sharp + city labels readable
-                     // (zoom 9 was safe but too soft to recognise places)
+    // Wide shots (±2° frame — brings the coast INTO view for offshore
+    // points) use zoom 9 (~36 tiles); tight ±1.2° shots use zoom 10
+    // (~56 tiles) for label sharpness. Both stream progressively.
+    const ZOOM = radiusDeg >= 1.8 ? 9 : 10;
     const n = 2 ** ZOOM;
     const lat2y = (la: number) => {
       const r = (la * Math.PI) / 180;
@@ -285,17 +287,19 @@ function useMapTexture(lat: number, lon: number, radiusDeg: number, attempt: num
 
 /* ── hover info shared across the scene ────────────────────────────── */
 type HoverInfo =
-  | { kind: "sea"; lat: number; lon: number; x: number; z: number }
+  | { kind: "sea"; lat: number; lon: number; x: number; z: number; outside?: boolean }
   | { kind: "hotspot"; h: FieldResponse["hotspots"][number]; rank: number; x: number; z: number };
 
 /* ── 🌊 the living surface (real map OR honest coloured water) ─────── */
-function OceanSurface({ s, mapTex, onSea }: {
+function OceanSurface({ s, mapTex, onSea, worldHalf }: {
   s: Sampler; mapTex: THREE.Texture | null;
   onSea: (x: number | null, z?: number) => void;
+  worldHalf: number;   // plane spans ±worldHalf; DATA box stays ±HALF in the centre
 }) {
-  const SEG = 120; // 14k vertices — smoother swell curves on slow machines too
+  // higher segment count for the wider plane (keeps the swell silky)
+  const SEG = 170;
   const { geo, foamK } = useMemo(() => {
-    const g = new THREE.PlaneGeometry(2 * HALF, 2 * HALF, SEG, SEG);
+    const g = new THREE.PlaneGeometry(2 * worldHalf, 2 * worldHalf, SEG, SEG);
     g.rotateX(-Math.PI / 2);
     const pos = g.attributes.position;
     const cnt = pos.count;
@@ -307,8 +311,11 @@ function OceanSurface({ s, mapTex, onSea }: {
     colA.fill(1); // map-mode multiply starts neutral-bright
     g.setAttribute("color", new THREE.BufferAttribute(colA, 3));
     return { geo: g, foamK: foamA };
+    // worldHalf can change when a new point widens/narrows the frame —
+    // rebuild the geometry for it (data values themselves clamp-reading
+    // keeps working either way)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [worldHalf]);
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
@@ -367,8 +374,9 @@ function OceanSurface({ s, mapTex, onSea }: {
 }
 
 /* ── 👆 hover card — "yahaan kya hai, kaisa hai" with REAL values ───── */
-function SeaCard({ s, lat, lon, x, z, lang }: {
+function SeaCard({ s, lat, lon, x, z, lang, outside }: {
   s: Sampler; lat: number; lon: number; x: number; z: number; lang: Lang;
+  outside?: boolean;
 }) {
   const w = bilinear(s.wave, s.n, x, z);
   const sw = bilinear(s.swell, s.n, x, z);
@@ -405,6 +413,13 @@ function SeaCard({ s, lat, lon, x, z, lang }: {
       <div className="mt-1.5 text-[10px] text-slate-500 italic">
         {hi ? "सारे नंबर असली मॉडल/सैटेलाइट से — अंदाज़ा नहीं" : "all numbers from real models/satellites — not guesses"}
       </div>
+      {outside && (
+        <div className="mt-1 text-[10px] text-amber-400/85 italic">
+          {hi
+            ? "⚠️ data-grid (±1.2°) ke BAHAR — kinare ke cells ka extension, map asli hai"
+            : "⚠️ OUTSIDE the ±1.2° data grid — edge-cell extension; the map itself is real"}
+        </div>
+      )}
     </div>
   );
 }
@@ -440,7 +455,7 @@ function HoverTip({ s, data, hoverRef, lang }: {
       return;
     }
     g.visible = true;
-    const y = h.kind === "sea" ? seaHeight(s, h.x, h.z, clock.elapsedTime) + 1.5 : 2.1;
+    const y = h.kind === "sea" ? seaHeight(s, h.x, h.z, clock.elapsedTime) + 1.7 : 2.8;
     g.position.set(h.x, y, h.z);
     const keyOf = (v: HoverInfo) => (v.kind === "sea" ? `${v.lat.toFixed(2)}|${v.lon.toFixed(2)}` : `hs${v.rank}`);
     if (!cell || keyOf(cell) !== keyOf(h)) setCell(h);
@@ -450,7 +465,7 @@ function HoverTip({ s, data, hoverRef, lang }: {
       {cell && (
         <Html center distanceFactor={20} style={{ pointerEvents: "none" }} zIndexRange={[50, 0]}>
           {cell.kind === "sea"
-            ? <SeaCard s={s} lat={cell.lat} lon={cell.lon} x={cell.x} z={cell.z} lang={lang} />
+            ? <SeaCard s={s} lat={cell.lat} lon={cell.lon} x={cell.x} z={cell.z} lang={lang} outside={cell.outside} />
             : <HotspotCard h={cell.h} rank={cell.rank} lang={lang} />}
         </Html>
       )}
@@ -614,7 +629,7 @@ function CurrentArrows({ s, data }: { s: Sampler; data: FieldResponse }) {
         const col = currentColor(a.kn);
         const yaw = -Math.atan2(a.dz, a.dx);
         return (
-          <group key={i} position={[a.x, 0.2, a.z]} rotation={[0, yaw, 0]} scale={[len, 1, 1]}>
+          <group key={i} position={[a.x, 0.2, a.z]} rotation={[0, yaw, 0]} scale={[len * 1.35, 1.35, 1.35]}>
             <mesh rotation={[0, 0, -Math.PI / 2]}>
               <coneGeometry args={[0.16, 0.62, 6]} />
               <meshStandardMaterial color={col} emissive={col}
@@ -661,7 +676,7 @@ function Fish({ cx, cz, r, phase, s, color }: {
   });
   const dark = "#0e1a24";
   return (
-    <group ref={g} scale={[1.15, 1.15, 1.15]}>
+    <group ref={g} scale={[1.32, 1.32, 1.32]}>
       <group ref={mid}>
         {/* body — fusiform: long, compressed sides, metallic flank */}
         <mesh geometry={fishBodyG} scale={[2.15, 0.78, 0.52]}>
@@ -720,13 +735,13 @@ function Beacon() {
   });
   return (
     <>
-      <mesh ref={ref} position={[0, 2.4, 0]}>
-        <cylinderGeometry args={[0.16, 0.3, 4.8, 12, 1, true]} />
+      <mesh ref={ref} position={[0, 3.2, 0]}>
+        <cylinderGeometry args={[0.18, 0.34, 6.4, 12, 1, true]} />
         <meshBasicMaterial color="#22d3ee" transparent opacity={0.28}
           side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
-        <ringGeometry args={[0.42, 0.6, 32]} />
+        <ringGeometry args={[0.6, 0.85, 32]} />
         <meshBasicMaterial color="#22d3ee" transparent opacity={0.8}
           depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
@@ -747,16 +762,16 @@ function Hotspots({ s, data, tex, lang, onHotspot }: {
         const pos = new Float32Array(cnt * 3);
         for (let i = 0; i < cnt; i++) {
           const a = Math.random() * Math.PI * 2;
-          const rr = Math.sqrt(Math.random()) * 1.15;
+          const rr = Math.sqrt(Math.random()) * 1.5;
           pos.set([Math.cos(a) * rr, (Math.random() - 0.5) * 0.5, Math.sin(a) * rr], i * 3);
         }
         return (
           <group key={hi} position={[x, 0.3, z]}>
             {/* invisible hover catch-zone over the whole hotspot */}
-            <mesh position={[0, 0.5, 0]}
+            <mesh position={[0, 0.6, 0]}
               onPointerOver={(e) => { e.stopPropagation(); onHotspot(h, hi + 1, x, z); }}
               onPointerOut={() => onHotspot(null, 0, 0, 0)}>
-              <cylinderGeometry args={[1.9, 1.9, 1.6, 12]} />
+              <cylinderGeometry args={[2.5, 2.5, 2.1, 12]} />
               <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
             <PlanktonSwirl pos={pos} tex={tex} chl={h.chl} />
@@ -767,7 +782,7 @@ function Hotspots({ s, data, tex, lang, onHotspot }: {
                    member-to-member variation like a real school */
                 color={["#c4d6e2", "#aecbd8", "#a9c9b9", "#bcd2de"][f]} />
             ))}
-            <Html center distanceFactor={24} position={[0, 1.7, 0]}
+            <Html center distanceFactor={26} position={[0, 2.3, 0]}
               style={{ pointerEvents: "none" }}>
               <div className="whitespace-nowrap rounded-md bg-emerald-500/90 px-2.5 py-1.5 text-[12px] font-bold text-[#052e1b] shadow-lg text-center leading-tight">
                 🎣 #{hi + 1} · {h.chl} mg/m³
@@ -779,7 +794,7 @@ function Hotspots({ s, data, tex, lang, onHotspot }: {
       })}
       <group position={[0, 0, 0]}>
         <Beacon />
-        <Html center distanceFactor={24} position={[0, 3.6, 0]}
+        <Html center distanceFactor={26} position={[0, 4.6, 0]}
           style={{ pointerEvents: "none" }}>
           <div className="whitespace-nowrap rounded-md bg-cyan-400/95 px-2.5 py-1.5 text-[12px] font-bold text-[#082f3a] shadow-lg text-center leading-tight">
             📍 {lang === "hi" ? "आपका बिंदु" : "Your point"}
@@ -800,9 +815,18 @@ export default function Ocean3D({
 }) {
   const s = useMemo(() => buildSampler(data.met.points), [data]);
   const [mapAttempt, setMapAttempt] = useState(0);
+  // WIDE-FRAME fix ("map corner pe dikhta hai"): the DATA grid is ±1.2°,
+  // and deep-offshore clicks put the coast at the very edge of that box
+  // (15.73°N/72.33°E → Goa coast sits at 73.75°E = box corner). The map
+  // + plane now span ±2.0° so the coastline/cities frame the shot; the
+  // data surface, hotspots, beacon and hover values stay mapped to the
+  // central ±1.2° box — nothing is faked, the frame just got wider.
+  const mapRadius = Math.max(data.radius_deg, 2.0);
+  const WORLD_HALF = HALF * (mapRadius / data.radius_deg);
+  const SCL = WORLD_HALF / HALF;             // camera/fog scale ≈ 1.67
   const { tex: mapTex, status: mapStatus, reasons: mapReasons, via: mapVia,
     done: mapDone, total: mapTotal } = useMapTexture(
-    data.center.lat, data.center.lon, data.radius_deg, mapAttempt);
+    data.center.lat, data.center.lon, mapRadius, mapAttempt);
   const hoverRef = useRef<HoverInfo | null>(null);
   const onSea = (x: number | null, z?: number) => {
     if (x == null || z == null) { hoverRef.current = null; return; }
@@ -811,6 +835,7 @@ export default function Ocean3D({
       lat: data.center.lat - (z / HALF) * data.radius_deg,
       lon: data.center.lon + (x / HALF) * data.radius_deg,
       x, z,
+      outside: Math.abs(x) > HALF || Math.abs(z) > HALF, // honest edge note
     };
   };
   const onHotspot = (h: FieldResponse["hotspots"][number] | null, rank: number, x: number, z: number) => {
@@ -842,18 +867,18 @@ export default function Ocean3D({
   return (
     <div className="relative h-full w-full bg-[#050B14]">
       <Canvas
-        camera={{ position: [0, 16, 17.5], fov: 44 }}  // closer: the sea fills
-        dpr={[1, 1.75]}                                 // the frame edge-to-edge
-        gl={{ antialias: true, alpha: false }}          // (was shot "in a corner"
-      >                                                 //  of black starfield)
+        camera={{ position: [0, 16 * SCL, 17.5 * SCL], fov: 44 }}  // framed for
+        dpr={[1, 1.75]}                                            // the WIDE map
+        gl={{ antialias: true, alpha: false }}
+      >
         <color attach="background" args={["#050B14"]} />
-        <fog attach="fog" args={["#050B14", 34, 72]} />
+        <fog attach="fog" args={["#050B14", 34 * SCL, 72 * SCL]} />
         <ambientLight intensity={0.75} />
         <directionalLight position={[18, 26, 10]} intensity={1.1} color="#fff2dd" />
         <hemisphereLight args={["#3a6a96", "#0a1626", 0.55]} />
-        <Stars radius={90} depth={40} count={1400} factor={2.4} saturation={0} fade speed={0.5} />
+        <Stars radius={110 * SCL} depth={45 * SCL} count={1400} factor={2.4} saturation={0} fade speed={0.5} />
 
-        <OceanSurface s={s} mapTex={mapTex} onSea={onSea} />
+        <OceanSurface s={s} mapTex={mapTex} onSea={onSea} worldHalf={WORLD_HALF} />
         <FoamSpecks s={s} tex={tex} />
         <WindStreaks s={s} />
         <CurrentArrows s={s} data={data} />
@@ -864,7 +889,7 @@ export default function Ocean3D({
           makeDefault
           autoRotate autoRotateSpeed={0.28}  // slow cinematic drift — easy to read
           enableDamping dampingFactor={0.08}
-          minDistance={7} maxDistance={40}
+          minDistance={7 * SCL} maxDistance={40 * SCL}
           maxPolarAngle={1.38}
           target={[0, 0.4, 0]}
         />
@@ -927,7 +952,7 @@ export default function Ocean3D({
           {lang === "hi" ? "🧭 3D समुद्र — ऐसे पढ़ें (सब असली data)" : "🧭 3D ocean — how to read it (all real data)"}
         </div>
         <div>🗺️ <b className="text-slate-100">{lang === "hi" ? "नीचे का नक्शा" : "Base map"}</b> = {mapTex
-          ? (lang === "hi" ? "ASLI OpenStreetMap — शहर, तट, सड़कें asli jagah पर" : "the REAL OpenStreetMap — cities, coast, roads at real places")
+          ? (lang === "hi" ? "ASLI OpenStreetMap (±2° wide frame — coast bhi frame mein) — लहरों वाला DATA box beech ka ±1.2° hai" : "the REAL OpenStreetMap (±2° wide frame — coast stays in view) — the wavy DATA box is the central ±1.2°")
           : (lang === "hi" ? "blue-sea mode (map photo network se नहीं आई) — बाकी सब real" : "blue-sea mode (map photo didn't arrive) — everything else still real")}</div>
         <div>🌊 <b className="text-slate-100">{lang === "hi" ? "उठती-गिरती सतह" : "Rising/falling surface"}</b> = {lang === "hi" ? "लहरें — जहाँ ज़्यादा उठती है, असली data में वहाँ उतना rough पानी (hover करके exact मीटर देखो) · 🤍 सफेद झाग = सबसे rough jagah" : "waves — where it rises more, the real data says rougher water (hover for exact metres) · white foam = roughest spots"}</div>
         <div>〰️ <b className="text-slate-100">{lang === "hi" ? "लंबी धीमी लहरें" : "Long slow rollers"}</b> = {lang === "hi" ? "swell — दूर के तूफान से आती लहरें" : "swell — waves arriving from far-away storms"}</div>
