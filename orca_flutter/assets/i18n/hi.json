@@ -117,5 +117,6 @@
   "nav_pick_coords": "अक्षांश-देशांतर लिखो",
   "nav_return_badge": "बंदरगाह-वापसी",
   "home_explain": "विस्तार से समझाओ",
-  "sos_sms_fallback": "सीधा SMS नहीं गया — SMS ऐप खोल रहे"
+  "sos_sms_fallback": "सीधा SMS नहीं गया — SMS ऐप खोल रहे",
+  "sos_net_note": "SMS/call ko internet NAHI chahiye — yeh 2G signal pe chalte hain (kinnare paas aksar milti hai). Asli satellite SMS ke liye phone mein special hardware chahiye — isliye ORCA GPS position (satellite, free) + SMS retry + VHF Ch-16/flare pe chalta hai. Kuch fake nahi."
 }

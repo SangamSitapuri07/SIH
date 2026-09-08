@@ -68,13 +68,41 @@ class _NavigateScreenState extends State<NavigateScreen>
   }
 
   void _onTarget() {
-    // naya target → route-check zaaroori (ek baar per target)
+    // naya target → route-check + destination advisory (ek baar per target)
     if (widget.app.navTarget != _routeFor) {
       _route = null;
       _arrivedNotified = false;
       _maybeRouteCheck();
     }
+    if (widget.app.navTarget == null) {
+      _tgtAdv = null;
+      _tgtAdvFor = null;
+      _tgtAdvErr = null;
+    } else {
+      _maybeTgtAdv();
+    }
     if (mounted) setState(() {});
+  }
+
+  /// (B3) "is point pe jaana safe hai?" — target ki REAL advisory
+  /// (waves/wind/SST verdict) — koi guess nahi, backend ka verdict.
+  Future<void> _maybeTgtAdv() async {
+    final tgt = widget.app.navTarget;
+    if (tgt == null || _tgtAdvFor == tgt) return;
+    _tgtAdvFor = tgt;
+    _tgtAdv = null;
+    _tgtAdvErr = null;
+    try {
+      final r = await OrcaApi.advisory(
+          widget.settings.base, tgt.lat, tgt.lon);
+      if (mounted && widget.app.navTarget == tgt) {
+        setState(() => _tgtAdv = r);
+      }
+    } catch (e) {
+      if (mounted && widget.app.navTarget == tgt) {
+        setState(() => _tgtAdvErr = e);
+      }
+    }
   }
 
   Future<void> _restoreTrace() async {
@@ -140,6 +168,18 @@ class _NavigateScreenState extends State<NavigateScreen>
     }
     setState(() {});
   }
+
+  /// (B3) destination advisory state
+  Map<String, dynamic>? _tgtAdv;
+  Object? _tgtAdvErr;
+  Object? _tgtAdvFor;
+
+  /// route-check ke legs ARRAYS [[lat,lon]…] aate hain (backend
+  /// routecheck.py: "from": [lat,lon]) — dict-shape bhi future me sambhalo.
+  double _legLat(dynamic l) =>
+      l is List ? (l[0] as num).toDouble() : (l['lat'] as num).toDouble();
+  double _legLon(dynamic l) =>
+      l is List ? (l[1] as num).toDouble() : (l['lon'] as num).toDouble();
 
   Future<void> _maybeRouteCheck() async {
     final tgt = widget.app.navTarget;
@@ -360,24 +400,36 @@ class _NavigateScreenState extends State<NavigateScreen>
     final etaTxt = distKm == null ? null : Marine.eta(distKm, speedKn);
     // cross-track vs best leg
     double? xtrackNm;
+    var bestI = 0; // (B3) closest segment — next waypoint isi se niklega
     final legs = (_route?['legs'] as List?) ?? [];
     if (fix != null && legs.length >= 2) {
       var best = double.infinity;
       for (var i = 0; i + 1 < legs.length; i++) {
         final a = legs[i], b = legs[i + 1];
-        final d = Marine.crossTrackKm(
-            fix.latitude,
-            fix.longitude,
-            (a['lat'] as num).toDouble(),
-            (a['lon'] as num).toDouble(),
-            (b['lat'] as num).toDouble(),
-            (b['lon'] as num).toDouble());
-        if (d < best) best = d;
+        final d = Marine.crossTrackKm(fix.latitude, fix.longitude, _legLat(a),
+            _legLon(a), _legLat(b), _legLon(b));
+        if (d < best) {
+          best = d;
+          bestI = i;
+        }
       }
       if (best.isFinite) xtrackNm = Marine.kmToNm(best);
     }
     final offCourse = xtrackNm != null && xtrackNm > _offCourseNm;
     final arrived = distNm != null && distNm <= _arriveNm;
+    // (B3) agla waypoint — Google-maps style "next 245° · 0.8 NM"
+    String? wpTxt;
+    if (fix != null && legs.length >= 2) {
+      final wp = legs[(bestI + 1).clamp(1, legs.length - 1)];
+      final wLat = _legLat(wp), wLon = _legLon(wp);
+      final wb = Marine.bearingDeg(fix.latitude, fix.longitude, wLat, wLon);
+      final wd = Marine.kmToNm(
+          Marine.haversineKm(fix.latitude, fix.longitude, wLat, wLon));
+      if (wd > 0.05) {
+        wpTxt =
+            '${wb.toStringAsFixed(0).padLeft(3, '0')}° ${wd.toStringAsFixed(1)}NM';
+      }
+    }
     final steer = (fix != null && speedKn > 1.0 && brg != null)
         ? Marine.steerHint(fix.heading, brg)
         : null;
@@ -418,9 +470,7 @@ class _NavigateScreenState extends State<NavigateScreen>
               if (legs.length >= 2)
                 Polyline(
                   points: [
-                    for (final l in legs)
-                      LatLng((l['lat'] as num).toDouble(),
-                          (l['lon'] as num).toDouble())
+                    for (final l in legs) LatLng(_legLat(l), _legLon(l))
                   ],
                   strokeWidth: 3.5,
                   color: _route?['ok'] == true
@@ -480,6 +530,9 @@ class _NavigateScreenState extends State<NavigateScreen>
                 widget.app.clearTarget();
                 _route = null;
                 _routeFor = null;
+                _tgtAdv = null;
+                _tgtAdvFor = null;
+                _tgtAdvErr = null;
                 if (_wakeOn) WakelockPlus.disable();
                 _wakeOn = false;
                 setState(() {});
@@ -488,6 +541,61 @@ class _NavigateScreenState extends State<NavigateScreen>
                   size: 20, color: t.colorScheme.secondary)),
         ]),
       ),
+      // ── (B3) destination conditions — advisory@target (REAL verdict) ──
+      if (_tgtAdv != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+          child: Builder(builder: (ctx) {
+            final a = _tgtAdv!;
+            final c = '${a['color']}';
+            final col = c == 'green'
+                ? OrcaTheme.okGreen
+                : c == 'red'
+                    ? OrcaTheme.dangerRed
+                    : OrcaTheme.warnAmber;
+            final isHi = Localizations.localeOf(ctx).languageCode != 'en';
+            final v = (a['variables'] as Map?) ?? const {};
+            String m(String k, String u, [int dp = 1]) => v[k] is num
+                ? '${(v[k] as num).toStringAsFixed(dp)}$u'
+                : '—';
+            return Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: col.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: col.withOpacity(0.6)),
+              ),
+              child: Row(children: [
+                Icon(Icons.sailing_rounded, color: col, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                            isHi
+                                ? '${a['headline_hi'] ?? a['headline']}'
+                                : '${a['headline']}',
+                            style: t.textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w800, color: col),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis),
+                        Text(
+                            '🌊 ${m('wave_height_m', 'm')} · 💨 ${m('wind_kts', 'kn', 0)} · 🌡 ${m('sst_c', '°')}',
+                            style: t.textTheme.bodySmall),
+                      ]),
+                ),
+              ]),
+            );
+          }),
+        )
+      else if (_tgtAdvErr != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+          child: Text('unverified_msg'.tr(),
+              style: t.textTheme.bodySmall
+                  ?.copyWith(color: OrcaTheme.warnAmber)),
+        ),
       // ── HUD ──
       Expanded(
         child: _gpsErr != null
@@ -528,7 +636,7 @@ class _NavigateScreenState extends State<NavigateScreen>
                       offCourse ? OrcaTheme.dangerRed : OrcaTheme.okGreen),
                   _Hud(
                       '🧭',
-                      steerTxt ?? (arrived ? '🐟' : '—'),
+                      wpTxt ?? steerTxt ?? (arrived ? '🐟' : '—'),
                       OrcaTheme.warnAmber,
                       small: true),
                 ],

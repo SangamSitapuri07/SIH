@@ -164,6 +164,25 @@ class _SosScreenState extends State<SosScreen> {
         ]),
       ),
 
+      // (B3) satellite-SMS honesty note — judges bhi yahi padhenge 📡
+      Container(
+        padding: const EdgeInsets.all(10),
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Theme.of(context).dividerColor)),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('📡 ', style: TextStyle(fontSize: 16)),
+          Expanded(
+              child: Text('sos_net_note'.tr(),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(height: 1.4))),
+        ]),
+      ),
+
       // GIANT position card (GPS = satellites, net ki zaroorat NAHI)
       OrcaCard(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

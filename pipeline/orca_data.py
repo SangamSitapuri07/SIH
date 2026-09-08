@@ -217,6 +217,7 @@ def zone_snapshot(
     # the parallel gather (not a serial second fetch after "today" comes
     # back empty) — the fallback then costs zero wall-clock.
     prev_chl_date = (date.fromisoformat(target_date) - timedelta(days=3)).isoformat()
+    prev7_chl_date = (date.fromisoformat(target_date) - timedelta(days=7)).isoformat()
 
     snap: dict[str, Any] = {
         "lat": lat,
@@ -344,13 +345,24 @@ def zone_snapshot(
         else:
             # ONE clean bullet, not two confusing ones: when both the
             # requested date AND the lag analysis failed, say so once.
-            if err2 and err_noaa:
+            # 3rd chance: VIIRS processing kabhi 3 din se zyada peeche
+            # hota hai — 7-day-lag bhi try (sirf isi rare fail-path pe).
+            chl3, err3 = _safe(
+                noaa_fn, lat, lon, prev7_chl_date,
+                default=None, label="NOAA ERDDAP (7-day lag)",
+            )
+            if (chl3 and not err3 and isinstance(chl3, dict)
+                    and chl3.get("value") is not None):
+                chl = chl3
+                got_noaa = True
+                attempt_date = prev7_chl_date
+            elif err2 and err_noaa:
                 err_noaa = (
-                    "NOAA ERDDAP (today + 3-day-lag both tried): "
-                    + str(err2).split(": ", 1)[-1]
+                    "NOAA ERDDAP (today, 3-day & 7-day lag tried): "
+                    + str(err3 or err2).split(": ", 1)[-1]
                 )
             else:
-                err_noaa = err2 or err_noaa or "NOAA: no data"
+                err_noaa = err3 or err2 or err_noaa or "NOAA: no data"
 
     if got_noaa and isinstance(chl, dict):
         snap["chlorophyll"] = chl.get("value")
@@ -427,7 +439,7 @@ def zone_snapshot(
         if incois_fn is not None:
             incois_chl, err = _safe(
                 incois_fn, lat, lon, chl_date,
-                default=None, label="INCOIS LAS", timeout=15,
+                default=None, label="INCOIS LAS", timeout=30,
             )
             if incois_chl and not err and incois_chl.get("value") is not None:
                 snap["chlorophyll"] = incois_chl.get("value")

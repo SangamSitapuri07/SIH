@@ -117,5 +117,6 @@
   "nav_pick_coords": "કોઓર્ડિનેટ લખો",
   "nav_return_badge": "બંદર-વાપસી",
   "home_explain": "વિગતથી સમજાવો",
-  "sos_sms_fallback": "સીધો SMS ન ગયો — SMS એપ ખોલું"
+  "sos_sms_fallback": "સીધો SMS ન ગયો — SMS એપ ખોલું",
+  "sos_net_note": "SMS/કૉલ માટે ઈન્ટરનેટ જોઈતું નથી — 2G સિગ્નલ પર ચાલે છે (દરિયાકિનારે ઘણીવાર મળે). સેટેલાઇટ SMS માટે ફોનમાં ખાસ હાર્ડવેર જોઈએ — એટલે ORCA GPS + SMS retry + VHF Ch-16/flare પર ચાલે. કંઈ નકલી નથી."
 }
