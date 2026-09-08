@@ -3,6 +3,9 @@
 Run from repo root:  python first_download.py
 Grabs 1 EOS-06 OCM ocean-colour (chlorophyll-a) granule for the Gujarat box.
 """
+import sys as _sys, pathlib as _pathlib  # tools/ se bhi repo-root imports kaam karein
+_sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parents[1]))
+
 from pipeline import mosdac_auth as M
 
 s = M.login()

@@ -48,7 +48,7 @@ Save and close. The backend will pick these up automatically. You can
 also verify they're loaded by running:
 
 ```powershell
-python verify_credentials.py
+python tools/verify_credentials.py
 ```
 
 ## Run the full stack
@@ -133,7 +133,7 @@ Browser (3000) → Next.js → /api/* proxy → FastAPI (8000) → Python pipeli
 | `port 8000 already in use` | Kill the old uvicorn: `Get-Process -Name "python" \| Where-Object {$_.Path -like "*uvicorn*"} \| Stop-Process` |
 | `port 3000 already in use` | Same but for `node` |
 | `No data returned` | Check the Terminal 1 logs; one or more data sources may be down |
-| `GFW_API_TOKEN not set` | Check `python verify_credentials.py` to see what's missing from `.env` |
+| `GFW_API_TOKEN not set` | Check `python tools/verify_credentials.py` to see what's missing from `.env` |
 | `ECONNREFUSED 127.0.0.1:8000` | Terminal 1 isn't running, or crashed |
 | `HTTP 401 from GFW` | Token is wrong. Re-copy from https://globalfishingwatch.org/our-apis/tokens/ |
 | `HTTP 401 from MOSDAC` | Username/password wrong, or account locked (1 hour cooldown after 3 fails) |

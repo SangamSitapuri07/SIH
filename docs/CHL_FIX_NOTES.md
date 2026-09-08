@@ -46,7 +46,7 @@ physically incompatible water masses.
    map** to analyze a custom point, not just the 8 hardcoded markers.
    You (rightly) asked why only 8 places worked.
 
-6. **`verify_chl_sources.py`** — updated to show nearest cell vs
+6. **`tools/verify_chl_sources.py`** — updated to show nearest cell vs
    box mean, with correct ERDDAP axis order for each dataset.
 
 ## Expected new behavior
@@ -80,7 +80,7 @@ instead of "highly_recommended". **This is correct** — the old
 cd $HOME\Desktop\orca-setup\SIH
 git pull
 git log --oneline -5   # should show 554beb7 "fix(chl)..."
-python verify_chl_sources.py
+python tools/verify_chl_sources.py
 ```
 
 Then restart the backend (Ctrl+C, then re-run uvicorn) and click

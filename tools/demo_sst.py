@@ -1,4 +1,7 @@
 """Quick demo: print SST for 8 Indian coastal points."""
+import sys as _sys, pathlib as _pathlib  # tools/ se bhi repo-root imports kaam karein
+_sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parents[1]))
+
 from pipeline.openmeteo_sst import demo_indian_ocean_sst
 
 results = demo_indian_ocean_sst("2026-08-01", "2026-08-30")

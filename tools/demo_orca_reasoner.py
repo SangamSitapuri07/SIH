@@ -5,6 +5,9 @@ This is the SIH pitch demo. Run with your GFW_API_TOKEN set:
   $env:GFW_API_TOKEN = "your_token"
   python demo_orca_reasoner.py
 """
+import sys as _sys, pathlib as _pathlib  # tools/ se bhi repo-root imports kaam karein
+_sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parents[1]))
+
 import json
 import os
 

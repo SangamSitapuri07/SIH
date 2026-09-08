@@ -17,6 +17,19 @@ actionable marine intelligence for India's coastal communities.
   out today?" with a colour-coded risk level
 - **Cites every data source** so the answer is explainable
 
+## 📁 Repo map — kaunsa folder kya hai
+
+| Path | Kya hai |
+|---|---|
+| `backend/` | FastAPI server (phone + web dono ki live data API) |
+| `pipeline/` | ORCA engine — agents, satellite/GFW fetch, land-mask · **`pipeline/tests/` mein 217 automated tests** |
+| `web/` | Next.js web app (judges/desktop UI) |
+| `orca_flutter/` | 📱 Android app — Flutter, fishermen ke liye *(freeze pe naam `android/` hoga)* |
+| `docs/` | Plans, design notes, verified research |
+| `tools/` | verify/demo scripts — judges khud chala ke cross-check kar sakte hain |
+
+Root pe sirf config/gitignore/ps1 files — koi faltu folder nahi.
+
 ## Architecture
 
 ```
@@ -62,7 +75,7 @@ ERDDAP Meteo   AIS    LAS
 cd pipeline/
 pip install -r requirements.txt
 python -m pytest tests/                 # 81 tests pass
-python demo_orca_reasoner.py            # full live pipeline demo
+python tools/demo_orca_reasoner.py            # full live pipeline demo
 
 # Frontend
 cd web/

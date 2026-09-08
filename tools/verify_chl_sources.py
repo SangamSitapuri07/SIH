@@ -14,6 +14,9 @@ Sources:
 Run:
     python verify_chl_sources.py
 """
+import sys as _sys, pathlib as _pathlib  # tools/ se bhi repo-root imports kaam karein
+_sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parents[1]))
+
 import json
 import sys
 import urllib.parse
