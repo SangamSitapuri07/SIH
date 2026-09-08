@@ -65,7 +65,7 @@ class Settings extends ChangeNotifier {
 
   Future<void> zoom(bool up) async {
     final next = (scale + (up ? 0.15 : -0.15)).clamp(0.85, 1.75);
-    scale = double.parse((next as double).toStringAsFixed(2));
+    scale = double.parse(next.toStringAsFixed(2));
     notifyListeners();
     (await SharedPreferences.getInstance()).setDouble(_kScale, scale);
   }

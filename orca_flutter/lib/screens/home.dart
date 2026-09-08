@@ -12,6 +12,15 @@ import '../state.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
+/// ML Kit language lookup by BCP-47 (bcpCode sab par hai; koi fromBcp helper
+/// nahi hota is package mein — isliye apna lookup).
+TranslateLanguage? mlLang(String code) {
+  for (final l in TranslateLanguage.values) {
+    if (l.bcpCode == code) return l;
+  }
+  return null;
+}
+
 /// GPS helper — throws StateError('gps_off') / ('gps_denied') honestly.
 Future<Position> orcaFix() async {
   if (!await Geolocator.isLocationServiceEnabled()) {
@@ -183,16 +192,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _reloadGps() async {
-    setState(() => _gpsPending = true);
-    await _tryGps();
-    await _load();
-  }
-
   Future<void> _translate() async {
     final adv = _adv;
     if (adv == null) return;
-    final target = TranslateLanguage.fromBcp(context.locale.languageCode);
+    final target = mlLang(context.locale.languageCode);
     final src = (adv['plain_en'] as List?)?.join('\n') ?? '';
     if (target == null || src.isEmpty) return;
     try {
@@ -295,7 +298,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildTranslateBtn(ThemeData t) {
-    final target = TranslateLanguage.fromBcp(context.locale.languageCode);
+    final target = mlLang(context.locale.languageCode);
     if (target == null || context.locale.languageCode == 'en') {
       return const SizedBox.shrink();
     }

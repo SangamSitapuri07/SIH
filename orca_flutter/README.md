@@ -25,9 +25,30 @@ flutter run            # phone USB + debugging on
 Baad mein APK share karne ke liye: `flutter build apk --debug`
 (release: `flutter build apk --release` — D7 pe)
 
+## flutter create ke BAAD — 2 zaroori manual steps
+
+**1. `test/widget_test.dart` DELETE karo** (flutter create ka default counter-app
+test hai, humare app ka nahi — delete na kiya to `flutter analyze` / `flutter test`
+fail karega). Humara apna real test: `test/marine_test.dart` (run: `flutter test`).
+
+**2. `android/app/src/main/AndroidManifest.xml` mein `<manifest>` tag ke ANDAR
+sabse upar ye permissions paste karo** (location/SMS/notification/sensors):
+
+```xml
+<uses-permission android:name="android.permission.INTERNET"/>
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+<uses-permission android:name="android.permission.SEND_SMS"/>
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+<uses-permission android:name="android.permission.VIBRATE"/>
+<uses-permission android:name="android.permission.WAKE_LOCK"/>
+<uses-feature android:name="android.hardware.telephony" android:required="false"/>
+```
+
+Aur `<application android:label="ORCA"` set karo.
+
 ## Notes
 
-- `flutter create .` ke baad `android/app/src/main/AndroidManifest.xml` mein `<application android:label="ORCA">` set kar lena.
-- D4 pe permissions add honge: `ACCESS_FINE_LOCATION`, `SEND_SMS`, `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE` (telephony/geofence ke saath — plan D4/D5).
 - Backend: laptop pe `uvicorn` chalu → dono same WiFi → Info tab mein laptop ka IPv4 `IP:8000` daal ke Check dabao.
 - i18n: naya string hamesha `assets/i18n/*.json` ke GYARAH files mein ek saath — koi bhasha kabhi peeche nahi rehti.
+- `telephony` package "discontinued" dikhta hai pub pe — kaam karta hai (SOS SMS ke liye use ho raha); agar kabhi issue aaye to alternate `flutter_sms`/`sms_advanced` easily swap ho jaayega (ek hi file `lib/screens/sos.dart` mein).

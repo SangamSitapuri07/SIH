@@ -6,6 +6,7 @@ import '../api.dart';
 import '../state.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'home.dart' show mlLang;
 
 class InfoScreen extends StatefulWidget {
   final Settings settings;
@@ -58,10 +59,8 @@ class _InfoScreenState extends State<InfoScreen> {
 
   /// REAL ML Kit offline model download + demo translate. Koi fake nahi.
   Future<void> _translator() async {
-    final target = TranslateLanguage.fromBcp(context.locale.languageCode);
-    if (target == null ||
-        target == TranslateLanguage.english ||
-        context.locale.languageCode == 'kok') {
+    final target = mlLang(context.locale.languageCode);
+    if (target == null || context.locale.languageCode == 'kok') {
       setState(() => _trState = 'unsupported');
       return;
     }

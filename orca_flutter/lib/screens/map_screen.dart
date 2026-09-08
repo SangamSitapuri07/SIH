@@ -27,7 +27,7 @@ class _MapScreenState extends State<MapScreen> {
   Map<String, dynamic>? _field;
   String? _err;
   bool _loading = false, _seaMarks = false;
-  double _zoom = 9.5;
+  final double _zoom = 9.5;
 
   @override
   void initState() {
@@ -338,7 +338,6 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _hotspotSheet(Map h) {
-    final t = Theme.of(context);
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
@@ -363,7 +362,6 @@ class _MapScreenState extends State<MapScreen> {
         best = p;
       }
     }
-    final t = Theme.of(context);
     String v(String k, String u, [int dp = 1]) => best[k] is num
         ? '${(best[k] as num).toStringAsFixed(dp)} $u'
         : '—';

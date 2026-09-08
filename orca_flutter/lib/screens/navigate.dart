@@ -378,7 +378,7 @@ class _NavigateScreenState extends State<NavigateScreen>
                           ? '—'
                           : Marine.eta(
                               Marine.haversineKm(
-                                  fix!.latitude, fix!.longitude, tgt.lat, tgt.lon),
+                                  fix.latitude, fix.longitude, tgt.lat, tgt.lon),
                               speedKn),
                       OrcaTheme.okGreen),
                   _Hud('speed_lbl'.tr(), '${speedKn.toStringAsFixed(1)} kn',
