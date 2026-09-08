@@ -67,6 +67,16 @@ subprojects {
     }
 }
 ```
+**4. `android/app/build.gradle(.kts)` mein core library desugaring ON** —
+`flutter_local_notifications 17` AGP 8 pe `checkDebugAarMetadata` fail
+karta hai ("requires core library desugaring"). Dono flavours:
+
+- **Groovy** (`build.gradle`): `compileOptions {` ke andar
+  `coreLibraryDesugaringEnabled = true` aur file end mein:
+  `dependencies { coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4' }`
+- **Kotlin DSL** (`build.gradle.kts`): `isCoreLibraryDesugaringEnabled = true`
+  aur `coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")`
+
 
 
 ## Notes
