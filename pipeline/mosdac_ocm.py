@@ -35,6 +35,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -63,7 +64,19 @@ MAX_GRANULE_BYTES = 250_000_000  # honest guard — LAC L2C files are far smalle
 # blew the 110 s route deadline and 504'd twice (2026-09-04 evening).
 MAX_DL_WALL_SEC = 70.0
 
+# How long a BACKGROUND drain thread may keep trickling after the request
+# gave up. Daemon threads die with the process, so a stuck drain never
+# wedges the backend — worst case its .part file is purged and the next
+# click downloads fresh. 10 min absorbs even a 60 MB file at 100 KB/s.
+MAX_DRAIN_SEC = 600.0
+MAX_CONCURRENT_DRAINS = 3
+
 GRANULE_DIR = Path(__file__).resolve().parent.parent / "data" / "mosdac_granules"
+
+# Background-drain registry: rec_id -> thread / .part path being completed.
+_DRAIN_LOCK = threading.Lock()
+_DRAIN_THREADS: dict = {}
+_DRAIN_PATHS: dict = {}
 
 
 # ── enable / config ───────────────────────────────────────────────────
@@ -175,12 +188,19 @@ def _purge_old_granules() -> None:
     if not GRANULE_DIR.exists():
         return
     cutoff = time.time() - 26 * 3600
+    with _DRAIN_LOCK:
+        active_parts = set(_DRAIN_PATHS.values())
     for f in GRANULE_DIR.glob("mosdac_*"):
         try:
             # .part debris = interrupted mid-download → never valid; drop
             # immediately (not just after 26 h) so a fresh attempt today
             # re-downloads instead of choking on the partial file.
-            if f.name.endswith(".part") or f.stat().st_mtime < cutoff:
+            # EXCEPTION: a .part being actively completed by a background
+            # drain thread is NOT debris — leave it alone.
+            if f.name.endswith(".part"):
+                if f not in active_parts:
+                    f.unlink()
+            elif f.stat().st_mtime < cutoff:
                 f.unlink()
         except OSError:
             pass
@@ -223,6 +243,78 @@ def _cache_entry_poisoned(path: Path) -> bool:
             return False  # opens fine → healthy cache entry
     except Exception:  # noqa: BLE001
         return True
+
+
+def _drain_in_background(r, tmp: Path, dest: Path, rec_id: Any,
+                         started: float, prior_bytes: int) -> bool:
+    """Hand a SLOW-BUT-ALIVE granule stream to a daemon thread that keeps
+    trickling to completion after the request-side budget gave up.
+
+    Why: MOSDAC's data host sometimes crawls (~100 KB/s). The 70 s wall
+    cap protects the /reason deadline, but the honest "link crawling"
+    error used to throw away the megabytes already fetched — so EVERY
+    retry paid the full slow-download cost again and demo-day MOSDAC
+    stayed red for hours. A daemon drain converts "server is slow today"
+    into "this point's second click in ~10 min is an INSTANT same-day
+    cache hit" — still 100% real MOSDAC bytes, zero invented data.
+
+    Returns True if a drain was started (or one is already running).
+    The drain thread touches ONLY this response object (never the shared
+    session), writes to .part, and atomic-publishes on completion —
+    partial files are still never served.
+    """
+    with _DRAIN_LOCK:
+        if rec_id in _DRAIN_THREADS:
+            return True  # already draining — one slow file, one thread
+        if len(_DRAIN_THREADS) >= MAX_CONCURRENT_DRAINS:
+            return False
+        _DRAIN_PATHS[rec_id] = tmp
+
+    def _run() -> None:
+        total = prior_bytes
+        try:
+            with open(tmp, "ab") as fh:  # append where the request left off
+                for chunk in r.iter_content(1 << 20):
+                    if not chunk:
+                        continue
+                    total += len(chunk)
+                    if total > MAX_GRANULE_BYTES:
+                        fh.close()
+                        tmp.unlink(missing_ok=True)
+                        return
+                    fh.write(chunk)
+                    if time.time() - started > MAX_DRAIN_SEC:
+                        fh.close()
+                        tmp.unlink(missing_ok=True)
+                        print(f"[MOSDAC] background drain gave up after "
+                              f"{MAX_DRAIN_SEC:.0f}s ({total/1e6:.1f} MB)", file=sys.stderr)
+                        return
+            tmp.replace(dest)  # atomic publish of the COMPLETE file
+            if _cache_entry_poisoned(dest):
+                dest.unlink(missing_ok=True)
+                print(f"[MOSDAC] background drain finished but file fails HDF5 "
+                      f"open — server truncated it; purged", file=sys.stderr)
+                return
+            print(f"[MOSDAC] background drain COMPLETE: {dest.name} "
+                  f"({total/1e6:.1f} MB) — this point's next click = instant "
+                  f"same-day cache hit", file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            print(f"[MOSDAC] background drain died: {type(e).__name__}: "
+                  f"{str(e)[:80]}", file=sys.stderr)
+        finally:
+            with _DRAIN_LOCK:
+                _DRAIN_THREADS.pop(rec_id, None)
+                _DRAIN_PATHS.pop(rec_id, None)
+
+    t = threading.Thread(target=_run, name=f"mosdac-drain-{rec_id}", daemon=True)
+    with _DRAIN_LOCK:
+        _DRAIN_THREADS[rec_id] = t
+    t.start()
+    return True
 
 
 def _find_cached_granule(rec_id: Any) -> Path | None:
@@ -301,10 +393,22 @@ def _download_granule(session, rec_id: Any,
                     fh.write(chunk)
                     if time.time() - started > wall_cap:
                         fh.close()
-                        tmp.unlink(missing_ok=True)
+                        # Request-side budget spent — but the stream is
+                        # ALIVE and the bytes so far are real. Hand the
+                        # rest to a background drain: it finishes the file
+                        # to the same-day cache, so a retry in ~10 min is
+                        # an instant hit instead of paying the whole slow
+                        # download again. (100% real MOSDAC bytes; partial
+                        # files are still never served.)
+                        draining = _drain_in_background(r, tmp, dest, rec_id,
+                                                        started, total)
+                        note = ("download is finishing in the background — "
+                                "retry this point in ~10 min (becomes an instant "
+                                "same-day cache hit)" if draining else
+                                "try again shortly (partial files are never cached)")
                         return None, (f"download too slow (> {wall_cap:.0f}s wall cap, "
-                                    f"{total / 1_000_000:.1f} MB so far) — network crawling; "
-                                    "try again shortly (partial files are never cached)"), time.time() - started
+                                    f"{total / 1_000_000:.1f} MB so far) — link crawling; "
+                                    + note), time.time() - started
         # Publish ONLY on complete success: an interrupted run (network
         # drop, Ctrl+C, laptop lid) leaves a .part temp file, never a
         # broken "complete" granule in the cache. Caught live in the
@@ -699,7 +803,8 @@ def _live_chain(lat: float, lon: float) -> dict[str, Any]:
             return _fail(
                 f"time budget exhausted before download finished (login {login_secs:.0f}s · "
                 f"search {search_secs:.0f}s · earlier candidates also slow) — link crawling; "
-                "retry in a few minutes (part-downloads are never cached)"
+                "any in-flight download keeps finishing in the background, so a retry "
+                "in ~10 min should be an instant cache hit"
             )
         # Give THIS download exactly the budget that remains (minus parse
         # headroom) so the chain always returns with a PRECISE reason

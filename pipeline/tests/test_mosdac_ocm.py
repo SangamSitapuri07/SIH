@@ -359,14 +359,24 @@ def test_download_wall_cap_aborts_slow_but_alive_stream(tmp_path, monkeypatch):
     """The 110s-deadline killer: a slow-but-STEADY connection (bytes keep
     coming, so the idle-timeout never fires) must still be aborted at the
     total wall cap — otherwise one granule download blocks the route for
-    minutes (laptop inland clicks, 2026-09-04 evening)."""
+    minutes (laptop inland clicks, 2026-09-04 evening).
+
+    Since the background-drain fix, the REQUEST is still released at the
+    cap, but the stream keeps trickling to completion in a daemon thread:
+    the completed granule lands in the same-day cache instead of being
+    thrown away (real bytes, honest messaging)."""
     monkeypatch.setattr(mosdac_ocm, "GRANULE_DIR", tmp_path)
     monkeypatch.setattr(mosdac_ocm, "MAX_DL_WALL_SEC", 0.08)
 
     class _SlowResp(_FakeResp):
+        # model REAL requests semantics: a second iter_content call does
+        # NOT restart — the underlying stream continues from the position
+        # where the request-side loop stopped (that's what the drain needs)
+        _i = 0
         def iter_content(self, size):
             import time as _t
-            for c in self._chunks:
+            while self._i < len(self._chunks):
+                c = self._chunks[self._i]; self._i += 1
                 _t.sleep(0.01)
                 yield c
 
@@ -374,8 +384,55 @@ def test_download_wall_cap_aborts_slow_but_alive_stream(tmp_path, monkeypatch):
     t0 = time.time()
     path, err, secs = mosdac_ocm._download_granule(_FakeSession(resp), 448)
     assert path is None and "too slow" in err.lower()
-    assert not list(tmp_path.glob("mosdac_448*"))
-    assert time.time() - t0 < 5  # aborted promptly, honoured the cap
+    assert "background" in err.lower()   # tells the user a retry will be instant
+    assert time.time() - t0 < 5          # request honoured the cap, didn't hang
+    # ...while the drain finished the REAL file to the same-day cache:
+    t = mosdac_ocm._DRAIN_THREADS.get(448)
+    assert t is not None
+    t.join(timeout=15)
+    assert not t.is_alive()
+    dest = tmp_path / "mosdac_448.h5"
+    assert dest.exists() and dest.stat().st_size == 30 * 1024
+    assert not list(tmp_path.glob("*.part"))
+
+
+def test_drain_keeps_part_file_safe_from_purge(tmp_path, monkeypatch):
+    """A .part being completed by a live drain is NOT debris — the
+    immediate-purge path must skip it or the drain's work is destroyed
+    mid-write (and the drain registry must clean itself up after)."""
+    monkeypatch.setattr(mosdac_ocm, "GRANULE_DIR", tmp_path)
+    monkeypatch.setattr(mosdac_ocm, "MAX_DL_WALL_SEC", 0.06)
+
+    class _SlowResp(_FakeResp):
+        # model REAL requests semantics: a second iter_content call does
+        # NOT restart — the underlying stream continues from the position
+        # where the request-side loop stopped (that's what the drain needs)
+        _i = 0
+        def iter_content(self, size):
+            import time as _t
+            while self._i < len(self._chunks):
+                c = self._chunks[self._i]; self._i += 1
+                _t.sleep(0.01)
+                yield c
+
+    resp = _SlowResp([b"y" * 2048] * 40)  # 80 KB trickle
+    path, err, secs = mosdac_ocm._download_granule(_FakeSession(resp), 999)
+    assert path is None and "background" in err.lower()
+    tmp = tmp_path / "mosdac_999.h5.part"
+    assert tmp.exists()                    # interrupted file KEPT for the drain
+    mosdac_ocm._purge_old_granules()       # running purge must NOT kill it
+    assert tmp.exists()
+    t = mosdac_ocm._DRAIN_THREADS.get(999)
+    assert t is not None
+    t.join(timeout=15)
+    assert not t.is_alive()
+    assert 999 not in mosdac_ocm._DRAIN_THREADS
+    assert 999 not in mosdac_ocm._DRAIN_PATHS
+    # complete file is now a same-day cache hit — no network touched
+    assert not tmp.exists()
+    assert (tmp_path / "mosdac_999.h5").stat().st_size == 40 * 2048
+    hit, err2, secs2 = mosdac_ocm._download_granule(_FakeSession(_FakeResp([b"Z"])), 999)
+    assert hit is not None and err2 is None and secs2 == 0.0
 
 
 def test_failed_chain_cached_briefly_retry_not_repaid(monkeypatch, tmp_path):
