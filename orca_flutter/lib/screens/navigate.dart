@@ -219,14 +219,16 @@ class _NavigateScreenState extends State<NavigateScreen>
     }
 
     final fix = _fix;
-    final distNm = fix == null
+    // distKm ek hi baar — distNm + ETA dono isi se derive (promotion-safe)
+    final distKm = fix == null
         ? null
-        : Marine.kmToNm(Marine.haversineKm(
-            fix.latitude, fix.longitude, tgt.lat, tgt.lon));
+        : Marine.haversineKm(fix.latitude, fix.longitude, tgt.lat, tgt.lon);
+    final distNm = distKm == null ? null : Marine.kmToNm(distKm);
     final brg = fix == null
         ? null
         : Marine.bearingDeg(fix.latitude, fix.longitude, tgt.lat, tgt.lon);
     final speedKn = fix == null ? 0.0 : fix.speed * 1.943844;
+    final etaTxt = distKm == null ? null : Marine.eta(distKm, speedKn);
     // cross-track vs best leg
     double? xtrackNm;
     final legs = (_route?['legs'] as List?) ?? [];
@@ -372,15 +374,7 @@ class _NavigateScreenState extends State<NavigateScreen>
                           ? '—'
                           : '${brg.toStringAsFixed(0).padLeft(3, '0')}° ${Marine.compass16(brg)}',
                       OrcaTheme.tealDeep),
-                  _Hud(
-                      'eta_lbl'.tr(),
-                      distNm == null
-                          ? '—'
-                          : Marine.eta(
-                              Marine.haversineKm(
-                                  fix.latitude, fix.longitude, tgt.lat, tgt.lon),
-                              speedKn),
-                      OrcaTheme.okGreen),
+                  _Hud('eta_lbl'.tr(), etaTxt ?? '—', OrcaTheme.okGreen),
                   _Hud('speed_lbl'.tr(), '${speedKn.toStringAsFixed(1)} kn',
                       OrcaTheme.warnAmber),
                   _Hud(

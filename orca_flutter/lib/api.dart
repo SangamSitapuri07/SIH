@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 /// FastAPI client — SIRF real endpoints (plan §5):
-///   GET /health · /api/v1/advisory · /api/v1/field · /api/v1/route-check
+///   GET /api/v1/health · /api/v1/advisory · /api/v1/field · /api/v1/route-check
 /// Koi mock/dummy yahan kabhi nahi aayega: fail hua to caller ko exception
 /// milta hai aur UI honest reason dikhata hai.
 class OrcaApi {
@@ -13,10 +13,11 @@ class OrcaApi {
   static Uri _u(String base, String path, [Map<String, String>? q]) =>
       Uri.parse('http://$base$path').replace(queryParameters: q);
 
-  /// GET /health → Map on HTTP 200, else throws (caller shows honest reason).
+  /// GET /api/v1/health → Map on HTTP 200, else throws.
+  /// (backend main.py:273 — plain /health exist hi nahi karta, 404 aata)
   static Future<Map<String, dynamic>> health(String base) async {
     final r = await http
-        .get(_u(base, '/health'))
+        .get(_u(base, '/api/v1/health'))
         .timeout(const Duration(seconds: 6));
     if (r.statusCode == 200) {
       return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
