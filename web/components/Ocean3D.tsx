@@ -430,6 +430,11 @@ function HotspotCard({ h, rank, lang }: { h: FieldResponse["hotspots"][number]; 
       <div className="font-bold text-emerald-300 mb-0.5">🎣 #{rank} · {h.chl} mg/m³</div>
       <div className="font-mono text-slate-400">{fmtLat(h.lat)}, {fmtLon(h.lon)}</div>
       <div className="text-slate-300">{h.distance_nm} NM · {h.bearing}</div>
+      {h.caveat && (
+        <div className="mt-1 max-w-[250px] whitespace-normal text-[10.5px] leading-snug text-amber-300/90">
+          ⚠️ {h.caveat}
+        </div>
+      )}
       <div className="mt-1.5 text-slate-400 max-w-[250px] whitespace-normal text-[11.5px] leading-snug">
         {lang === "hi"
           ? "ज़्यादा chlorophyll = plankton भरपूर → छोटी मछली (baitfish) → बड़ी मछली। यही मछली पकड़ने की सबसे अच्छी jagah है। असली NOAA सैटेलाइट मान।"

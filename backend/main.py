@@ -550,6 +550,27 @@ TILE_CACHE_DIR = Path("data") / "tiles"
 _TILE_HEADERS = {"User-Agent": "ORCA-SIH-2026/1.0 (student marine demo; interactive single-user map)"}
 
 
+@app.get("/api/v1/route-check")
+def route_check(
+    from_lat: float = Query(..., ge=-90, le=90),
+    from_lon: float = Query(..., ge=-180, le=180),
+    to_lat: float = Query(..., ge=-90, le=90),
+    to_lon: float = Query(..., ge=-180, le=180),
+) -> dict[str, Any]:
+    """Is a straight course A->B water-only? Samples the rhumb line every
+    2 km against the real GLOBE 1 km land mask; if land blocks it, one
+    REAL computed detour waypoint is tried (multi-angle, growing radii).
+    Never invents a safe line: ok=True/False/None(unverified) — the UI
+    shows exactly which. Local math only, no network, no map-routing
+    engine (there is no road graph at sea — marine navigation IS a
+    course line, which is what we verify)."""
+    from pipeline.routecheck import compute_sea_route
+    try:
+        return compute_sea_route(from_lat, from_lon, to_lat, to_lon)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"route check failed: {type(e).__name__}: {e}")
+
+
 @app.get("/api/v1/tiles/{z}/{x}/{y}.png")
 def osm_tile(z: int, x: int, y: int):
     """Cached OpenStreetMap raster tile (PNG)."""

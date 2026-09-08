@@ -370,13 +370,44 @@ export interface FieldResponse {
   radius_deg: number;
   chl: { points: FieldPoint[]; date?: string; n: number; source?: string; error?: string | null; land_masked?: number; land_mask?: string };
   met: { points: FieldPoint[]; n: number; source?: string; error?: string | null };
-  hotspots: { lat: number; lon: number; chl: number; distance_km: number; distance_nm: number; bearing: string }[];
+  hotspots: {
+    lat: number; lon: number; chl: number;
+    distance_km: number; distance_nm: number; bearing: string;
+    /** bloom-range reading (>= legend threshold)? */
+    bloom?: boolean;
+    /** km to nearest land (8-ray probe on the real GLOBE 1 km mask) */
+    coast_km?: number | null;
+    /** honest turbidity note when a bloom sits within a short sail of land */
+    caveat?: string | null;
+  }[];
   generated_at: string;
   note: string;
 }
 
 export const fetchField = (lat: number, lon: number) =>
   apiGet<FieldResponse>(`/api/v1/field?lat=${lat}&lon=${lon}`, 90_000);
+
+/* ── sea-route check (local math vs the real GLOBE 1 km land mask) ── */
+export interface RouteCheckResponse {
+  from: [number, number];
+  to: [number, number];
+  distance_km: number;
+  distance_nm: number;
+  bearing_deg: number;
+  sample_step_km: number;
+  method: string;
+  /** true = water-only (detour maybe inserted); false = blocked;
+   *  null = UNVERIFIED (land mask unavailable — never say "safe") */
+  ok: boolean | null;
+  detour: boolean;
+  legs: [number, number][];
+  land_hit?: { lat: number; lon: number; sail_km: number };
+  reason: string;
+}
+export const fetchRouteCheck = (fromLat: number, fromLon: number, toLat: number, toLon: number) =>
+  apiGet<RouteCheckResponse>(
+    `/api/v1/route-check?from_lat=${fromLat}&from_lon=${fromLon}&to_lat=${toLat}&to_lon=${toLon}`,
+    20_000);
 
 export interface LayersResponse {
   type: "FeatureCollection";

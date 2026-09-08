@@ -74,6 +74,41 @@ def _bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return (math.degrees(math.atan2(y, x)) + 360) % 360
 
 
+# ── coastal-bloom honesty probe ───────────────────────────────────────
+# The map legend says ">5 mg/m3 = bloom". Near river mouths (Hooghly,
+# Subarnarekha, Narmada...) SUSPENDED SEDIMENT can fool band-ratio
+# chlorophyll into bloom-range readings — a live reviewer flagged our
+# 11.76 mg/m3 Hooghly hotspot exactly for this. We never hide the value
+# (it IS what NOAA measured), but a bloom-range cell sitting within a
+# short sail of the coast earns an explicit turbidity caveat.
+BLOOM_MG = 5.0            # matches the chl legend's bloom threshold
+COASTAL_CAVEAT_KM = 30.0  # "coastal" = land within this sail distance
+
+
+def _distance_to_land_km(lat: float, lon: float,
+                         max_km: float = 60.0, step_km: float = 2.0) -> float | None:
+    """Nearest-land probe along 8 compass rays (real GLOBE 1 km mask —
+    pure local math, no network, no hardcoded coastline). Returns None
+    when the mask is unavailable or no land lies within max_km."""
+    if not landmask.enabled():
+        return None
+    if landmask.is_land(lat, lon) is True:
+        return 0.0
+    best: float | None = None
+    cos_lat = max(0.087, math.cos(math.radians(lat)))
+    for brg in range(0, 360, 45):
+        th = math.radians(brg)
+        d = step_km
+        while d <= max_km:
+            plat = lat + d * math.cos(th) / 111.32
+            plon = lon + d * math.sin(th) / (111.32 * cos_lat)
+            if landmask.is_land(plat, plon) is True:
+                best = d if best is None else min(best, d)
+                break
+            d += step_km
+    return best
+
+
 # ── chlorophyll grid (one ERDDAP call) ───────────────────────────────
 
 def fetch_chl_grid(lat: float, lon: float) -> dict[str, Any]:
@@ -227,6 +262,14 @@ def _hotspots(chl_points: list[dict[str, Any]], lat: float, lon: float,
     out = []
     for p in ranked:
         d = _haversine_km(lat, lon, p["lat"], p["lon"])
+        coast_km = _distance_to_land_km(p["lat"], p["lon"])
+        is_bloom = p["chl"] >= BLOOM_MG
+        caveat = None
+        if is_bloom and coast_km is not None and coast_km <= COASTAL_CAVEAT_KM:
+            caveat = (
+                "coastal bloom: river-mouth turbidity (suspended sediment) can "
+                "inflate satellite chl here — cross-check INCOIS PFZ before steaming far"
+            )
         out.append({
             "lat": p["lat"],
             "lon": p["lon"],
@@ -234,6 +277,9 @@ def _hotspots(chl_points: list[dict[str, Any]], lat: float, lon: float,
             "distance_km": round(d, 1),
             "distance_nm": round(d / 1.852, 1),
             "bearing": _compass(_bearing(lat, lon, p["lat"], p["lon"])),
+            "bloom": is_bloom,
+            "coast_km": coast_km,
+            "caveat": caveat,
         })
     return out
 

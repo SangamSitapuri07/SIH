@@ -396,6 +396,68 @@ def test_field_met_grid_carries_land_flag(monkeypatch):
     assert True in flags and False in flags        # box really spans the coast
 
 
+def test_sea_route_straight_leg_clear():
+    """Open Arabian Sea leg: every sample water → ok, no detour, one leg."""
+    from pipeline import routecheck as rc
+    r = rc.compute_sea_route(19.0, 70.5, 19.6, 71.2)
+    assert r["ok"] is True and r["detour"] is False
+    assert r["legs"] == [r["from"], r["to"]]
+    assert r["distance_nm"] > 0 and 0 <= r["bearing_deg"] < 360
+
+
+def test_sea_route_rounds_kanyakumari_with_one_real_waypoint():
+    """(8.0N,77.3E) → (9.2N,79.2E) crosses the Kanyakumari cape. The route
+    checker must find ONE computed waypoint that rounds it — and every
+    resulting leg must verify water-only under the SAME mask sampling."""
+    from pipeline import routecheck as rc
+    r = rc.compute_sea_route(8.0, 77.3, 9.2, 79.2)
+    assert r["ok"] is True and r["detour"] is True
+    assert len(r["legs"]) == 3
+    wp = r["legs"][1]
+    assert wp[0] < r["from"][0] or wp[1] > r["from"][1]  # seaward of the cape
+    for i in range(len(r["legs"]) - 1):
+        a, b = r["legs"][i], r["legs"][i + 1]
+        assert rc._seg_land_hit(a[0], a[1], b[0], b[1]) is None
+
+
+def test_sea_route_to_land_target_is_honest_block():
+    """A course whose TARGET is on land (verified vs GLOBE) can never be
+    made water-only — every detour leg ends on land. Must say ok=False
+    and never fake a safe line."""
+    from pipeline import routecheck as rc
+    r = rc.compute_sea_route(19.05, 72.2, 19.05, 72.95)  # offshore → onshore (LAND per GLOBE)
+    assert r["ok"] is False
+    assert r["legs"] == [r["from"], r["to"]]  # honest: no invented line
+
+
+def test_sea_route_unknown_when_mask_unavailable(monkeypatch):
+    """Mask down → ok=None 'unverified', never a false 'safe'."""
+    from pipeline import landmask, routecheck as rc
+    monkeypatch.setattr(landmask, "enabled", lambda: False)
+    r = rc.compute_sea_route(19.0, 70.5, 19.6, 71.2)
+    assert r["ok"] is None and "NOT verified" in r["reason"]
+
+
+def test_hotspot_coastal_bloom_gets_turbidity_caveat():
+    """Reviewer flag (11.76 mg/m³ at the river-mouth grid): a bloom-range
+    SEA cell within a short sail of land (Digha offshore: 8 km) must
+    carry the sediment caveat. (Side-proof of the land mask's value: the
+    old screenshot coordinate 21.63N 87.29E that LOOKED like river-mouth
+    water is actually DRY GROUND near Contai — the same grid artefact.)"""
+    from pipeline import field_explorer as fx
+    pts = [
+        {"lat": 21.62, "lon": 87.75, "chl": 11.763},  # Digha offshore: SEA, ~8 km from coast
+        {"lat": 19.0, "lon": 70.0, "chl": 6.0},       # bloom but far offshore (>60 km)
+    ]
+    hs = fx._hotspots(pts, 20.0, 84.0, top=3)
+    coastal = next(h for h in hs if h["chl"] == 11.763)
+    offshore = next(h for h in hs if h["chl"] == 6.0)
+    assert coastal["bloom"] is True
+    assert coastal["coast_km"] is not None and coastal["coast_km"] <= fx.COASTAL_CAVEAT_KM
+    assert coastal["caveat"] and "sediment" in coastal["caveat"]
+    assert offshore["caveat"] is None  # honest bloom, no scare-label
+
+
 # ── Rich chart series (48 h evidence arrays) ─────────────────────────
 
 def test_chart_series_exposes_all_variables():
