@@ -51,6 +51,24 @@ Aur `<application>` tag mein yeh do attributes set karo:
 yeh nahi dala to har API call fail hoga. Pura ready-made manifest
 chat/mail se paste kar lo, phir bas `flutter run`.)
 
+**3. `android/build.gradle` ke BILKUL END mein (kisi `{ }` block ke ANDAR nahi,
+file ki aakhri line ke baad) yeh paste karo** — `telephony 0.2.0` purana hai,
+AGP 8 har plugin se `namespace` maangta hai; yeh guard usse inject kar deta hai
+(warna "Could not create an instance of type ... LibraryVariantBuilderImpl /
+Namespace not specified" aata hai):
+
+```gradle
+// telephony (SOS SMS) — AGP8 namespace guard
+subprojects {
+    afterEvaluate { project ->
+        if (project.name == 'telephony' && project.hasProperty('android')) {
+            project.android.namespace = 'com.shounakmulay.telephony'
+        }
+    }
+}
+```
+
+
 ## Notes
 
 - Backend: laptop pe `uvicorn` chalu → dono same WiFi → Info tab mein laptop ka IPv4 `IP:8000` daal ke Check dabao.
