@@ -29,6 +29,13 @@ class _MapScreenState extends State<MapScreen> {
   bool _loading = false, _seaMarks = false;
   final double _zoom = 9.5;
 
+  // (B2) tap-probe + search
+  LatLng? _tap;
+  final _searchCtrl = TextEditingController();
+  List<Map<String, dynamic>> _searchRes = const [];
+  bool _searchBusy = false, _searchedOnce = false;
+  String? _searchErr;
+
   @override
   void initState() {
     super.initState();
@@ -91,6 +98,7 @@ class _MapScreenState extends State<MapScreen> {
           initialCenter: _center,
           initialZoom: _zoom,
           onMapReady: () => _ctrl.move(_center, _zoom),
+          onTap: (_, ll) => _probe(ll),
           onLongPress: (tap, ll) => _inspectPoint(ll),
         ),
         children: [
@@ -156,17 +164,41 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
           ]),
+          // (B2) tap dot — user ne KAHAN tap kiya (probe point)
+          if (_tap != null)
+            MarkerLayer(markers: [
+              Marker(
+                point: _tap!,
+                width: 26,
+                height: 26,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: OrcaTheme.teal,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                          color: OrcaTheme.tealDeep.withOpacity(0.45),
+                          blurRadius: 8)
+                    ],
+                  ),
+                ),
+              ),
+            ]),
         ],
       ),
 
-      // ── top chips: layers / seamarks / fetch-here ──
+      // ── top: SEARCH bar + chips ──
       Positioned(
         top: 10,
         left: 12,
         right: 12,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(children: [
+        child: Column(children: [
+          _searchBar(context),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
             _TopChip(
               icon: Icons.layers_rounded,
               label: _seaMarks ? '${'layers_lbl'.tr()}: OSM+${'sea_marks'.tr()}' : '${'layers_lbl'.tr()}: OSM',
@@ -185,13 +217,14 @@ class _MapScreenState extends State<MapScreen> {
                       _load(c);
                     },
             ),
-          ]),
-        ),
+            ]),
+          ),
+        ]),
       ),
 
       if (_loading)
         const Positioned(
-            top: 56,
+            top: 116,
             left: 0,
             right: 0,
             child: Center(
@@ -201,7 +234,7 @@ class _MapScreenState extends State<MapScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2.5)))),
       if (_err != null)
         Positioned(
-            top: 56,
+            top: 116,
             left: 16,
             right: 16,
             child: FetchError(detail: _err!, onRetry: () => _load(_center))),
@@ -218,7 +251,7 @@ class _MapScreenState extends State<MapScreen> {
                 color: t.cardColor.withOpacity(0.9),
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(color: t.dividerColor)),
-            child: Text('long_press_hint'.tr(),
+            child: Text('map_tap_hint'.tr(),
                 style: TextStyle(
                     fontSize: 10.5, color: t.colorScheme.secondary)),
           ),
@@ -392,6 +425,251 @@ class _MapScreenState extends State<MapScreen> {
         ]),
       ),
     );
+  }
+
+  // ── (B2) tap → dot + data sheet (kahan tap kiya, kahan ka data) ──
+  void _probe(LatLng ll) {
+    widget.app.setProbe(ll);
+    setState(() => _tap = ll);
+    Map? best;
+    double? bestD;
+    for (final p in _metPoints) {
+      final d = Marine.haversineKm(ll.latitude, ll.longitude,
+          (p['lat'] as num).toDouble(), (p['lon'] as num).toDouble());
+      if (bestD == null || d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    String v(Map m, String k, String u, [int dp = 1]) =>
+        m[k] is num ? '${(m[k] as num).toStringAsFixed(dp)} $u' : '—';
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '📍 ${ll.latitude.toStringAsFixed(3)}°N ${ll.longitude.toStringAsFixed(3)}°E',
+              style: Theme.of(ctx)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w800),
+            ),
+          ),
+          const SizedBox(height: 4),
+          if (best == null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text('fetch_here'.tr(),
+                  style: Theme.of(ctx).textTheme.bodySmall),
+            )
+          else ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'map_probe_from'.tr(args: [(bestD ?? 0).toStringAsFixed(1)]),
+                style: Theme.of(ctx)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Theme.of(ctx).colorScheme.secondary),
+              ),
+            ),
+            if (best['land'] == true)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(9)),
+                child: Text('⚠ ${'land_cell'.tr()} (GLOBE)',
+                    style: const TextStyle(
+                        fontSize: 11.5, fontWeight: FontWeight.w700)),
+              ),
+            const SizedBox(height: 6),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+              _mini('waves_lbl'.tr(), v(best, 'wave_m', 'm')),
+              _mini('wind_lbl'.tr(), v(best, 'wind_kn', 'kn', 0)),
+              _mini('sst_lbl'.tr(), v(best, 'sst_c', '°C')),
+              _mini('current_lbl'.tr(), v(best, 'current_kn', 'kn', 2)),
+            ]),
+          ],
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  setState(() => _center = ll);
+                  _load(ll);
+                },
+                icon: const Icon(Icons.download_rounded, size: 16),
+                label: Text('fetch_here'.tr()),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton.icon(
+                style:
+                    FilledButton.styleFrom(backgroundColor: OrcaTheme.teal),
+                onPressed: () {
+                  widget.app.setTarget(NavTarget(
+                      'map ${ll.latitude.toStringAsFixed(3)},${ll.longitude.toStringAsFixed(3)}',
+                      ll.latitude,
+                      ll.longitude));
+                  widget.app.jumpTab?.call(2);
+                },
+                icon: const Icon(Icons.explore_rounded,
+                    size: 16, color: Colors.white),
+                label: Text('nav_pick_tap'.tr(),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, color: Colors.white)),
+              ),
+            ),
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  // ── (B2) search: OSM Nominatim (real geocoder) ──
+  Future<void> _search(String q) async {
+    q = q.trim();
+    if (q.isEmpty) return;
+    setState(() {
+      _searchBusy = true;
+      _searchErr = null;
+      _searchRes = const [];
+      _searchedOnce = true;
+    });
+    try {
+      final r = await OrcaApi.geocode(q);
+      if (!mounted) return;
+      setState(() {
+        _searchRes = r;
+        _searchBusy = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _searchErr = '$e';
+        _searchBusy = false;
+      });
+    }
+  }
+
+  void _goResult(Map<String, dynamic> r) {
+    final lat = double.tryParse('${r['lat']}');
+    final lon = double.tryParse('${r['lon']}');
+    if (lat == null || lon == null) return;
+    final ll = LatLng(lat, lon);
+    setState(() => _searchRes = const []);
+    _searchCtrl.clear();
+    _ctrl.move(ll, 11);
+    _probe(ll);
+  }
+
+  Widget _searchBar(BuildContext context) {
+    final t = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: t.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.dividerColor),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8)
+        ],
+      ),
+      child: Column(children: [
+        Row(children: [
+          const SizedBox(width: 10),
+          Icon(Icons.search_rounded,
+              size: 18, color: t.colorScheme.secondary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: TextField(
+              controller: _searchCtrl,
+              onSubmitted: _search,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: 'map_search_hint'.tr(),
+                isDense: true,
+              ),
+            ),
+          ),
+          _searchBusy
+              ? const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2)))
+              : IconButton(
+                  icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                  onPressed: () => _search(_searchCtrl.text),
+                  visualDensity: VisualDensity.compact,
+                ),
+        ]),
+        if (_searchErr != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('✖ $_searchErr',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 10.5, color: OrcaTheme.dangerRed)),
+            ),
+          )
+        else if (_searchRes.isNotEmpty)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 190),
+            child: ListView.builder(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              itemCount: _searchRes.length,
+              itemBuilder: (_, i) {
+                final r = _searchRes[i];
+                final name = '${r['display_name'] ?? ''}';
+                final short = name.split(',').first;
+                return ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.place_outlined, size: 18),
+                  title: Text(short,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  subtitle: Text(name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 10)),
+                  onTap: () => _goResult(r),
+                );
+              },
+            ),
+          )
+        else if (_searchedOnce && !_searchBusy)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text('search_no_result'.tr(),
+                style: TextStyle(
+                    fontSize: 11, color: t.colorScheme.secondary)),
+          ),
+      ]),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   Widget _mini(String l, String v) => Column(children: [

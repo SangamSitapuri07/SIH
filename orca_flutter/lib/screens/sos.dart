@@ -104,11 +104,23 @@ class _SosScreenState extends State<SosScreen> {
       final telephony = Telephony.instance;
       final perm = await telephony.requestPhoneAndSmsPermissions ?? false;
       if (perm != true) {
-        if (mounted) setState(() => _smsState = 'fail');
+        await _smsFallback(phone); // permission nahi mili — SMS app kholo
         return;
       }
       await telephony.sendSms(to: phone, message: _smsBody);
       if (mounted) setState(() => _smsState = 'sent');
+    } catch (_) {
+      await _smsFallback(phone); // SIM/radio dikkat — honest fallback
+    }
+  }
+
+  /// Direct send fail hua to prefilled SMS app kholo + state 'fallback'.
+  /// Fisher ko clear dikhe: app ne koshish ki, ab SEND usko khud dabana hai.
+  Future<void> _smsFallback(String phone) async {
+    try {
+      await launchUrl(Uri.parse(
+          'sms:$phone?body=${Uri.encodeComponent(_smsBody)}'));
+      if (mounted) setState(() => _smsState = 'fallback');
     } catch (_) {
       if (mounted) setState(() => _smsState = 'fail');
     }
@@ -260,6 +272,14 @@ class _SosScreenState extends State<SosScreen> {
               ),
             ),
           ]),
+          if (_smsState == 'fallback')
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text('sos_sms_fallback'.tr(),
+                  style: const TextStyle(
+                      color: OrcaTheme.warnAmber,
+                      fontWeight: FontWeight.w700)),
+            ),
           if (_smsState == 'fail')
             Padding(
               padding: const EdgeInsets.only(top: 6),

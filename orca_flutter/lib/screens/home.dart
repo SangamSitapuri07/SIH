@@ -359,9 +359,111 @@ class _VerdictCard extends StatelessWidget {
               style: t.textTheme.bodyMedium?.copyWith(
                   fontSize: 13.5, fontStyle: FontStyle.italic)),
         ],
+        const SizedBox(height: 4),
+        _explainSection(context, t),
       ]),
     );
   }
+
+  /// (B2) "विस्तार से समझाओ" — advisory payload ka HAR number, safe window,
+  /// sources + failed reasons, timestamp. Kuch invented nahi.
+  Widget _explainSection(BuildContext context, ThemeData t) {
+    final vars = (adv['variables'] as Map?) ?? const {};
+    const units = {
+      'wave_height_m': 'm',
+      'swell_m': 'm',
+      'wind_kts': 'kn',
+      'wind_kn': 'kn',
+      'gust_kts': 'kn',
+      'gust_kn': 'kn',
+      'sst_c': '°C',
+      'current_kn': 'kn',
+      'current_dir': '°',
+      'chlorophyll_mg_m3': 'mg/m³',
+      'rain_mm': 'mm',
+    };
+    String label(String k) => k
+        .replaceAll('_', ' ')
+        .replaceAllMapped(
+            RegExp(r'\b\w'), (m) => m.group(0)!.toUpperCase());
+    final used = (adv['sources'] as List?) ?? const [];
+    final failed = (adv['sources_failed'] as List?) ?? const [];
+    final safe = '${adv['safe_window'] ?? ''}';
+    final gen = '${adv['generated_at'] ?? ''}';
+    final disc = '${adv['disclaimer'] ?? ''}';
+    String srcLabel(dynamic e) =>
+        e is Map ? '${e['source'] ?? e['name'] ?? '?'}' : '$e';
+    String srcWhy(dynamic e) =>
+        e is Map ? '${e['reason'] ?? e['error'] ?? ''}'.trim() : '';
+    return Theme(
+      data: t.copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        iconColor: OrcaTheme.tealDeep,
+        collapsedIconColor: OrcaTheme.tealDeep,
+        title: Text('home_explain'.tr(),
+            style: t.textTheme.bodyMedium?.copyWith(
+                color: OrcaTheme.tealDeep, fontWeight: FontWeight.w800)),
+        children: [
+          for (final e in vars.entries)
+            if (e.value is num)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(children: [
+                  Expanded(
+                      child: Text(label('${e.key}'),
+                          style: t.textTheme.bodySmall)),
+                  Text(
+                      '${(e.value as num).toStringAsFixed(2)}${units['${e.key}'] != null ? ' ${units['${e.key}']}' : ''}',
+                      style: t.textTheme.bodySmall
+                          ?.copyWith(fontWeight: FontWeight.w800)),
+                ]),
+              ),
+          if (safe.isNotEmpty && safe != 'null')
+            _small(t, '⏱ $safe'),
+          if (gen.isNotEmpty && gen != 'null')
+            _small(t, '🕒 ${gen.substring(0, 16).replaceAll('T', ' ')}'),
+          if (used.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: used
+                      .map((e) => Chip(
+                          visualDensity: VisualDensity.compact,
+                          label: Text(srcLabel(e),
+                              style: const TextStyle(fontSize: 10)),
+                          backgroundColor: OrcaTheme.mintChip))
+                      .toList()),
+            ),
+          for (final e in failed)
+            _small(
+                t,
+                '✖ ${srcLabel(e)}${srcWhy(e).isNotEmpty ? ': ${srcWhy(e)}' : ''}',
+                color: OrcaTheme.dangerRed),
+          if (disc.isNotEmpty && disc != 'null')
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(disc,
+                  style: t.textTheme.bodySmall?.copyWith(
+                      color: OrcaTheme.subText, fontStyle: FontStyle.italic)),
+            ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _small(ThemeData t, String s, {Color? color}) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(s,
+              style: t.textTheme.bodySmall?.copyWith(color: color)),
+        ),
+      );
 }
 
 class _MetricTiles extends StatelessWidget {

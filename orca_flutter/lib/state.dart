@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
@@ -16,16 +17,24 @@ class NavTarget {
 class AppState extends ChangeNotifier {
   NavTarget? navTarget;
   Position? lastFix; // last GPS fix — Home/SOS/Nav share karte hain
+  LatLng? probePoint; // (B2) map tap/search point — Nav "tapped point" isko use karta hai
+  bool returnToHarbour = false; // (B2) 🏝️ return-mode badge
   void Function(int tabIndex)? jumpTab;
 
-  void setTarget(NavTarget t) {
+  void setTarget(NavTarget t, {bool ret = false}) {
     navTarget = t;
+    returnToHarbour = ret;
     notifyListeners();
   }
 
   void clearTarget() {
     navTarget = null;
+    returnToHarbour = false;
     notifyListeners();
+  }
+
+  void setProbe(LatLng p) {
+    probePoint = p; // no notify — read-on-tap hi chahiye
   }
 
   void setFix(Position p) {

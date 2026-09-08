@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../api.dart';
+import '../data/harbours.dart';
 import '../marine.dart';
 import '../state.dart';
 import '../theme.dart';
@@ -179,6 +180,111 @@ class _NavigateScreenState extends State<NavigateScreen>
     }
   }
 
+  // ── (B2) destination option tile ──
+  Widget _destOpt(ThemeData t, IconData ic, String labelKey, Color color,
+          VoidCallback? onTap) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: SizedBox(
+          width: double.infinity,
+          child: Card(
+            margin: EdgeInsets.zero,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(color: t.dividerColor)),
+            child: ListTile(
+              onTap: onTap,
+              enabled: onTap != null,
+              leading: CircleAvatar(
+                  backgroundColor: color.withOpacity(0.15),
+                  child: Icon(ic, size: 19, color: color)),
+              title: Text(labelKey.tr(),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 14)),
+              trailing: Icon(
+                  onTap == null
+                      ? Icons.lock_outline_rounded
+                      : Icons.chevron_right_rounded,
+                  color: t.colorScheme.secondary,
+                  size: 18),
+            ),
+          ),
+        ),
+      );
+
+  /// 🏝️ Fas-gaya mode — GPS + bundled harbour list = 100% OFFLINE.
+  /// Network ki zaroorat hi nahi; online ho to route-check baad me.
+  Future<void> _returnToHarbour() async {
+    Position? f = widget.app.lastFix;
+    if (f == null) {
+      try {
+        f = await orcaFix();
+      } catch (_) {
+        f = null; // gps off / permission nahi — koi rona nahi, no-op
+      }
+    }
+    if (f == null) return;
+    Harbour? best;
+    var bestKm = double.infinity;
+    final ff = f;
+    for (final h in kHarbours) {
+      final d = Marine.haversineKm(ff.latitude, ff.longitude, h.lat, h.lon);
+      if (d < bestKm) {
+        bestKm = d;
+        best = h;
+      }
+    }
+    final h = best!;
+    widget.app.setTarget(
+        NavTarget(
+            '🏝️ ${h.name} · ${Marine.kmToNm(bestKm).toStringAsFixed(0)} NM',
+            h.lat,
+            h.lon),
+        ret: true);
+  }
+
+  Future<void> _coordsDialog() async {
+    final la = TextEditingController();
+    final lo = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('nav_pick_coords'.tr()),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+              controller: la,
+              keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true, signed: true),
+              decoration: const InputDecoration(labelText: 'lat')),
+          TextField(
+              controller: lo,
+              keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true, signed: true),
+              decoration: const InputDecoration(labelText: 'lon')),
+        ]),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('✕')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('apply_lbl'.tr())),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final lat = double.tryParse(la.text.trim());
+    final lon = double.tryParse(lo.text.trim());
+    if (lat == null || lon == null || lat.abs() > 90 || lon.abs() > 180) {
+      return; // invalid input — kuch set nahi hua (honest no-op)
+    }
+    widget.app.setTarget(NavTarget(
+        'manual ${lat.toStringAsFixed(3)},${lon.toStringAsFixed(3)}',
+        lat,
+        lon));
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -194,27 +300,50 @@ class _NavigateScreenState extends State<NavigateScreen>
     final t = Theme.of(context);
     final tgt = widget.app.navTarget;
     if (tgt == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.explore_off_rounded,
-                size: 46, color: t.colorScheme.secondary.withOpacity(0.7)),
-            const SizedBox(height: 12),
-            Text('nav_no_target'.tr(),
-                textAlign: TextAlign.center, style: t.textTheme.bodyMedium),
-            const SizedBox(height: 14),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: OrcaTheme.teal),
-              onPressed: () => widget.app.jumpTab?.call(1),
-              icon: const Icon(Icons.map_rounded,
-                  size: 18, color: Colors.white),
-              label: Text('pick_on_map'.tr(),
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800, color: Colors.white)),
-            ),
-          ]),
-        ),
+      final probe = widget.app.probePoint;
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+        children: [
+          Icon(Icons.explore_off_rounded,
+              size: 46, color: t.colorScheme.secondary.withOpacity(0.7)),
+          const SizedBox(height: 10),
+          Text('nav_no_target'.tr(),
+              textAlign: TextAlign.center, style: t.textTheme.bodyMedium),
+          const SizedBox(height: 18),
+          _destOpt(
+            t,
+            Icons.anchor_rounded,
+            'nav_pick_harbour',
+            OrcaTheme.tealDeep,
+            _returnToHarbour,
+          ),
+          _destOpt(
+            t,
+            Icons.touch_app_rounded,
+            'nav_pick_tap',
+            OrcaTheme.teal,
+            probe == null
+                ? null
+                : () => widget.app.setTarget(NavTarget(
+                    'map ${probe.latitude.toStringAsFixed(3)},${probe.longitude.toStringAsFixed(3)}',
+                    probe.latitude,
+                    probe.longitude)),
+          ),
+          _destOpt(
+            t,
+            Icons.edit_location_alt_rounded,
+            'nav_pick_coords',
+            OrcaTheme.warnAmber,
+            _coordsDialog,
+          ),
+          _destOpt(
+            t,
+            Icons.map_rounded,
+            'pick_on_map',
+            t.colorScheme.secondary,
+            () => widget.app.jumpTab?.call(1),
+          ),
+        ],
       );
     }
 
@@ -332,6 +461,20 @@ class _NavigateScreenState extends State<NavigateScreen>
                     ?.copyWith(fontWeight: FontWeight.w700, fontSize: 12.5),
                 overflow: TextOverflow.ellipsis),
           ),
+          if (widget.app.returnToHarbour)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                    color: OrcaTheme.mintChip,
+                    borderRadius: BorderRadius.circular(99)),
+                child: Text('nav_return_badge'.tr(),
+                    style: const TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.w800)),
+              ),
+            ),
           IconButton(
               onPressed: () {
                 widget.app.clearTarget();
