@@ -27,42 +27,13 @@ import { chlColor, waveColor, windColor, currentColor, sstColor } from "@/compon
 
 const Ocean3D = dynamic(() => import("@/components/Ocean3D"), { ssr: false });
 
-/* ── navigation helpers: pure client-side marine math (haversine) ─────
-   There is no road graph at sea — real marine GPS/chartplotters guide
-   along a COURSE LINE. We do the same: distance/bearing/ETA from the
-   phone's OWN GPS (watchPosition) to the chosen hotspot. No invented
-   routing engine, no fake turn-by-turn — just exact spherical math. */
-function haversineKm(aLa: number, aLo: number, bLa: number, bLo: number): number {
-  const R = 6371.0;
-  const p1 = (aLa * Math.PI) / 180, p2 = (bLa * Math.PI) / 180;
-  const dp = ((bLa - aLa) * Math.PI) / 180, dl = ((bLo - aLo) * Math.PI) / 180;
-  const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
-function bearingDeg(aLa: number, aLo: number, bLa: number, bLo: number): number {
-  const p1 = (aLa * Math.PI) / 180, p2 = (bLa * Math.PI) / 180;
-  const dl = ((bLo - aLo) * Math.PI) / 180;
-  const y = Math.sin(dl) * Math.cos(p2);
-  const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
-}
-const COMPASS16 = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
-const compass = (d: number) => COMPASS16[Math.floor((d + 11.25) / 22.5) % 16];
-
-/** perpendicular distance (km) from point P to segment A-B (equirectangular
- *  approx — jitter-level error at our tens-of-km sail distances) */
-function crossTrackKm(pLa: number, pLo: number, aLa: number, aLo: number, bLa: number, bLo: number): number {
-  const toXY = (la: number, lo: number) => ({
-    x: (lo - aLo) * 111.32 * Math.cos((aLa * Math.PI) / 180),
-    y: (la - aLa) * 110.574,
-  });
-  const p = toXY(pLa, pLo), b = toXY(bLa, bLo);
-  const len2 = b.x * b.x + b.y * b.y;
-  if (len2 < 1e-9) return Math.hypot(p.x, p.y);
-  let t = (p.x * b.x + p.y * b.y) / len2;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(p.x - t * b.x, p.y - t * b.y);
-}
+/* navigation math lives in lib/marine-math.ts (shared with the SOS
+ * panel): haversine distance, bearing, cross-track — pure client-side,
+ * offline-capable; there is no road graph at sea, guidance IS a course
+ * line like every real chartplotter. */
+import { bearingDeg, compass, crossTrackKm, haversineKm } from "@/lib/marine-math";
+import { useOnline } from "@/lib/useOnline";
+import SosPanel, { SosFix } from "@/components/SosPanel";
 
 type Trend = {
   labels: string[];
@@ -142,7 +113,7 @@ export default function FieldExplorer({
 
   // ── marine navigation state (all REAL: phone GPS + haversine + the
   //    backend's GLOBE-mask route verification; nothing simulated) ──
-  type GpsFix = { lat: number; lon: number; acc: number; speed: number | null; heading: number | null; ts: number };
+  type GpsFix = SosFix;
   type Hotspot = FieldResponse["hotspots"][number];
   const [gpsOn, setGpsOn] = useState(false);
   const [gps, setGps] = useState<GpsFix | null>(null);
@@ -152,6 +123,8 @@ export default function FieldExplorer({
   const [routeBusy, setRouteBusy] = useState(false);
   const [seaMarks, setSeaMarks] = useState(false);
   const watchRef = useRef<number | null>(null);
+  const online = useOnline();
+  const [sos, setSos] = useState(false);
 
   // ── trip TRACE: breadcrumb track of where the boat actually went.
   //    Points are the device's own GPS fixes (20 m jitter filter), kept
@@ -324,6 +297,11 @@ export default function FieldExplorer({
             🔬 {lang === "hi" ? "विज़ुअल एक्सप्लोरर" : "Visual Explorer"}
           </h2>
           <span className="text-[11px] text-slate-500 font-mono shrink-0">{fmtLat(lat)}, {fmtLon(lon)} · ±1.2°</span>
+          {!online && (
+            <span className="text-[10px] rounded-md border border-red-500/50 bg-red-950/70 text-red-200 px-2 py-1 shrink-0">
+              📡 {lang === "hi" ? "OFFLINE — GPS चलेगा; satellite/API data purana" : "OFFLINE — GPS works; API data is stale"}
+            </span>
+          )}
           {/* view toggle: 2D map vs living 3D ocean (same real data) */}
           <div className="flex gap-1 bg-[#0E1729] border border-[#1C2A45] rounded-lg p-1 shrink-0">
             <button
@@ -392,6 +370,15 @@ export default function FieldExplorer({
                 }`}
               >
                 🛤️ {lang === "hi" ? (tripOn ? "Trace चालू" : "Trip trace") : (tripOn ? "Tracing" : "Trip trace")}
+              </button>
+              <button
+                onClick={() => setSos(true)}
+                title={lang === "hi"
+                  ? "SOS — बिना इंटरनेट काम करने वाला panel (GPS position, Coast Guard 1554, SMS, नज़दीकी बंदरगाह, VHF 16)"
+                  : "SOS — works with zero internet (GPS position, Coast Guard 1554, SMS, nearest harbours, VHF 16)"}
+                className="text-[11px] rounded-md px-2.5 py-1.5 border border-red-500/60 bg-red-500/15 text-red-300 font-bold transition shrink-0 hover:bg-red-500/30"
+              >
+                🆘 SOS
               </button>
             </>
           )}
@@ -651,6 +638,16 @@ export default function FieldExplorer({
             </div>
           )}
           </>
+          )}
+          {/* 🆘 zero-internet emergency panel (fully client-side) */}
+          {sos && (
+            <SosPanel
+              lat={lat} lon={lon}
+              gps={gps} gpsOn={gpsOn} online={online}
+              lang={lang}
+              onClose={() => setSos(false)}
+              onStartGps={startGps}
+            />
           )}
         </div>
 
