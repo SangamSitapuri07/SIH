@@ -135,5 +135,9 @@
   "al_offcourse": "Off course by {} NM — steer {}° back",
   "al_turn": "Turn now: {}° ({} NM to waypoint)",
   "al_ontrack": "Back on course ✔",
-  "al_dest_worse": "Destination weather got worse: {}"
+  "al_dest_worse": "Destination weather got worse: {}",
+  "nav_set_start": "Set start point (manual)",
+  "nav_start_gps": "Start: live GPS",
+  "nav_start_manual": "Start: your point {}, {}",
+  "nav_demo_note": "Plan mode: route + safety verdict work; live steering/alerts pause (boat not really there)"
 }

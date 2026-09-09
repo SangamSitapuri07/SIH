@@ -18,8 +18,34 @@ class AppState extends ChangeNotifier {
   NavTarget? navTarget;
   Position? lastFix; // last GPS fix — Home/SOS/Nav share karte hain
   LatLng? probePoint; // (B2) map tap/search point — Nav "tapped point" isko use karta hai
+  LatLng? demoOrigin; // (B6) PLAN-ANYWHERE — manual start point (persisted)
   bool returnToHarbour = false; // (B2) 🏝️ return-mode badge
   void Function(int tabIndex)? jumpTab;
+
+  static const _kOLat = 'orca_orig_lat', _kOLon = 'orca_orig_lon';
+
+  /// (B6) app start pe persisted manual origin load (demo/Punjab se
+  /// planning ke liye — GPS zameen pe ho to bhi samundar ka route bane).
+  Future<void> loadDemoOrigin() async {
+    final p = await SharedPreferences.getInstance();
+    final la = p.getDouble(_kOLat), lo = p.getDouble(_kOLon);
+    demoOrigin = (la != null && lo != null) ? LatLng(la, lo) : null;
+  }
+
+  /// (B6) set/clear manual start point → EVERYTHING (route, verdict)
+  /// re-origin hota hai. null = wapas GPS mode.
+  Future<void> setDemoOrigin(LatLng? p) async {
+    demoOrigin = p;
+    final sp = await SharedPreferences.getInstance();
+    if (p == null) {
+      await sp.remove(_kOLat);
+      await sp.remove(_kOLon);
+    } else {
+      await sp.setDouble(_kOLat, p.latitude);
+      await sp.setDouble(_kOLon, p.longitude);
+    }
+    notifyListeners();
+  }
 
   void setTarget(NavTarget t, {bool ret = false}) {
     navTarget = t;

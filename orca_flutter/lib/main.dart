@@ -37,6 +37,7 @@ Future<void> main() async {
   final settings = Settings();
   await settings.load();
   final app = AppState();
+  await app.loadDemoOrigin(); // (B6) persisted manual start point
   runApp(EasyLocalization(
     supportedLocales: kLangs.map((l) => l.locale).toList(),
     path: 'assets/i18n',

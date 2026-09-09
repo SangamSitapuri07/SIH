@@ -140,7 +140,9 @@ class _NavigateScreenState extends State<NavigateScreen>
 
   void _tickAlerts(Position fix) {
     final rules = _rules;
-    if (rules == null || widget.app.navTarget == null) return;
+    // (B6) plan-mode: naav sach me wahan nahi — live alerts honestly OFF
+    if (rules == null || widget.app.navTarget == null ||
+        widget.app.demoOrigin != null) return;
     for (final a in rules.tick(fix.latitude, fix.longitude)) {
       final col = a.type == 'offcourse'
           ? OrcaTheme.dangerRed
@@ -193,13 +195,13 @@ class _NavigateScreenState extends State<NavigateScreen>
   /// hi chalta hai; cooldown isliye taaki har GPS tick pe fire na ho.
   Future<void> _maybeRtAdv() async {
     final tgt = widget.app.navTarget;
-    final fix = _fix;
-    if (tgt == null || fix == null) return;
+    final org = _origin(); // (B6) manual start > GPS
+    if (tgt == null || org == null) return;
     if (_rtAdvFor == tgt) return; // one-shot per target (in-flight bhi)
     _rtAdvFor = tgt;
     try {
       final r = await OrcaApi.routeAdvisory(
-          widget.settings.base, fix.latitude, fix.longitude, tgt.lat, tgt.lon);
+          widget.settings.base, org.lat, org.lon, tgt.lat, tgt.lon);
       if (mounted && widget.app.navTarget == tgt) {
         setState(() => _rtAdv = r);
       }
@@ -320,16 +322,16 @@ class _NavigateScreenState extends State<NavigateScreen>
 
   Future<void> _maybeRouteCheck() async {
     final tgt = widget.app.navTarget;
-    final fix = _fix;
-    if (tgt == null || fix == null) return;
+    final org = _origin(); // (B6) manual start > GPS
+    if (tgt == null || org == null) return;
     if (_routeFor == tgt && _route != null) return;
     _routeFor = tgt;
     try {
       final r = await OrcaApi.routeCheck(
-          widget.settings.base, fix.latitude, fix.longitude, tgt.lat, tgt.lon);
+          widget.settings.base, org.lat, org.lon, tgt.lat, tgt.lon);
       if (mounted && widget.app.navTarget == tgt) {
         setState(() => _route = r);
-        _wireRulesFrom(r); // (B5) offline alert-engine LIVE
+        if (widget.app.demoOrigin == null) _wireRulesFrom(r); // (B5) live only
       }
     } catch (e) {
       if (mounted && widget.app.navTarget == tgt) {
@@ -337,18 +339,18 @@ class _NavigateScreenState extends State<NavigateScreen>
               'ok': null,
               'reason': 'route-check failed: $e',
               'legs': [
-                {'lat': fix.latitude, 'lon': fix.longitude},
+                {'lat': org.lat, 'lon': org.lon},
                 {'lat': tgt.lat, 'lon': tgt.lon},
               ],
             });
-        _wireRulesFrom(_route); // fallback line pe bhi alerts chalenge
+        if (widget.app.demoOrigin == null) _wireRulesFrom(_route);
       }
     }
   }
 
   void _checkArrival(Position fix) {
     final tgt = widget.app.navTarget;
-    if (tgt == null) return;
+    if (tgt == null || widget.app.demoOrigin != null) return; // (B6) plan-mode: arrival n/a
     final dNm = Marine.kmToNm(
         Marine.haversineKm(fix.latitude, fix.longitude, tgt.lat, tgt.lon));
     if (dNm <= _arriveNm && !_arrivedNotified) {
@@ -423,7 +425,91 @@ class _NavigateScreenState extends State<NavigateScreen>
         ret: true);
   }
 
+  // ── (B6) PLAN-ANYWHERE: effective start = manual demo-origin > GPS ──
+  /// PLAN mode (manual set) me LIVE cheezein (steer/off-course/arrival,
+  /// alert-ticks) honestly PAUSE hoti hain — naav sach me wahan nahi hai;
+  /// planning (route + transit verdict + waypoint list) FULL chalti hai.
+  ({double lat, double lon})? _origin() {
+    final d = widget.app.demoOrigin;
+    if (d != null) return (lat: d.latitude, lon: d.longitude);
+    final f = _fix;
+    return f == null ? null : (lat: f.latitude, lon: f.longitude);
+  }
+
+  /// (B6) origin badla → route/verdict/alerts sab re-compute (stale na rahe)
+  void _invalidateRouteState() {
+    _route = null;
+    _routeFor = null;
+    _rules = null;
+    _rtAdv = null;
+    _rtAdvFor = null;
+    _rtAdvErr = null;
+    _bannerTxt = null;
+    _tgtColorRank = 1;
+  }
+
+  /// (B6) manual start point dialog — coords daalo, wahan se SAB kuch
+  /// (route-check land verify, transit verdict, distance/bearing) chalega.
+  Future<void> _startDialog() async {
+    final d0 = widget.app.demoOrigin;
+    final la = TextEditingController(
+        text: d0 == null ? '' : d0.latitude.toStringAsFixed(4));
+    final lo = TextEditingController(
+        text: d0 == null ? '' : d0.longitude.toStringAsFixed(4));
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: Text('nav_set_start'.tr()),
+        content: Row(children: [
+          Expanded(
+              child: TextField(
+                  controller: la,
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true, signed: true),
+                  decoration: const InputDecoration(labelText: 'Lat'))),
+          const SizedBox(width: 10),
+          Expanded(
+              child: TextField(
+                  controller: lo,
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true, signed: true),
+                  decoration: const InputDecoration(labelText: 'Lon'))),
+        ]),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dctx, false),
+              child: Text('close_lbl'.tr())),
+          FilledButton(
+              onPressed: () => Navigator.pop(dctx, true),
+              child: Text('apply_lbl'.tr())),
+        ],
+      ),
+    );
+    if (ok == true) {
+      final a = double.tryParse(la.text.trim());
+      final o = double.tryParse(lo.text.trim());
+      if (a != null && o != null && a.abs() <= 90 && o.abs() <= 180) {
+        await widget.app.setDemoOrigin(LatLng(a, o));
+        if (!mounted) return;
+        _invalidateRouteState();
+        _maybeRouteCheck();
+        _maybeRtAdv();
+        setState(() {});
+      }
+    }
+  }
+
+  /// (B6) wapas GPS mode — live navigation + alerts phir chalu.
+  Future<void> _clearStart() async {
+    await widget.app.setDemoOrigin(null);
+    if (!mounted) return;
+    _invalidateRouteState();
+    _maybeRouteCheck();
+    setState(() {});
+  }
+
   Future<void> _coordsDialog() async {
+
     final la = TextEditingController();
     final lo = TextEditingController();
     final ok = await showDialog<bool>(
@@ -516,6 +602,14 @@ class _NavigateScreenState extends State<NavigateScreen>
             OrcaTheme.warnAmber,
             _coordsDialog,
           ),
+          // (B6) PLAN-ANYWHERE — manual start (Punjab baithe samundar ka route)
+          _destOpt(
+            t,
+            Icons.my_location_rounded,
+            widget.app.demoOrigin == null ? 'nav_set_start' : 'nav_start_gps',
+            OrcaTheme.okGreen,
+            widget.app.demoOrigin == null ? _startDialog : _clearStart,
+          ),
           _destOpt(
             t,
             Icons.map_rounded,
@@ -523,26 +617,36 @@ class _NavigateScreenState extends State<NavigateScreen>
             t.colorScheme.secondary,
             () => widget.app.jumpTab?.call(1),
           ),
+          if (widget.app.demoOrigin != null) ...[
+            const SizedBox(height: 8),
+            Text('nav_demo_note'.tr(),
+                textAlign: TextAlign.center,
+                style: t.textTheme.bodySmall
+                    ?.copyWith(color: t.colorScheme.secondary)),
+          ],
         ],
       );
     }
 
     final fix = _fix;
+    final org = _origin(); // (B6) manual start > GPS
+    final liveMode = widget.app.demoOrigin == null; // plan-mode: live cheezein pause
     // distKm ek hi baar — distNm + ETA dono isi se derive (promotion-safe)
-    final distKm = fix == null
+    final distKm = org == null
         ? null
-        : Marine.haversineKm(fix.latitude, fix.longitude, tgt.lat, tgt.lon);
+        : Marine.haversineKm(org.lat, org.lon, tgt.lat, tgt.lon);
     final distNm = distKm == null ? null : Marine.kmToNm(distKm);
-    final brg = fix == null
+    final brg = org == null
         ? null
-        : Marine.bearingDeg(fix.latitude, fix.longitude, tgt.lat, tgt.lon);
+        : Marine.bearingDeg(org.lat, org.lon, tgt.lat, tgt.lon);
     final speedKn = fix == null ? 0.0 : fix.speed * 1.943844;
-    final etaTxt = distKm == null ? null : Marine.eta(distKm, speedKn);
-    // cross-track vs best leg
+    final etaTxt =
+        liveMode && distKm != null ? Marine.eta(distKm, speedKn) : null;
+    // cross-track vs best leg (LIVE mode only — demo origin pe GPS naav se door hai)
     double? xtrackNm;
     var bestI = 0; // (B3) closest segment — next waypoint isi se niklega
     final legs = (_route?['legs'] as List?) ?? [];
-    if (fix != null && legs.length >= 2) {
+    if (liveMode && fix != null && legs.length >= 2) {
       var best = double.infinity;
       for (var i = 0; i + 1 < legs.length; i++) {
         final a = legs[i], b = legs[i + 1];
@@ -555,11 +659,14 @@ class _NavigateScreenState extends State<NavigateScreen>
       }
       if (best.isFinite) xtrackNm = Marine.kmToNm(best);
     }
-    final offCourse = xtrackNm != null && xtrackNm > _offCourseNm;
-    final arrived = distNm != null && distNm <= _arriveNm;
+    final offCourse =
+        liveMode && xtrackNm != null && xtrackNm > _offCourseNm;
+    final arrived =
+        liveMode && distNm != null && distNm <= _arriveNm;
     // (B3) agla waypoint — Google-maps style "next 245° · 0.8 NM"
+    // (B6: waypoint list LEGS se^ neeche dikhti hai; HUD cue live-mode only)
     String? wpTxt;
-    if (fix != null && legs.length >= 2) {
+    if (liveMode && fix != null && legs.length >= 2) {
       final wp = legs[(bestI + 1).clamp(1, legs.length - 1)];
       final wLat = _legLat(wp), wLon = _legLon(wp);
       final wb = Marine.bearingDeg(fix.latitude, fix.longitude, wLat, wLon);
@@ -570,7 +677,7 @@ class _NavigateScreenState extends State<NavigateScreen>
             '${wb.toStringAsFixed(0).padLeft(3, '0')}° ${wd.toStringAsFixed(1)}NM';
       }
     }
-    final steer = (fix != null && speedKn > 1.0 && brg != null)
+    final steer = (liveMode && fix != null && speedKn > 1.0 && brg != null)
         ? Marine.steerHint(fix.heading, brg)
         : null;
     final String? steerTxt = steer == null
@@ -615,8 +722,8 @@ class _NavigateScreenState extends State<NavigateScreen>
         height: 220,
         child: FlutterMap(
           options: MapOptions(
-            initialCenter: fix != null
-                ? LatLng(fix.latitude, fix.longitude)
+            initialCenter: org != null
+                ? LatLng(org.lat, org.lon)
                 : LatLng(tgt.lat, tgt.lon),
             initialZoom: 10.5,
           ),
@@ -711,6 +818,49 @@ class _NavigateScreenState extends State<NavigateScreen>
                   size: 20, color: t.colorScheme.secondary)),
         ]),
       ),
+      // ── (B6) START chip — kahan SE: live GPS ya manual plan-point ──
+      Padding(
+        padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+        child: GestureDetector(
+          onTap: widget.app.demoOrigin == null ? _startDialog : _clearStart,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: OrcaTheme.mintChip,
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: Row(children: [
+              Icon(Icons.my_location_rounded,
+                  size: 14,
+                  color: widget.app.demoOrigin == null
+                      ? OrcaTheme.okGreen
+                      : OrcaTheme.warnAmber),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  widget.app.demoOrigin == null
+                      ? 'nav_start_gps'.tr()
+                      : 'nav_start_manual'.tr(args: [
+                          widget.app.demoOrigin!.latitude.toStringAsFixed(3),
+                          widget.app.demoOrigin!.longitude.toStringAsFixed(3),
+                        ]),
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Icon(Icons.swap_horiz_rounded,
+                  size: 16, color: t.colorScheme.secondary),
+            ]),
+          ),
+        ),
+      ),
+      if (widget.app.demoOrigin != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 3, 16, 0),
+          child: Text('nav_demo_note'.tr(),
+              style: t.textTheme.bodySmall
+                  ?.copyWith(color: OrcaTheme.warnAmber, fontSize: 10.5)),
+        ),
       // ── (B3) destination conditions — advisory@target (REAL verdict) ──
       if (_tgtAdv != null)
         Padding(
@@ -923,7 +1073,7 @@ class _NavigateScreenState extends State<NavigateScreen>
                 style: t.textTheme.bodySmall
                     ?.copyWith(color: OrcaTheme.warnAmber)),
           )
-        else if (_fix != null)
+        else if (_fix != null || widget.app.demoOrigin != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
             child: Row(children: [

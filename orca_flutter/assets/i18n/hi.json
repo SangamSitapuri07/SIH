@@ -135,5 +135,9 @@
   "al_offcourse": "रास्ते से {} NM हट गए — {}° पर वापस आओ",
   "al_turn": "अब मुड़ो: {}° पर (वेपॉइंट {} NM)",
   "al_ontrack": "रास्ते पर वापस आ गए ✔",
-  "al_dest_worse": "डेस्टिनेशन का मौसम बिगड़ा — अब {}"
+  "al_dest_worse": "डेस्टिनेशन का मौसम बिगड़ा — अब {}",
+  "nav_set_start": "शुरुआती point set करो (manual)",
+  "nav_start_gps": "शुरुआत: लाइव GPS",
+  "nav_start_manual": "शुरुआत: तुम्हारा point {}, {}",
+  "nav_demo_note": "Plan mode: रास्ता + सुरक्षा फैसला चलेगा; लाइव steering/alerts pause (नाव सच में वहाँ नहीं)"
 }
