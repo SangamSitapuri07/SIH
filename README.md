@@ -1,132 +1,66 @@
-# ORCA — Marine Intelligence Platform
+# ORCA — Marine Intelligence Frontends
 
 > **SIH 2026 · Problem Statement 176 (SIH26176)**
 > **Marine EcOsystem Reasoning with Collaborative Agents**
 > Organization: **ISRO · Department of Space** · Theme: Disaster Management
 
-ORCA is a multi-agent AI system that combines real-time satellite ocean
-data, weather models, and global fishing-fleet activity into explainable,
-actionable marine intelligence for India's coastal communities.
+ORCA turns **only real, live ocean data** (12 sources — satellites, weather
+models, fishing-fleet activity) into explainable decisions for India's
+fishermen, in **11 languages**, with total honesty: *a source that fails says
+so, with its real reason. Nothing is ever invented.*
 
-## What it does
+> 🔧 **Backend moved:** the FastAPI data engine now lives in the sister repo
+> **[SangamSitapuri07/ORCA-backend](https://github.com/SangamSitapuri07/ORCA-backend)**
+> (`backend/` + `pipeline/` + tests + run docs). This repo holds the frontends.
 
-- **Pulls live ocean data** from 4 satellite + AIS systems
-- **Runs 6 collaborating AI agents** (Ocean, Satellite, Fisheries, Marine
-  Ecology, Marine Risk, Data Validation) over the same data
-- **Generates a single recommendation** per zone: "Should a fisherman go
-  out today?" with a colour-coded risk level
-- **Cites every data source** so the answer is explainable
+## 📱 orca_flutter/ — the fishermen-first Android app
 
-## 📁 Repo map — kaunsa folder kya hai
+- **6 tabs:** Home (AI verdict + 48 h evidence chart) · Map (tap any sea point
+  → live data, harbour search) · Navigate · **AI** (10-agent cards) · **SOS**
+  (SMS without internet, satellite-truth card) · Info
+- **Transit verdict (route-advisory):** the land-verified course sampled every
+  ~30 km against live marine forecasts → **GO / CAUTION / NO-GO** with per-km
+  observed numbers — worst point decides, never an average that hides danger
+- **Live navigation alerts (offline):** off-course siren, turn cues,
+  back-on-course recovery — pure GPS + route legs, works with no network
+- **Plan-anywhere mode:** set a manual start point and plan a real sea route
+  from anywhere (even inland) — honestly labelled; live steering pauses
+- **Return-to-harbour:** nearest of 71 real Indian harbours, 100 % offline
+- **145 i18n keys × 11 languages**, keysets machine-checked equal
+
+## 🌐 web/ — Next.js dashboard (judges / desktop)
+
+Live map + insight panel driven by the same backend (`/tiles`, `/advisory`,
+`/reason`) — real data tiles rendered server-side.
+
+## Setup (short)
+
+1. Run the backend from the sister repo:
+   `git clone https://github.com/SangamSitapuri07/ORCA-backend` →
+   `pip install -r backend/requirements.txt -r pipeline/requirements.txt` →
+   `uvicorn backend.main:app --host 0.0.0.0 --port 8000`
+2. App: `cd orca_flutter && flutter pub get && flutter run`
+   (phone + laptop same WiFi → Info tab → backend URL `IP:8000`)
+3. Web: `cd web && npm install && npm run dev`
+
+## Repo map
 
 | Path | Kya hai |
 |---|---|
-| `backend/` | FastAPI server (phone + web dono ki live data API) |
-| `pipeline/` | ORCA engine — agents, satellite/GFW fetch, land-mask · **`pipeline/tests/` mein 217 automated tests** |
-| `web/` | Next.js web app (judges/desktop UI) |
-| `orca_flutter/` | 📱 Android app — Flutter, fishermen ke liye *(freeze pe naam `android/` hoga)* |
-| `docs/` | Plans, design notes, verified research |
-| `tools/` | verify/demo scripts — judges khud chala ke cross-check kar sakte hain |
+| `orca_flutter/` | 📱 Flutter Android app (9 dart tests incl. marine-math verified vs Python) |
+| `web/` | Next.js dashboard |
+| `docs/` | FLUTTER-PLAN, ANDROID-PLAN, FIGMA/UI prompts, design assets |
+| `update-orca.ps1` | one-command pull helper |
 
-Root pe sirf config/gitignore/ps1 files — koi faltu folder nahi.
+## Timeline
 
-## Architecture
+- **Idea submission deadline: 20 September 2026**
+- Final target: working app + dashboard over live data × 8 Indian coastal zones
 
-```
-Next.js UI (web/)                  ← what the user sees
-        ↓ HTTP
-FastAPI backend (backend/)          ← (in progress)
-        ↓ Python imports
-Unified data layer (pipeline/orca_data.py)
-        ↓
-┌───────┼───────┬───────┬───────┐
-NOAA   Open    GFW    INCOIS
-ERDDAP Meteo   AIS    LAS
-(chl)  (SST)   (fish) (chl)
-```
+## Data sources (via backend)
 
-**10 AI agents** (6 implemented, 3 stubbed):
-1. 🌊 Ocean Analysis — SST, waves, currents
-2. 🛰️ Satellite Analysis — chlorophyll, ocean colour
-3. 🌦️ Weather & Hazard — IMD cyclones, wind (via Open-Meteo)
-4. 🗺️ GIS & Spatial — coastlines, EEZ, ports
-5. 🐟 Marine Ecology — cross-agent ecosystem patterns
-6. 🎣 Fisheries / PFZ — combines all signals into a verdict
-7. 🚨 Marine Risk — vessel-safety risk level
-8. 🔍 Anomaly Detection — vs 30-year baseline
-9. ✅ Data Validation — quality checks
-10. 🧠 ORCA Reasoning — orchestrates all 9
+Open-Meteo Marine/Forecast/Daily (MeteoFrance & ECMWF) · NOAA ERDDAP ·
+ESA OC-CCI · ISRO MOSDAC OCM-3 · INCOIS LAS + official daily PFZ lines ·
+Global Fishing Watch · JTWC · GLOBE 1 km land mask · Nominatim.
 
-## Data sources (all live, all verified)
-
-| Source | What it gives | Cost | Status |
-|--------|---------------|------|--------|
-| NOAA ERDDAP DINEOF | Chlorophyll, daily, 0.025° | Free, no key | ✅ |
-| Open-Meteo Marine | SST 0.08°, wave height, daily | Free, no key | ✅ |
-| Global Fishing Watch | Fishing hours, vessel fleet, gear type | Free + token | ✅ |
-| INCOIS LAS OPeNDAP | Indian Ocean chlorophyll backup | Free, no key | ✅ Adapter ready |
-| MOSDAC OCM-3 L4 | 🇮🇳 Indian daily chlorophyll | Free + creds | 🔄 Pending |
-| Open-Meteo Weather | Cyclones, rainfall, IMD-style wind | Free, no key | ⏳ Agent 3 stub |
-
-## Quick start
-
-```bash
-# Backend / data layer
-cd pipeline/
-pip install -r requirements.txt
-python -m pytest tests/                 # 81 tests pass
-python tools/demo_orca_reasoner.py            # full live pipeline demo
-
-# Frontend
-cd web/
-npm install
-npm run dev                             # http://localhost:3000
-```
-
-Set the GFW token in your shell:
-```bash
-export GFW_API_TOKEN="your-token"       # get one at globalfishingwatch.org
-```
-
-## Repository layout
-
-```
-.
-├── pipeline/                 # Python data layer + agents
-│   ├── orca_data.py          # unified ZoneSnapshot (5 sources → 1 dict)
-│   ├── reasoner.py           # orchestrates the 10 agents
-│   ├── agents/               # one file per agent
-│   ├── erddap_chl.py         # NOAA chlorophyll adapter
-│   ├── openmeteo_sst.py      # SST + waves adapter
-│   ├── gfw.py                # Global Fishing Watch adapter
-│   ├── incois.py             # INCOIS LAS adapter
-│   ├── mosdac_auth.py        # MOSDAC SSO login
-│   ├── parser.py             # NetCDF / HDF5 parser
-│   └── tests/                # 81 tests
-│
-├── web/                      # Next.js frontend
-│   ├── app/page.tsx          # map + insight panel
-│   ├── components/           # MapView, InsightPanel
-│   └── lib/orca-client.ts    # API client
-│
-├── backend/                  # FastAPI (preserved in mvp-prototype)
-│
-├── docs/
-│   ├── PS_176_ORCA.md        # problem statement
-│   ├── PLAN.md               # build plan
-│   ├── MOSDAC_CATALOG.md     # MOSDAC dataset catalog
-│   └── ...
-│
-└── mvp-prototype/            # earlier prototype (preserved)
-```
-
-## SIH 2026 timeline
-
-- **Idea submission deadline**: 20 September 2026
-- **Prototype target**: 5 working agents + 1 dashboard (this commit)
-- **Final demo**: 10 agents + full data layer + 8 Indian coastal zones
-
-## License
-
-For SIH 2026 demonstration. Data source attribution: NOAA, Copernicus
-(MeteoFrance via Open-Meteo), Global Fishing Watch, INCOIS, MOSDAC/ISRO.
+*For SIH 2026 demonstration. Team: Sangam Sitapuri et al. (Punjab).*

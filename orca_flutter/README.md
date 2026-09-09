@@ -2,6 +2,8 @@
 
 SIH 2026 · ISRO PS SIH26176 — fishermen-first Android app.
 **Plan: ../docs/FLUTTER-PLAN.md (§1–§10). Theme: white + teal (original reference, locked).**
+**Backend: sister repo [SangamSitapuri07/ORCA-backend](https://github.com/SangamSitapuri07/ORCA-backend) —
+wahan `uvicorn backend.main:app --host 0.0.0.0 --port 8000` chalao.**
 
 ## D1 status (DONE in code)
 
