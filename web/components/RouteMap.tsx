@@ -15,6 +15,7 @@ import {
   TileLayer,
   Polyline,
   Marker,
+  CircleMarker,
   Popup,
   useMap,
   useMapEvents,
@@ -143,12 +144,18 @@ export default function RouteMap({
       <MapClick armed={pickArmed} onPick={onPick} />
       <FitView start={start} dest={dest} legs={legs} />
 
-      {/* unverified straight course while backend hasn't replied yet */}
-      {!legs && straight && (
+      {/* direct course — solid reference only when nothing computed yet;
+          on a REROUTED path it stays dashed-VISIBLE so the contrast
+          "blocked line over land vs verified sea path" is on the map */}
+      {straight && (!legs || legs.length > 2) && (
         <Polyline
           positions={straight}
           pathOptions={{ color: "#d97706", weight: 2, dashArray: "6 8", opacity: 0.8 }}
-        />
+        >
+          {legs && legs.length > 2 && (
+            <Popup>direct course — crosses LAND (blocked); cyan line is the verified sea path</Popup>
+          )}
+        </Polyline>
       )}
       {/* land-verified course from the backend */}
       {legs && legs.length > 1 && (
@@ -157,6 +164,22 @@ export default function RouteMap({
           pathOptions={{ color: "#38bdf8", weight: 4, opacity: 0.95 }}
         />
       )}
+      {/* sea-path waypoints (middle vertices of a rerouted course) */}
+      {legs && legs.length > 2 &&
+        legs.slice(1, -1).map((w, i) => (
+          <CircleMarker
+            key={`wp-${i}`}
+            center={[w[0], w[1]]}
+            radius={5}
+            pathOptions={{ color: "#ffffff", weight: 1.5, fillColor: "#7dd3fc", fillOpacity: 1 }}
+          >
+            <Popup>
+              waypoint {i + 1} — {fmtLat(w[0])} {fmtLon(w[1])}
+              <br />
+              <i>ocean path pivot, verified at 1 km</i>
+            </Popup>
+          </CircleMarker>
+        ))}
 
       {start && (
         <Marker position={[start.lat, start.lon]} icon={badge("S", "#0d9488")}>

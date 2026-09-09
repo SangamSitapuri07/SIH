@@ -401,6 +401,15 @@ export interface RouteCheckResponse {
   ok: boolean | null;
   detour: boolean;
   legs: [number, number][];
+  /** sea-path engine fired: the direct line crossed land and a verified
+      multi-waypoint ocean path was computed around it (A* over the
+      pooled GLOBE mask, legs re-proven at native 1 km) */
+  rerouted?: boolean;
+  /** middle vertices of `legs` when rerouted (the "via" points) */
+  waypoints?: [number, number][];
+  /** distances of the blocked direct line, kept for honest comparison */
+  straight_distance_km?: number;
+  straight_distance_nm?: number;
   land_hit?: { lat: number; lon: number; sail_km: number };
   reason: string;
 }
@@ -441,6 +450,11 @@ export interface RouteAdvisory {
   to: [number, number];
   legs: [number, number][];
   detour: boolean;
+  /** sea-path reroute info (see RouteCheckResponse) */
+  rerouted?: boolean;
+  waypoints?: [number, number][];
+  straight_distance_km?: number;
+  straight_distance_nm?: number;
   distance_km: number;
   distance_nm: number;
   bearing_deg: number;

@@ -674,8 +674,9 @@ export default function NavigateLab() {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-[#4D5D80]">
             <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-teal-500" /> S start</span>
             <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-pink-600" /> D destination</span>
-            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" /> - - unverified straight line</span>
-            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-sky-400" /> verified course (GLOBE)</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" /> - - direct line (land pe atki = blocked)</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-sky-400" /> verified sea path (GLOBE)</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full border border-white bg-sky-300" /> waypoint</span>
             <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-600" /> good point</span>
             <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-600" /> caution</span>
             <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-600" /> danger</span>
@@ -692,35 +693,59 @@ export default function NavigateLab() {
                   ? "border-[#1C2A45] bg-[#0A1120]"
                   : rcErr
                     ? "border-red-500/35 bg-red-500/10"
-                    : rc?.ok === true
-                      ? "border-emerald-500/35 bg-emerald-500/10"
-                      : rc?.ok === false
-                        ? "border-red-500/40 bg-red-500/10"
-                        : "border-slate-500/35 bg-slate-500/10"
+                    : rc?.rerouted && rc?.ok === true
+                      ? "border-cyan-400/40 bg-cyan-400/10"
+                      : rc?.ok === true
+                        ? "border-emerald-500/35 bg-emerald-500/10"
+                        : rc?.ok === false
+                          ? "border-red-500/40 bg-red-500/10"
+                          : "border-slate-500/35 bg-slate-500/10"
               }`}
             >
               {rcBusy && <div className="text-[12px] text-[#9FB0D1]">⏳ land verify chal raha hai (GLOBE 1 km mask, course sample ho raha)…</div>}
               {rcErr && <div className="text-[12px] text-red-300">route-check failed: {rcErr}</div>}
               {rc && (
                 <div className="text-[12px]">
-                  <b className={rc.ok === true ? "text-emerald-300" : rc.ok === false ? "text-red-300" : "text-slate-300"}>
-                    {rc.ok === true
-                      ? "✅ Course SARA PANI — GLOBE 1 km land mask ne verify kiya"
-                      : rc.ok === false
-                        ? "❌ Course LAND mein atak raha hai — direct path not possible"
-                        : "❔ Land verify HUA NAHI (mask unavailable) — route ko careful treat karo"}
-                  </b>
-                  {rc.detour && <span className="ml-2 text-[11px] text-sky-300">(detour waypoint add hua — real computed)</span>}
-                  {rc.land_hit && (
+                  {rc.rerouted && rc.ok === true ? (
+                    <>
+                      <b className="text-cyan-300">
+                        🌊 SEA PATH computed — direct course LAND tha, paani se reroute ho gaya
+                        ({(rc.waypoints?.length ?? Math.max(0, rc.legs.length - 2))} waypoints ·
+                        SRI LANKA / coast ke around · har leg 1 km pe re-verified ✅)
+                      </b>
+                      {rc.land_hit && (
+                        <div className="mt-1 text-[11px] text-cyan-100/80">
+                          direct line land pe atki thi {fmtLat(rc.land_hit.lat)} {fmtLon(rc.land_hit.lon)} pe
+                          ({(rc.land_hit.sail_km / 1.852).toFixed(1)} NM out) — isliye samundar se ghumaya
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <b className={rc.ok === true ? "text-emerald-300" : rc.ok === false ? "text-red-300" : "text-slate-300"}>
+                      {rc.ok === true
+                        ? "✅ Course SARA PANI — GLOBE 1 km land mask ne verify kiya"
+                        : rc.ok === false
+                          ? "❌ Course LAND mein atak raha hai aur koi verified paani ka raasta nahi mila"
+                          : "❔ Land verify HUA NAHI (mask unavailable) — route ko careful treat karo"}
+                    </b>
+                  )}
+                  {!rc.rerouted && rc.detour && <span className="ml-2 text-[11px] text-sky-300">(detour waypoint add hua — real computed)</span>}
+                  {rc.rerouted !== true && rc.land_hit && (
                     <div className="mt-1 text-[11px] text-red-200/85">
                       land at {fmtLat(rc.land_hit.lat)} {fmtLon(rc.land_hit.lon)} · after {(rc.land_hit.sail_km / 1.852).toFixed(1)} NM
                     </div>
                   )}
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    <StatChip label="distance" value={`${(rc.distance_km / 1.852).toFixed(1)} NM (${rc.distance_km.toFixed(0)} km)`} />
+                    {rc.straight_distance_km != null && (
+                      <StatChip label="direct (blocked)" value={`${(rc.straight_distance_km / 1.852).toFixed(1)} NM`} />
+                    )}
+                    <StatChip label={rc.rerouted ? "sea path" : "distance"} value={`${(rc.distance_km / 1.852).toFixed(1)} NM (${rc.distance_km.toFixed(0)} km)`} />
+                    {rc.straight_distance_km != null && (
+                      <StatChip label="extra sail" value={`+${((rc.distance_km - rc.straight_distance_km) / 1.852).toFixed(1)} NM`} />
+                    )}
                     <StatChip label="bearing" value={`${compass(rc.bearing_deg)} ${rc.bearing_deg.toFixed(0)}°`} />
                     <StatChip label="legs" value={String(rc.legs.length)} />
-                    <StatChip label="sample step" value={`${rc.sample_step_km} km`} />
+                    <StatChip label="native check" value={`${rc.sample_step_km} km`} />
                   </div>
                 </div>
               )}
@@ -786,9 +811,15 @@ export default function NavigateLab() {
                           : "NOT verified"
                     }
                   />
-                  <StatChip label="distance" value={`${ra.distance_nm.toFixed(1)} NM`} />
+                  {ra.straight_distance_nm != null && (
+                    <StatChip label="direct (blocked)" value={`${ra.straight_distance_nm.toFixed(1)} NM`} />
+                  )}
+                  <StatChip label={ra.rerouted ? "sea path" : "distance"} value={`${ra.distance_nm.toFixed(1)} NM`} />
                   <StatChip label="bearing" value={`${compass(ra.bearing_deg)} ${ra.bearing_deg.toFixed(0)}°`} />
-                  {ra.detour && <StatChip label="route" value="has detour waypoint" />}
+                  {ra.rerouted && (
+                    <StatChip label="route" value={`sea-path · ${ra.waypoints?.length ?? "?"} waypoints`} />
+                  )}
+                  {!ra.rerouted && ra.detour && <StatChip label="route" value="has detour waypoint" />}
                 </div>
                 {ra.safe_window_at_start && (
                   <div className="mt-2 rounded-lg border border-[#1C2A45] bg-[#0E1729] p-2 text-[11px] text-[#9FB0D1]">
