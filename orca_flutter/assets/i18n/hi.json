@@ -143,5 +143,18 @@
   "nav_gps_no_fix": "अभी GPS नहीं मिल रहा",
   "nav_gps_hint": "घर के अंदर GPS कमज़ोर होता है। Manual start point डालकर PLAN करो, या बाहर निकलकर GPS फिर try करो।",
   "nav_use_manual": "Manual start point set करो",
-  "nav_retry_gps": "GPS फिर try करो"
+  "nav_retry_gps": "GPS फिर try करो",
+  "ra_title": "रास्ते का पूरा विश्लेषण",
+  "ra_open": "पूरा analysis देखो",
+  "ra_rules": "नियम — कौनसी value से फ़ैसला",
+  "ra_rule_wave": "🌊 लहर: 2.5m+ ध्यान · 4m+ ख़तरा",
+  "ra_rule_wind": "💨 हवा: 20kn+ ध्यान · gust 34kn+ ख़तरा (WMO gale)",
+  "ra_rule_current": "⟲ धारा: 3kn से ज़्यादा = तेज़ (ईमानदार नोट)",
+  "ra_rule_worst": "सबसे ख़राब point ही पूरे रास्ते का फ़ैसला करता है — average ख़तरा छुपा सकता है, इसलिए average नहीं लेते।",
+  "ra_land": "ज़मीन जाँच (GLOBE 1 km mask)",
+  "ra_land_clear": "सीधा रास्ता: पूरा पानी ✓",
+  "ra_points": "हर point का data",
+  "ra_data": "Data sources (ईमानदार)",
+  "ra_retry": "फिर try करो",
+  "ra_dest_failed": "डेस्टिनेशन advisory फेल — फिर try करो"
 }

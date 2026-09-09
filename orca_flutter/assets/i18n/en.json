@@ -143,5 +143,18 @@
   "nav_gps_no_fix": "GPS fix not available right now",
   "nav_gps_hint": "Indoors GPS is weak. Set a manual start point to PLAN the route, or step out and retry GPS.",
   "nav_use_manual": "Set manual start point",
-  "nav_retry_gps": "Retry GPS"
+  "nav_retry_gps": "Retry GPS",
+  "ra_title": "Route Analysis — full detail",
+  "ra_open": "See full route analysis",
+  "ra_rules": "Rules — which value decides",
+  "ra_rule_wave": "🌊 Wave: ≥2.5 m careful · ≥4.0 m danger",
+  "ra_rule_wind": "💨 Wind: ≥20 kn careful · gust ≥34 kn danger (WMO gale)",
+  "ra_rule_current": "⟲ Current: >3 kn = strong (honest note)",
+  "ra_rule_worst": "The WORST point decides the whole route — an average can hide danger, so we never average.",
+  "ra_land": "Land check (GLOBE 1 km mask)",
+  "ra_land_clear": "Straight course: water all the way ✓",
+  "ra_points": "Data at every point",
+  "ra_data": "Data sources (honest)",
+  "ra_retry": "Retry",
+  "ra_dest_failed": "Destination advisory failed — tap retry"
 }

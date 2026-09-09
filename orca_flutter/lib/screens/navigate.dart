@@ -16,6 +16,7 @@ import '../marine.dart';
 import '../state.dart';
 import '../theme.dart';
 import 'home.dart' show orcaFix;
+import 'route_analysis.dart';
 
 final _notif = FlutterLocalNotificationsPlugin();
 bool _notifReady = false;
@@ -129,6 +130,52 @@ class _NavigateScreenState extends State<NavigateScreen>
     } else {
       _rules = null;
     }
+  }
+
+  /// (B8) mini-map ko poore route pe auto-fit (route aate hi, ek baar)
+  final _mapCtl = MapController();
+
+  void _fitRoute(Map<String, dynamic>? r) {
+    final ls = (r?['legs'] as List?) ?? [];
+    if (ls.length < 2) return;
+    final pts = [for (final l in ls) LatLng(_legLat(l), _legLon(l))];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        _mapCtl.fitCamera(CameraFit.bounds(
+            bounds: LatLngBounds.fromPoints(pts),
+            padding: const EdgeInsets.all(32)));
+      } catch (_) {}
+    });
+  }
+
+  /// (B8) FULL analysis screen — faisla kaunse numbers se bana, sab dikhe
+  void _openAnalysis() {
+    final tgt = widget.app.navTarget;
+    if (tgt == null) return;
+    final r = _route ??
+        {
+          // transit response me bhi legs+geometry hoti hai — usi ka fallback
+          'legs': _rtAdv?['legs'],
+          'ok': _rtAdv?['land_ok'],
+          'detour': _rtAdv?['detour'],
+          'reason': _rtAdv?['land_reason'],
+          'distance_km': _rtAdv?['distance_km'],
+          'distance_nm': _rtAdv?['distance_nm'],
+          'bearing_deg': _rtAdv?['bearing_deg'],
+        };
+    final d = widget.app.demoOrigin;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => RouteAnalysisScreen(
+        route: r,
+        rt: _rtAdv,
+        rtErr: _rtAdvErr,
+        startName: d != null
+            ? '${d.latitude.toStringAsFixed(3)},${d.longitude.toStringAsFixed(3)}'
+            : 'GPS',
+        destName: tgt.name,
+      ),
+    ));
   }
 
   String _alertText(NavAlert a) => a.type == 'offcourse'
@@ -333,6 +380,7 @@ class _NavigateScreenState extends State<NavigateScreen>
       if (mounted && widget.app.navTarget == tgt) {
         setState(() => _route = r);
         if (widget.app.demoOrigin == null) _wireRulesFrom(r); // (B5) live only
+        _fitRoute(r); // (B8) mini-map route pe fit
       }
     } catch (e) {
       if (mounted && widget.app.navTarget == tgt) {
@@ -345,6 +393,7 @@ class _NavigateScreenState extends State<NavigateScreen>
               ],
             });
         if (widget.app.demoOrigin == null) _wireRulesFrom(_route);
+        _fitRoute(_route); // (B8) fallback line pe bhi fit
       }
     }
   }
@@ -722,6 +771,7 @@ class _NavigateScreenState extends State<NavigateScreen>
       SizedBox(
         height: 220,
         child: FlutterMap(
+          mapController: _mapCtl, // (B8) route pe auto-fit
           options: MapOptions(
             initialCenter: org != null
                 ? LatLng(org.lat, org.lon)
@@ -913,9 +963,23 @@ class _NavigateScreenState extends State<NavigateScreen>
       else if (_tgtAdvErr != null)
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
-          child: Text('unverified_msg'.tr(),
-              style: t.textTheme.bodySmall
-                  ?.copyWith(color: OrcaTheme.warnAmber)),
+          child: Row(children: [
+            Expanded(
+              child: Text('ra_dest_failed'.tr(),
+                  style: t.textTheme.bodySmall
+                      ?.copyWith(color: OrcaTheme.warnAmber)),
+            ),
+            IconButton(
+              onPressed: () {
+                _tgtAdvFor = null;
+                _tgtAdvErr = null;
+                _maybeTgtAdv();
+              },
+              icon: Icon(Icons.refresh_rounded,
+                  size: 18, color: t.colorScheme.secondary),
+              tooltip: 'ra_retry'.tr(),
+            ),
+          ]),
         ),
       // ── (B4) TRANSIT VERDICT — poore raste ka final faisla ──
       if (widget.app.navTarget != null)
@@ -1063,6 +1127,16 @@ class _NavigateScreenState extends State<NavigateScreen>
                           ),
                       ],
                     ),
+                  // ── (B8) FULL ROUTE ANALYSIS screen ──
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _openAnalysis,
+                      icon: const Icon(Icons.analytics_rounded, size: 16),
+                      label: Text('ra_open'.tr(),
+                          style: const TextStyle(fontSize: 12)),
+                    ),
+                  ),
                 ]),
               );
             }),
@@ -1070,9 +1144,40 @@ class _NavigateScreenState extends State<NavigateScreen>
         else if (_rtAdvErr != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
-            child: Text('rt_failed'.tr(),
-                style: t.textTheme.bodySmall
-                    ?.copyWith(color: OrcaTheme.warnAmber)),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: OrcaTheme.dangerRed.withOpacity(0.5))),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('rt_failed'.tr(),
+                    style: t.textTheme.bodySmall?.copyWith(
+                        color: OrcaTheme.dangerRed, fontWeight: FontWeight.w800)),
+                Text('$_rtAdvErr',
+                    style: t.textTheme.bodySmall?.copyWith(
+                        fontSize: 10, color: t.colorScheme.secondary)),
+                Row(children: [
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _rtAdvFor = null;
+                        _rtAdvErr = null;
+                      });
+                      _maybeRtAdv();
+                    },
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    label: Text('ra_retry'.tr(),
+                        style: const TextStyle(fontSize: 12)),
+                  ),
+                  TextButton.icon(
+                    onPressed: _openAnalysis,
+                    icon: const Icon(Icons.analytics_rounded, size: 16),
+                    label: Text('ra_open'.tr(),
+                        style: const TextStyle(fontSize: 12)),
+                  ),
+                ]),
+              ]),
+            ),
           )
         else if (_fix != null || widget.app.demoOrigin != null)
           Padding(

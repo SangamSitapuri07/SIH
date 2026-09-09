@@ -143,5 +143,18 @@
   "nav_gps_no_fix": "ఇప్పుడు GPS అందుబాటులో లేదు",
   "nav_gps_hint": "ఇంట్లో GPS బలహీనం. Manual start పాయింట్ పెట్టి PLAN చేయండి, లేదా బయటికి వెళ్లి GPS మళ్లీ ప్రయత్నించండి.",
   "nav_use_manual": "Manual start పాయింట్ సెట్ చేయండి",
-  "nav_retry_gps": "GPS మళ్లీ ప్రయత్నించండి"
+  "nav_retry_gps": "GPS మళ్లీ ప్రయత్నించండి",
+  "ra_title": "దారు పూర్తి విశ్లేషణ",
+  "ra_open": "పూర్తి analysis చూడు",
+  "ra_rules": "నియమాలు — ఏ విలువతో నిర్ణయం",
+  "ra_rule_wave": "🌊 అల: 2.5m+ జాగ్రత్త · 4m+ ప్రమాదం",
+  "ra_rule_wind": "💨 గాలి: 20kn+ జాగ్రత్త · gust 34kn+ ప్రమాదం (WMO gale)",
+  "ra_rule_current": "⟲ ప్రవాహం: 3kn కంటే ఎక్కువ = వేగం (నిజాయితీ నోట్)",
+  "ra_rule_worst": "అత్యంత చెత్త point ఏ మొత్తం దారు నిర్ణయం — average ప్రమాదాన్ని దాచగలదు, కాబట్టి average తీయము.",
+  "ra_land": "భూమి తనిఖీ (GLOBE 1 km mask)",
+  "ra_land_clear": "నేరుగా దారు: పూర్తి నీరు ✓",
+  "ra_points": "ప్రతి point యొక్క data",
+  "ra_data": "Data sources (నిజాయితీ)",
+  "ra_retry": "మళ్లీ చూడండి",
+  "ra_dest_failed": "గమ్యం advisory విఫలం — మళ్లీ ప్రయత్నించు"
 }

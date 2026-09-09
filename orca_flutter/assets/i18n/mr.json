@@ -143,5 +143,18 @@
   "nav_gps_no_fix": "आत्ता GPS मिळत नाही",
   "nav_gps_hint": "घरात GPS कमकुवत असतो. Manual start point टाकून PLAN करा, किंवा बाहेर जाऊन GPS पुन्हा करा.",
   "nav_use_manual": "Manual start point सेट करा",
-  "nav_retry_gps": "GPS पुन्हा करा"
+  "nav_retry_gps": "GPS पुन्हा करा",
+  "ra_title": "मार्गाचे संपूर्ण विश्लेषण",
+  "ra_open": "पूर्ण analysis बघ",
+  "ra_rules": "नियम — कोणत्या value ने निर्णय",
+  "ra_rule_wave": "🌊 लाटा: 2.5m+ सांभाळ · 4m+ धोका",
+  "ra_rule_wind": "💨 वारा: 20kn+ सांभाळ · gust 34kn+ धोका (WMO gale)",
+  "ra_rule_current": "⟲ प्रवाह: 3kn पेक्षा जास्त = वेगवान (प्रामाणिक नोंद)",
+  "ra_rule_worst": "सर्वात वाईट point हा संपूर्ण मार्गाचा निर्णय करतो — average धोका लपवू शकतो, म्हणून average घेत नाही.",
+  "ra_land": "जमीन तपासणी (GLOBE 1 km mask)",
+  "ra_land_clear": "सरळ मार्ग: पूर्ण पाणी ✓",
+  "ra_points": "प्रत्येक point चा data",
+  "ra_data": "Data sources (प्रामाणिक)",
+  "ra_retry": "पुन्हा कर",
+  "ra_dest_failed": "गंतव्य advisory अयशस्वी — पुन्हा कर"
 }

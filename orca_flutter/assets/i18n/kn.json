@@ -143,5 +143,18 @@
   "nav_gps_no_fix": "ಈಗ GPS ಸಿಗುತ್ತಿಲ್ಲ",
   "nav_gps_hint": "ಮನೆಯೊಳಗೆ GPS ದುರ್ಬಲ. Manual start ಬಿಂದು ಹಾಕಿ PLAN ಮಾಡಿ, ಅಥವಾ ಹೊರಗೆ ಹೋಗಿ GPS ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
   "nav_use_manual": "Manual start ಬಿಂದು ಹೊಂದಿಸಿ",
-  "nav_retry_gps": "GPS ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ"
+  "nav_retry_gps": "GPS ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",
+  "ra_title": "ದಾರಿಯ ಸಂಪೂರ್ಣ ವಿಶ್ಲೇಷಣೆ",
+  "ra_open": "ಪೂರ್ಣ analysis ನೋಡು",
+  "ra_rules": "ನಿಯಮಗಳು — ಯಾವ ಮೌಲ್ಯದಿಂದ ನಿರ್ಧಾರ",
+  "ra_rule_wave": "🌊 ಅಲೆ: 2.5m+ ಎಚ್ಚರಿಕೆ · 4m+ ಅಪಾಯ",
+  "ra_rule_wind": "💨 ಗಾಳಿ: 20kn+ ಎಚ್ಚರಿಕೆ · gust 34kn+ ಅಪಾಯ (WMO gale)",
+  "ra_rule_current": "⟲ ಹರಿವು: 3kn ಮೀರಿದರೆ = ವೇಗ (ಪ್ರಾಮಾಣಿಕ ಟಿಪ್ಪಣಿ)",
+  "ra_rule_worst": "ಅತ್ಯಂತ ಕೆಟ್ಟ point ಎ ಇಡೀ ದಾರಿಯ ನಿರ್ಧಾರ — average ಅಪಾಯ ಮರೆಮಾಚಬಹುದು, ಆದ್ದರಿಂದ average ತೆಗೆಯುವುದಿಲ್ಲ.",
+  "ra_land": "ಭೂಮಿ ಪರಿಶೀಲನೆ (GLOBE 1 km mask)",
+  "ra_land_clear": "ನೇರ ದಾರಿ: ಪೂರ್ತಿ ನೀರು ✓",
+  "ra_points": "ಪ್ರತಿ point ಮಾಹಿತಿ",
+  "ra_data": "Data sources (ಪ್ರಾಮಾಣಿಕ)",
+  "ra_retry": "ಮತ್ತೆ ಪ್ರಯತ್ನಿಸು",
+  "ra_dest_failed": "ಗಮ್ಯ advisory ವಿಫಲ — ಮತ್ತೆ"
 }

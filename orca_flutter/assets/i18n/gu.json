@@ -143,5 +143,18 @@
   "nav_gps_no_fix": "હમણાં GPS મળી રહ્યું નથી",
   "nav_gps_hint": "ઘરની અંદર GPS નબળું હોય છે. Manual start point નાખી PLAN કરો, કે બહાર જઈ GPS ફરી try કરો.",
   "nav_use_manual": "Manual start point સેટ કરો",
-  "nav_retry_gps": "GPS ફરી try કરો"
+  "nav_retry_gps": "GPS ફરી try કરો",
+  "ra_title": "રસ્તાનું સંપૂર્ણ વિશ્લેષણ",
+  "ra_open": "પૂરું analysis જુઓ",
+  "ra_rules": "નિયમ — કઈ valueથી નિર્ણય",
+  "ra_rule_wave": "🌊 મોજાં: 2.5m+ સાવધાન · 4m+ જોખમ",
+  "ra_rule_wind": "💨 પવન: 20kn+ સાવધાન · gust 34kn+ જોખમ (WMO gale)",
+  "ra_rule_current": "⟲ પ્રવાહ: 3knથી વધુ = તેજ (પ્રામાણિક નોટ)",
+  "ra_rule_worst": "સૌથી ખરાબ point જ આખા રસ્તાનો નિર્ણય કરે — average જોખમ છુપાવી શકે, એટલે average નથી લેતા.",
+  "ra_land": "જમીન ચકાસણી (GLOBE 1 km mask)",
+  "ra_land_clear": "સીધો રસ્તો: આખું પાણી ✓",
+  "ra_points": "દરેક point નો data",
+  "ra_data": "Data sources (પ્રામાણિક)",
+  "ra_retry": "ફરી try કરો",
+  "ra_dest_failed": "ડેસ્ટિનેશન advisory નિષ્ફળ — ફરી try"
 }

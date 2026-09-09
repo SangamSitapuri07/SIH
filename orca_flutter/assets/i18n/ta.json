@@ -143,5 +143,18 @@
   "nav_gps_no_fix": "இப்போது GPS கிடைக்கவில்லை",
   "nav_gps_hint": "வீட்டின் உள்ளே GPS பலவீனம். Manual start புள்ளி இட்டு PLAN செய்யுங்கள், அல்லது வெளியே சென்று GPS மீண்டும் முயற்சிக்கவும்.",
   "nav_use_manual": "Manual start புள்ளி அமைக்கவும்",
-  "nav_retry_gps": "GPS மீண்டும் முயற்சி"
+  "nav_retry_gps": "GPS மீண்டும் முயற்சி",
+  "ra_title": "பாதையின் முழு பகுப்பாய்வு",
+  "ra_open": "முழு analysis பார்",
+  "ra_rules": "விதிகள் — எந்த மதிப்பு முடிவு",
+  "ra_rule_wave": "🌊 அலை: 2.5m+ கவனம் · 4m+ ஆபத்து",
+  "ra_rule_wind": "💨 காற்று: 20kn+ கவனம் · gust 34kn+ ஆபத்து (WMO gale)",
+  "ra_rule_current": "⟲ நீரோட்டம்: 3kn மேல் = வேகம் (நேர்மை குறிப்பு)",
+  "ra_rule_worst": "மிக மோசமான point தான் முழு பாதை முடிவு — average ஆபத்தை மறைக்கும், எனவே average எடுக்கவில்லை।",
+  "ra_land": "நிலச் சரிபார்ப்பு (GLOBE 1 km mask)",
+  "ra_land_clear": "நேரடி பாதை: முழுவதும் நீர் ✓",
+  "ra_points": "ஒவ்வொரு point-யின் data",
+  "ra_data": "Data sources (நேர்மை)",
+  "ra_retry": "மீண்டும் முயற்சி",
+  "ra_dest_failed": "இலக்கு advisory தோல்வி — மீண்டும்"
 }

@@ -143,5 +143,18 @@
   "nav_gps_no_fix": "ଏବେ GPS ମିଳୁନାହିଁ",
   "nav_gps_hint": "ଘର ଭିତରେ GPS ଦୁର୍ବଳ। Manual start point ଦେଇ PLAN କର, କିମ୍ବା ବାହାରକୁ ଯାଇ GPS ପୁଣି ଚେଷ୍ଟା କର।",
   "nav_use_manual": "Manual start point ସେଟ କର",
-  "nav_retry_gps": "GPS ପୁଣି ଚେଷ୍ଟା କର"
+  "nav_retry_gps": "GPS ପୁଣି ଚେଷ୍ଟା କର",
+  "ra_title": "ବାଟର ସମ୍ପୂର୍ଣ୍ଣ ବିଶ୍ଳେଷଣ",
+  "ra_open": "ପୂରା analysis ଦେଖ",
+  "ra_rules": "ନିୟମ — କେଉଁ valueରୁ ନିଷ୍ପତ୍ତି",
+  "ra_rule_wave": "🌊 ଢେଉ: 2.5m+ ସାବଧାନ · 4m+ ବିପଦ",
+  "ra_rule_wind": "💨 ପବନ: 20kn+ ସାବଧାନ · gust 34kn+ ବିପଦ (WMO gale)",
+  "ra_rule_current": "⟲ ସ୍ରୋତ: 3knରୁ ଅଧିକ = ତୀବ୍ର (ସତ ନୋଟ)",
+  "ra_rule_worst": "ସବୁଠୁ ଖରାପ point ହିଁ ପୂରା ବାଟର ନିଷ୍ପତ୍ତି — average ବିପଦ ଲୁଚାଇପାରେ, ତେଣୁ average ନେଉନାହୁଁ।",
+  "ra_land": "ଜମି ଯାଞ୍ଚ (GLOBE 1 km mask)",
+  "ra_land_clear": "ସିଧା ବାଟ: ପୂରା ପାଣି ✓",
+  "ra_points": "ପ୍ରତ୍ୟେକ pointର data",
+  "ra_data": "Data sources (ସତ)",
+  "ra_retry": "ପୁଣି ଚେଷ୍ଟା",
+  "ra_dest_failed": "ଗନ୍ତବ୍ୟ advisory ବିଫଳ — ପୁଣି ଚେଷ୍ଟା"
 }

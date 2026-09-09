@@ -143,5 +143,18 @@
   "nav_gps_no_fix": "এই মুহূর্তে GPS পাওয়া যাচ্ছে না",
   "nav_gps_hint": "ঘরের ভিতরে GPS দুর্বল। Manual start point দিয়ে PLAN করো, বা বাইরে গিয়ে GPS আবার চেষ্টা করো।",
   "nav_use_manual": "Manual start point সেট করো",
-  "nav_retry_gps": "GPS আবার চেষ্টা করো"
+  "nav_retry_gps": "GPS আবার চেষ্টা করো",
+  "ra_title": "রাস্তার পূর্ণ বিশ্লেষণ",
+  "ra_open": "পুরো analysis দেখো",
+  "ra_rules": "নিয়ম — কোন value থেকে সিদ্ধান্ত",
+  "ra_rule_wave": "🌊 ঢেউ: 2.5m+ সাবধান · 4m+ বিপদ",
+  "ra_rule_wind": "💨 বাতাস: 20kn+ সাবধান · gust 34kn+ বিপদ (WMO gale)",
+  "ra_rule_current": "⟲ স্রোত: 3kn-এর বেশি = তীব্র (সৎ নোট)",
+  "ra_rule_worst": "সবচেয়ে খারাপ point-ই পুরো রাস্তার সিদ্ধান্ত — average বিপদ লুকাতে পারে, তাই average নিই না।",
+  "ra_land": "স্থল যাচাই (GLOBE 1 km mask)",
+  "ra_land_clear": "সোজা রাস্তা: পুরোটা জল ✓",
+  "ra_points": "প্রতিটি point-এর data",
+  "ra_data": "Data sources (সৎ)",
+  "ra_retry": "আবার চেষ্টা",
+  "ra_dest_failed": "গন্তব্য advisory ব্যর্থ — আবার চেষ্টা"
 }

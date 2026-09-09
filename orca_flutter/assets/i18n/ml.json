@@ -143,5 +143,18 @@
   "nav_gps_no_fix": "ഇപ്പോൾ GPS ലഭ്യമല്ല",
   "nav_gps_hint": "വീട്ടിനുള്ളിൽ GPS ദുർബലം. Manual start പോയിന്റ് ഇട്ട് PLAN ചെയ്യുക, അല്ലെങ്കിൽ പുറത്തിറങ്ങി GPS വീണ്ടും ശ്രമിക്കുക.",
   "nav_use_manual": "Manual start പോയിന്റ് സജ്ജമാക്കുക",
-  "nav_retry_gps": "GPS വീണ്ടും ശ്രമിക്കുക"
+  "nav_retry_gps": "GPS വീണ്ടും ശ്രമിക്കുക",
+  "ra_title": "വഴിയുടെ സമ്പൂർണ്ണ വിശകലനം",
+  "ra_open": "പൂർണ്ണ analysis കാണുക",
+  "ra_rules": "നിയമങ്ങൾ — ഏത് മൂല്യത്താൽ തീരുമാനം",
+  "ra_rule_wave": "🌊 തിര: 2.5m+ ശ്രദ്ധ · 4m+ അപകടം",
+  "ra_rule_wind": "💨 കാറ്റ്: 20kn+ ശ്രദ്ധ · gust 34kn+ അപകടം (WMO gale)",
+  "ra_rule_current": "⟲ ഒഴുക്ക്: 3kn-ൽ കൂടുതൽ = വേഗം (സത്യസന്ധ കുറിപ്പ്)",
+  "ra_rule_worst": "ഏറ്റവും മോശം point ആണ് മുഴുവൻ വഴിയുടെ തീരുമാനം — average അപകടം മറക്കും, അതിനാൽ average എടുക്കുന്നില്ല.",
+  "ra_land": "കര പരിശോധന (GLOBE 1 km mask)",
+  "ra_land_clear": "നേരിട്ടുള്ള വഴി: പൂർണ്ണം വെള്ളം ✓",
+  "ra_points": "ഓരോ point-യുടെയും data",
+  "ra_data": "Data sources (സത്യസന്ധം)",
+  "ra_retry": "വീണ്ടും ശ്രമിക്കുക",
+  "ra_dest_failed": "ലക്ഷ്യം advisory പരാജയം — വീണ്ടും"
 }

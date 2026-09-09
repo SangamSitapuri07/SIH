@@ -143,5 +143,18 @@
   "nav_gps_no_fix": "आतां GPS मेळ्ळो ना",
   "nav_gps_hint": "घरा भितर GPS दुबळो. Manual start point घालून PLAN कर, वा भायर वचून GPS परत कर.",
   "nav_use_manual": "Manual start point सेट करात",
-  "nav_retry_gps": "GPS परत करात"
+  "nav_retry_gps": "GPS परत करात",
+  "ra_title": "रस्त्याचें पूर्ण विश्लेषण",
+  "ra_open": "पूर्ण analysis पळय",
+  "ra_rules": "नियम — खंच्या value थावन निर्णय",
+  "ra_rule_wave": "🌊 लाटा: 2.5m+ काळजी · 4m+ दुकांत",
+  "ra_rule_wind": "💨 वारें: 20kn+ काळजी · gust 34kn+ दुकांत (WMO gale)",
+  "ra_rule_current": "⟲ व्होंव: 3kn परस चड = वेगवान (प्रामाणीक नोट)",
+  "ra_rule_worst": "सगळ्यांत व्हायट point हच आक्या रस्त्याचो निर्णय करता — average दुकांत लिपवंक शकता, देखून average घेनात.",
+  "ra_land": "जमीन तपासणी (GLOBE 1 km mask)",
+  "ra_land_clear": "सारको रस्तो: पुराय उदक ✓",
+  "ra_points": "दरेक point चो data",
+  "ra_data": "Data sources (प्रामाणीक)",
+  "ra_retry": "परत करा",
+  "ra_dest_failed": "गंतव्य advisory फडीक — परत करा"
 }
