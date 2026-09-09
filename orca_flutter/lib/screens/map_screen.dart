@@ -343,29 +343,7 @@ class _MapScreenState extends State<MapScreen> {
                     fontSize: 10.5, color: Color(0xFF92400E))),
           ),
         ],
-        const SizedBox(height: 8),
-        SizedBox(
-          width: double.infinity,
-          height: 40,
-          child: FilledButton.icon(
-            style: FilledButton.styleFrom(
-                backgroundColor: OrcaTheme.teal,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(11))),
-            onPressed: () {
-              widget.app.setTarget(NavTarget(
-                  'chl ${(h['chl'] as num).toStringAsFixed(2)}',
-                  (h['lat'] as num).toDouble(),
-                  (h['lon'] as num).toDouble()));
-              widget.app.jumpTab?.call(2);
-            },
-            icon: const Icon(Icons.explore_rounded,
-                size: 17, color: Colors.white),
-            label: Text('go_lbl'.tr(),
-                style: const TextStyle(
-                    fontWeight: FontWeight.w800, color: Colors.white)),
-          ),
-        ),
+        // (B10) "Go" button hidden — Navigate tab web pe test ho raha hai
       ]),
     );
   }
@@ -510,25 +488,7 @@ class _MapScreenState extends State<MapScreen> {
                 label: Text('fetch_here'.tr()),
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton.icon(
-                style:
-                    FilledButton.styleFrom(backgroundColor: OrcaTheme.teal),
-                onPressed: () {
-                  widget.app.setTarget(NavTarget(
-                      'map ${ll.latitude.toStringAsFixed(3)},${ll.longitude.toStringAsFixed(3)}',
-                      ll.latitude,
-                      ll.longitude));
-                  widget.app.jumpTab?.call(2);
-                },
-                icon: const Icon(Icons.explore_rounded,
-                    size: 16, color: Colors.white),
-                label: Text('nav_pick_tap'.tr(),
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800, color: Colors.white)),
-              ),
-            ),
+            // (B10) "Navigate here" hidden — Navigate tab abhi web lab mein
           ]),
         ]),
       ),

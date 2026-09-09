@@ -409,6 +409,113 @@ export const fetchRouteCheck = (fromLat: number, fromLon: number, toLat: number,
     `/api/v1/route-check?from_lat=${fromLat}&from_lon=${fromLon}&to_lat=${toLat}&to_lon=${toLon}`,
     20_000);
 
+/* ── whole-route advisory (per-point marine weather, worst-case fold) ── */
+
+/** State of ONE sampled point — "good" (not "go") matches the backend
+ *  _point_state vocabulary; the ROUTE verdict folds these into go|nogo. */
+export type PointState = "good" | "caution" | "danger" | "unknown";
+
+export interface RouteAdvisoryPoint {
+  lat: number;
+  lon: number;
+  /** km sailed along the course up to this point */
+  sail_km: number;
+  /** start/end (and any detour corner) marker */
+  vertex?: boolean;
+  state: PointState;
+  wave_m?: number | null;
+  wave_48h_max_m?: number | null;
+  wind_kn?: number | null;
+  wind_48h_max_kn?: number | null;
+  gust_48h_max_kn?: number | null;
+  current_kn?: number | null;
+  sst_c?: number | null;
+  /** set on caution/danger — the exact numbers that tripped a rule */
+  why?: string;
+  /** informational (strong current / fetch failed / no values) */
+  note?: string;
+}
+
+export interface RouteAdvisory {
+  from: [number, number];
+  to: [number, number];
+  legs: [number, number][];
+  detour: boolean;
+  distance_km: number;
+  distance_nm: number;
+  bearing_deg: number;
+  /** true = verified water-only · false = BLOCKED by land ·
+   *  null = land mask unavailable (must NEVER be shown as "safe") */
+  land_ok: boolean | null;
+  land_reason?: string;
+  land_hit?: { lat: number; lon: number; sail_km: number } | null;
+  points: RouteAdvisoryPoint[];
+  verdict: {
+    level: "go" | "caution" | "nogo" | "unknown";
+    points_known: number;
+    points_total: number;
+    land_verified: boolean | null;
+  };
+  safe_window_at_start?: {
+    found: boolean;
+    from_utc?: string;
+    to_utc?: string;
+    hours?: number;
+    note?: string;
+  } | null;
+  sources_used?: string[];
+  sources_failed?: string[];
+  sample_spacing_km?: number;
+  method?: string;
+  fetched_at?: string;
+}
+
+export const fetchRouteAdvisory = (fromLat: number, fromLon: number, toLat: number, toLon: number) =>
+  apiGet<RouteAdvisory>(
+    `/api/v1/route-advisory?from_lat=${fromLat}&from_lon=${fromLon}&to_lat=${toLat}&to_lon=${toLon}`,
+    95_000 /* cold compute = land verify + ~5 parallel live forecasts, can take ~60 s */);
+
+/* ── voyage planner: "TU analyze kar — kahan jaun?" ── */
+
+export interface VoyageReco {
+  lat: number;
+  lon: number;
+  /** pfz = nearest point on today's OFFICIAL INCOIS PFZ advisory line;
+   *  hotspot = land-masked NOAA chlorophyll bloom centre */
+  kind: "pfz" | "hotspot";
+  name: string;
+  chl?: number | null;
+  distance_nm: number;
+  bearing_deg: number;
+  state: PointState;
+  wave_m?: number | null;
+  wind_kn?: number | null;
+  sst_c?: number | null;
+  why?: string | null;
+  score: number;
+  /** auditable score arithmetic — every +/− explained in words */
+  reasons: string[];
+}
+
+export interface VoyageResponse {
+  found: boolean;
+  from: [number, number];
+  max_km: number;
+  recommendations: VoyageReco[];
+  candidates_evaluated?: number;
+  /** honest failure log — sources that failed appear here, never hidden */
+  notes?: string[];
+  sources?: { pfz?: string; chl?: string; weather?: string };
+  /** the scoring formula spelled out, exactly as computed */
+  scoring?: string;
+  analyzed_at?: string;
+}
+
+export const fetchVoyage = (lat: number, lon: number, maxKm = 120) =>
+  apiGet<VoyageResponse>(
+    `/api/v1/voyage?lat=${lat}&lon=${lon}&max_km=${maxKm}`,
+    75_000 /* PFZ + chl grid + per-candidate weather gate ≈ 20–40 s cold */);
+
 export interface LayersResponse {
   type: "FeatureCollection";
   generated_at: string;
