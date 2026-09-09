@@ -32,12 +32,14 @@ class OrcaApi {
   }
 
   /// (D2) advisory — waves/wind/SST verdict series.
+  /// (B9 fix) 20s → 90s: MOSDAC ka honest wall-cap akela 24s hai +
+  /// ERDDAP lag-retry chain — fast timeouts masquerade as "failures".
   static Future<Map<String, dynamic>> advisory(
       String base, double lat, double lon) async {
     final r = await http
         .get(_u(base, '/api/v1/advisory',
             {'lat': '$lat', 'lon': '$lon'}))
-        .timeout(const Duration(seconds: 20));
+        .timeout(const Duration(seconds: 90));
     if (r.statusCode == 200) {
       return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
     }
@@ -86,6 +88,19 @@ class OrcaApi {
           'to_lat': '$toLat',
           'to_lon': '$toLon'
         }))
+    throw Exception('HTTP ${r.statusCode}');
+  }
+
+  /// (B9) VOYAGE planner — "TU analyze kar: kahan jaun?" (govt PFZ +
+  /// satellite bloom + weather gate; per-candidate auditable score)
+  static Future<Map<String, dynamic>> voyage(
+      String base, double lat, double lon) async {
+    final r = await http
+        .get(_u(base, '/api/v1/voyage', {'lat': '$lat', 'lon': '$lon'}))
+        .timeout(const Duration(seconds: 75));
+    if (r.statusCode == 200) {
+      return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    }
     throw Exception('HTTP ${r.statusCode}');
   }
 

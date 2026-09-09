@@ -444,37 +444,6 @@ class _NavigateScreenState extends State<NavigateScreen>
         ),
       );
 
-  /// 🏝️ Fas-gaya mode — GPS + bundled harbour list = 100% OFFLINE.
-  /// Network ki zaroorat hi nahi; online ho to route-check baad me.
-  Future<void> _returnToHarbour() async {
-    Position? f = widget.app.lastFix;
-    if (f == null) {
-      try {
-        f = await orcaFix();
-      } catch (_) {
-        f = null; // gps off / permission nahi — koi rona nahi, no-op
-      }
-    }
-    if (f == null) return;
-    Harbour? best;
-    var bestKm = double.infinity;
-    final ff = f;
-    for (final h in kHarbours) {
-      final d = Marine.haversineKm(ff.latitude, ff.longitude, h.lat, h.lon);
-      if (d < bestKm) {
-        bestKm = d;
-        best = h;
-      }
-    }
-    final h = best!;
-    widget.app.setTarget(
-        NavTarget(
-            '🏝️ ${h.name} · ${Marine.kmToNm(bestKm).toStringAsFixed(0)} NM',
-            h.lat,
-            h.lon),
-        ret: true);
-  }
-
   // ── (B6) PLAN-ANYWHERE: effective start = manual demo-origin > GPS ──
   /// PLAN mode (manual set) me LIVE cheezein (steer/off-course/arrival,
   /// alert-ticks) honestly PAUSE hoti hain — naav sach me wahan nahi hai;
@@ -558,6 +527,378 @@ class _NavigateScreenState extends State<NavigateScreen>
     setState(() {});
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // ── (B9) VOYAGE WIZARD — sawaal-jawaab planner ──
+  // Q1 intent → Q2 start → Q3 destination (fishing: AI-pick / tap /
+  // coords; return: 3 nearest REAL harbours) — setTarget ke baad
+  // EXISTING verified chain (route-check → transit verdict →
+  // analysis screen) automatically chalti hai.
+  // ─────────────────────────────────────────────────────────────
+  int _wizStep = 0; // 0=intent 1=start 2=destination
+  bool _wizReturn = false;
+  Map<String, dynamic>? _reco;
+  Object? _recoErr;
+  bool _recoBusy = false;
+
+  Widget _wizQ(ThemeData t, String label) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Text(label,
+            textAlign: TextAlign.center,
+            style: t.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w900)),
+      );
+
+  Widget _wizBackBtn(ThemeData t) => Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: () => setState(() {
+            _wizStep--;
+            _reco = null;
+            _recoErr = null;
+          }),
+          icon: const Icon(Icons.arrow_back_rounded, size: 16),
+          label: Text('wiz_back_btn'.tr()),
+        ),
+      );
+
+  /// raw-label tile (harbour names/reco labels data se aate hain)
+  Widget _wizTile(ThemeData t, IconData ic, String label, Color color,
+          String? sub, VoidCallback? onTap) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Card(
+          margin: EdgeInsets.zero,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: t.dividerColor)),
+          child: ListTile(
+            onTap: onTap,
+            enabled: onTap != null,
+            leading: CircleAvatar(
+                backgroundColor: color.withOpacity(0.15),
+                child: Icon(ic, size: 19, color: color)),
+            title: Text(label,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w800, fontSize: 13.5)),
+            subtitle: sub == null
+                ? null
+                : Text(sub, style: const TextStyle(fontSize: 11.5)),
+            trailing: Icon(Icons.chevron_right_rounded,
+                color: t.colorScheme.secondary),
+          ),
+        ),
+      );
+
+  /// 🎣 "TU analyze kar" — VOYAGE engine (govt PFZ + satellite bloom +
+  /// per-candidate weather gate; sirf REAL sources, audits ke saath)
+  Future<void> _runVoyage() async {
+    final org = _origin();
+    if (org == null) {
+      setState(() => _recoErr = 'wiz_need_start'.tr());
+      return;
+    }
+    setState(() {
+      _recoBusy = true;
+      _reco = null;
+      _recoErr = null;
+    });
+    try {
+      final r = await OrcaApi.voyage(widget.settings.base, org.lat, org.lon);
+      if (mounted) setState(() => _reco = r);
+    } catch (e) {
+      if (mounted) setState(() => _recoErr = e);
+    } finally {
+      if (mounted) setState(() => _recoBusy = false);
+    }
+  }
+
+  List<Widget> _returnTiles(ThemeData t) {
+    final org = _origin();
+    if (org == null) {
+      return [
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(children: [
+              Text('nav_gps_hint'.tr(),
+                  textAlign: TextAlign.center,
+                  style: t.textTheme.bodySmall
+                      ?.copyWith(color: t.colorScheme.secondary)),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                  onPressed: _start,
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: Text('nav_retry_gps'.tr())),
+            ]),
+          ),
+        ),
+      ];
+    }
+    final ranked = [
+      for (final h in kHarbours)
+        (h: h, km: Marine.haversineKm(org.lat, org.lon, h.lat, h.lon))
+    ]..sort((a, b) => a.km.compareTo(b.km));
+    return [
+      for (final e in ranked.take(3))
+        _wizTile(
+          t,
+          Icons.anchor_rounded,
+          e.h.name,
+          OrcaTheme.tealDeep,
+          'harbour_nm_brg'.tr(args: [
+            Marine.kmToNm(e.km).toStringAsFixed(0),
+            Marine.bearingDeg(org.lat, org.lon, e.h.lat, e.h.lon)
+                .toStringAsFixed(0),
+          ]),
+          () => widget.app.setTarget(
+              NavTarget(
+                  '🏝️ ${e.h.name} · ${Marine.kmToNm(e.km).toStringAsFixed(0)} NM',
+                  e.h.lat,
+                  e.h.lon),
+              ret: true),
+        ),
+    ];
+  }
+
+  Widget _recoCard(ThemeData t, Map<String, dynamic> rec) {
+    final state = '${rec['state']}';
+    final col = state == 'good'
+        ? OrcaTheme.okGreen
+        : state == 'danger'
+            ? OrcaTheme.dangerRed
+            : state == 'caution'
+                ? OrcaTheme.warnAmber
+                : Colors.grey;
+    final isPfz = rec['kind'] == 'pfz';
+    String m(dynamic x, String u, [int dp = 1]) =>
+        x is num ? '${x.toStringAsFixed(dp)}$u' : '—';
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: col.withOpacity(0.55))),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(
+                isPfz ? Icons.verified_rounded : Icons.science_rounded,
+                size: 18,
+                color: isPfz ? OrcaTheme.tealDeep : OrcaTheme.teal),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text('${rec['name']}',
+                  style: t.textTheme.bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w900)),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                  color: col.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(99)),
+              child: Text('wiz_score'.tr(args: ['${rec['score']}']),
+                  style: TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w900, color: col)),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Text(
+            '📍 ${m(rec['distance_nm'], ' NM', 0)} · ${m(rec['bearing_deg'], '°', 0)} ${Marine.compass16((rec['bearing_deg'] as num? ?? 0).toDouble())}',
+            style: t.textTheme.bodySmall
+                ?.copyWith(color: t.colorScheme.secondary),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '🌊 ${m(rec['wave_m'], ' m')} · 💨 ${m(rec['wind_kn'], ' kn', 0)}'
+            '${rec['chl'] != null ? ' · 🔬 ${(rec['chl'] as num).toStringAsFixed(1)} mg/m³' : ''}',
+            style: t.textTheme.bodySmall,
+          ),
+          if ((rec['reasons'] as List?) != null) ...[
+            const Divider(height: 12),
+            for (final rs in (rec['reasons'] as List).take(3))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 1),
+                child: Text('· $rs',
+                    style: t.textTheme.bodySmall?.copyWith(
+                        fontSize: 10.5,
+                        color: '$rs'.startsWith('⚠')
+                            ? ('$rs'.contains('danger') ||
+                                    '$rs'.contains('waves') ||
+                                    '$rs'.contains('gust'))
+                                ? OrcaTheme.warnAmber
+                                : t.colorScheme.secondary
+                            : t.colorScheme.secondary)),
+              ),
+          ],
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => widget.app.setTarget(NavTarget(
+                  '${rec['name']}',
+                  (rec['lat'] as num).toDouble(),
+                  (rec['lon'] as num).toDouble())),
+              icon: const Icon(Icons.navigation_rounded, size: 16),
+              label: Text('wiz_set_target'.tr()),
+              style: FilledButton.styleFrom(
+                  backgroundColor: col, foregroundColor: Colors.white),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _wizardView(ThemeData t) {
+    final probe = widget.app.probePoint;
+    final kids = <Widget>[
+      const SizedBox(height: 6),
+      const Icon(Icons.sailing_rounded, size: 40, color: OrcaTheme.teal),
+      const SizedBox(height: 10),
+    ];
+    if (_wizStep == 0) {
+      kids.addAll([
+        _wizQ(t, 'wiz_q1'.tr()),
+        _destOpt(t, Icons.phishing_rounded, 'wiz_fish', OrcaTheme.teal,
+            () => setState(() {
+                  _wizReturn = false;
+                  _wizStep = 1;
+                })),
+        _destOpt(t, Icons.anchor_rounded, 'wiz_back', OrcaTheme.tealDeep,
+            () => setState(() {
+                  _wizReturn = true;
+                  _wizStep = 1;
+                })),
+      ]);
+    } else if (_wizStep == 1) {
+      kids.addAll([
+        _wizQ(t, 'wiz_q2'.tr()),
+        _destOpt(t, Icons.gps_fixed_rounded, 'wiz_gps', OrcaTheme.okGreen,
+            () async {
+          await widget.app.setDemoOrigin(null);
+          if (_fix == null) _start();
+          if (mounted) setState(() => _wizStep = 2);
+        }),
+        _destOpt(t, Icons.edit_location_alt_rounded, 'wiz_coords',
+            OrcaTheme.warnAmber, () async {
+          await _startDialog();
+          if (widget.app.demoOrigin != null && mounted) {
+            setState(() => _wizStep = 2);
+          }
+        }),
+        _wizBackBtn(t),
+      ]);
+      if (widget.app.demoOrigin != null) {
+        kids.add(Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text('nav_demo_note'.tr(),
+              textAlign: TextAlign.center,
+              style: t.textTheme.bodySmall
+                  ?.copyWith(color: OrcaTheme.warnAmber, fontSize: 10.5)),
+        ));
+      }
+    } else {
+      // ── step 2: destination ──
+      kids.add(_wizQ(
+          t, _wizReturn ? 'wiz_return_list'.tr() : 'wiz_q3'.tr()));
+      if (_wizReturn) {
+        kids.addAll(_returnTiles(t));
+      } else {
+        kids.addAll([
+          _destOpt(t, Icons.travel_explore_rounded, 'wiz_aipick',
+              OrcaTheme.teal, _recoBusy ? null : _runVoyage),
+          _destOpt(
+            t,
+            Icons.touch_app_rounded,
+            'nav_pick_tap',
+            t.colorScheme.secondary,
+            probe == null
+                ? null
+                : () => widget.app.setTarget(NavTarget(
+                    'map ${probe.latitude.toStringAsFixed(3)},${probe.longitude.toStringAsFixed(3)}',
+                    probe.latitude,
+                    probe.longitude)),
+          ),
+          _destOpt(t, Icons.edit_location_alt_rounded, 'wiz_self_coords',
+              OrcaTheme.warnAmber, _coordsDialog),
+          _wizBackBtn(t),
+        ]);
+        // ── VOYAGE results / states ──
+        if (_recoBusy) {
+          kids.add(Center(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(children: [
+                const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.5)),
+                const SizedBox(height: 10),
+                Text('wiz_analyzing'.tr(),
+                    textAlign: TextAlign.center,
+                    style: t.textTheme.bodySmall
+                        ?.copyWith(color: t.colorScheme.secondary)),
+              ]),
+            ),
+          ));
+        } else if (_recoErr != null) {
+          kids.add(Card(
+            color: OrcaTheme.dangerRed.withOpacity(0.06),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(children: [
+                Text('$_recoErr',
+                    textAlign: TextAlign.center,
+                    style: t.textTheme.bodySmall
+                        ?.copyWith(color: OrcaTheme.dangerRed, fontSize: 11)),
+                TextButton.icon(
+                    onPressed: _runVoyage,
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    label: Text('ra_retry'.tr())),
+              ]),
+            ),
+          ));
+        } else if (_reco != null) {
+          final recs = ((_reco?['recommendations'] as List?) ?? const []);
+          final notes = ((_reco?['notes'] as List?) ?? const []);
+          if (recs.isEmpty) {
+            kids.add(Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(children: [
+                  Text('wiz_no_reco'.tr(),
+                      textAlign: TextAlign.center,
+                      style: t.textTheme.bodySmall),
+                  for (final n in notes)
+                    Text('· $n',
+                        style: t.textTheme.bodySmall?.copyWith(
+                            fontSize: 10, color: t.colorScheme.secondary)),
+                ]),
+              ),
+            ));
+          } else {
+            kids.add(Text(
+                '${_reco?['candidates_evaluated'] ?? recs.length} ${'wiz_evaluated'.tr()}',
+                textAlign: TextAlign.center,
+                style: t.textTheme.bodySmall
+                    ?.copyWith(color: t.colorScheme.secondary, fontSize: 10.5)));
+            for (final r in recs) {
+              kids.add(_recoCard(t, (r as Map).cast<String, dynamic>()));
+            }
+            for (final n in notes.take(2)) {
+              kids.add(Text('· $n',
+                  style: t.textTheme.bodySmall
+                      ?.copyWith(fontSize: 10, color: t.colorScheme.secondary)));
+            }
+          }
+        }
+      }
+    }
+    return ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 20), children: kids);
+  }
+
+
   Future<void> _coordsDialog() async {
 
     final la = TextEditingController();
@@ -616,66 +957,7 @@ class _NavigateScreenState extends State<NavigateScreen>
     final t = Theme.of(context);
     final tgt = widget.app.navTarget;
     if (tgt == null) {
-      final probe = widget.app.probePoint;
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-        children: [
-          Icon(Icons.explore_off_rounded,
-              size: 46, color: t.colorScheme.secondary.withOpacity(0.7)),
-          const SizedBox(height: 10),
-          Text('nav_no_target'.tr(),
-              textAlign: TextAlign.center, style: t.textTheme.bodyMedium),
-          const SizedBox(height: 18),
-          _destOpt(
-            t,
-            Icons.anchor_rounded,
-            'nav_pick_harbour',
-            OrcaTheme.tealDeep,
-            _returnToHarbour,
-          ),
-          _destOpt(
-            t,
-            Icons.touch_app_rounded,
-            'nav_pick_tap',
-            OrcaTheme.teal,
-            probe == null
-                ? null
-                : () => widget.app.setTarget(NavTarget(
-                    'map ${probe.latitude.toStringAsFixed(3)},${probe.longitude.toStringAsFixed(3)}',
-                    probe.latitude,
-                    probe.longitude)),
-          ),
-          _destOpt(
-            t,
-            Icons.edit_location_alt_rounded,
-            'nav_pick_coords',
-            OrcaTheme.warnAmber,
-            _coordsDialog,
-          ),
-          // (B6) PLAN-ANYWHERE — manual start (Punjab baithe samundar ka route)
-          _destOpt(
-            t,
-            Icons.my_location_rounded,
-            widget.app.demoOrigin == null ? 'nav_set_start' : 'nav_start_gps',
-            OrcaTheme.okGreen,
-            widget.app.demoOrigin == null ? _startDialog : _clearStart,
-          ),
-          _destOpt(
-            t,
-            Icons.map_rounded,
-            'pick_on_map',
-            t.colorScheme.secondary,
-            () => widget.app.jumpTab?.call(1),
-          ),
-          if (widget.app.demoOrigin != null) ...[
-            const SizedBox(height: 8),
-            Text('nav_demo_note'.tr(),
-                textAlign: TextAlign.center,
-                style: t.textTheme.bodySmall
-                    ?.copyWith(color: t.colorScheme.secondary)),
-          ],
-        ],
-      );
+      return _wizardView(t); // (B9) VOYAGE WIZARD — question-driven planner
     }
 
     final fix = _fix;
@@ -736,7 +1018,9 @@ class _NavigateScreenState extends State<NavigateScreen>
             ? 'steer_left'.tr(args: ['${steer.deg.toInt()}'])
             : 'steer_right'.tr(args: ['${steer.deg.toInt()}']));
 
-    return Column(children: [
+    // (B9) ListView — 150px overflow bug fix: cards kitne bhi lambe ho,
+    // poora column scroll hota hai (HUD shrinkWrap grid andar hi rehta hai)
+    return ListView(padding: EdgeInsets.zero, children: [
       // ── status strip: verified / blocked / unverified / arrival / off-course ──
       _StatusBanner(
           route: _route,
@@ -1193,9 +1477,9 @@ class _NavigateScreenState extends State<NavigateScreen>
                       ?.copyWith(color: t.colorScheme.secondary)),
             ]),
           ),
-      // ── HUD ──
-      Expanded(
-        child: _gpsErr != null && widget.app.demoOrigin == null
+      // ── HUD ── (B9: ListView andar — grid shrinkWrap, apni scroll nahi)
+      if (true)
+        _gpsErr != null && widget.app.demoOrigin == null
             ? Center(
                 child: SingleChildScrollView(
                   child: Padding(
@@ -1237,6 +1521,8 @@ class _NavigateScreenState extends State<NavigateScreen>
                 ),
               )
             : GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
                 crossAxisCount: 3,
                 padding: const EdgeInsets.all(12),
                 mainAxisSpacing: 8,
@@ -1269,7 +1555,6 @@ class _NavigateScreenState extends State<NavigateScreen>
                       small: true),
                 ],
               ),
-      ),
       // ── trace button + SOS shortcut ──
       Padding(
         padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),

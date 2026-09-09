@@ -18,6 +18,10 @@ so, with its real reason. Nothing is ever invented.*
 - **6 tabs:** Home (AI verdict + 48 h evidence chart) · Map (tap any sea point
   → live data, harbour search) · Navigate · **AI** (10-agent cards) · **SOS**
   (SMS without internet, satellite-truth card) · Info
+ - **Voyage planner (wizard):** asks intent (🎣 fishing / 🏝️ return) →
+  start (GPS / manual coords) → destination style, then **recommends**
+  real spots — today's govt PFZ advisories + satellite chl blooms,
+  each weather-gated with an auditable score card — pick → full analysis
 - **Transit verdict (route-advisory):** the land-verified course sampled every
   ~30 km against live marine forecasts → **GO / CAUTION / NO-GO** with per-km
   observed numbers — worst point decides, never an average that hides danger
