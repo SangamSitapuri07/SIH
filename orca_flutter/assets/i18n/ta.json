@@ -139,5 +139,9 @@
   "nav_set_start": "தொடக்கப் புள்ளி அமை (manual)",
   "nav_start_gps": "தொடக்கம்: நேரடி GPS",
   "nav_start_manual": "தொடக்கம்: உங்கள் புள்ளி {}, {}",
-  "nav_demo_note": "Plan mode: பாதை + பாதுகாப்பு முடிவு செயல்படும்; நேரடி steering/alerts இடைநிறுத்தம் (படகு உண்மையில் அங்கில்லை)"
+  "nav_demo_note": "Plan mode: பாதை + பாதுகாப்பு முடிவு செயல்படும்; நேரடி steering/alerts இடைநிறுத்தம் (படகு உண்மையில் அங்கில்லை)",
+  "nav_gps_no_fix": "இப்போது GPS கிடைக்கவில்லை",
+  "nav_gps_hint": "வீட்டின் உள்ளே GPS பலவீனம். Manual start புள்ளி இட்டு PLAN செய்யுங்கள், அல்லது வெளியே சென்று GPS மீண்டும் முயற்சிக்கவும்.",
+  "nav_use_manual": "Manual start புள்ளி அமைக்கவும்",
+  "nav_retry_gps": "GPS மீண்டும் முயற்சி"
 }

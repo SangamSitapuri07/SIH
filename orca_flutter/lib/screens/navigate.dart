@@ -92,6 +92,7 @@ class _NavigateScreenState extends State<NavigateScreen>
       _wxTimer?.cancel();
     } else {
       _maybeTgtAdv();
+      _maybeRtAdv(); // (B6) target set + manual start — bina GPS bhi verdict
       _startWxWatcher(); // (B5) destination badli to alert
     }
     if (mounted) setState(() {});
@@ -1089,14 +1090,45 @@ class _NavigateScreenState extends State<NavigateScreen>
           ),
       // ── HUD ──
       Expanded(
-        child: _gpsErr != null
+        child: _gpsErr != null && widget.app.demoOrigin == null
             ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(_gpsErr!.tr(),
-                      textAlign: TextAlign.center,
-                      style: t.textTheme.bodyMedium
-                          ?.copyWith(color: OrcaTheme.dangerRed)),
+                child: SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.gps_off_rounded,
+                          size: 40, color: OrcaTheme.warnAmber),
+                      const SizedBox(height: 12),
+                      Text('nav_gps_no_fix'.tr(),
+                          textAlign: TextAlign.center,
+                          style: t.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: OrcaTheme.warnAmber)),
+                      const SizedBox(height: 8),
+                      Text('nav_gps_hint'.tr(),
+                          textAlign: TextAlign.center,
+                          style: t.textTheme.bodySmall
+                              ?.copyWith(color: t.colorScheme.secondary)),
+                      const SizedBox(height: 14),
+                      FilledButton.icon(
+                        onPressed: _startDialog,
+                        icon: const Icon(Icons.my_location_rounded, size: 17),
+                        label: Text('nav_use_manual'.tr()),
+                      ),
+                      TextButton.icon(
+                        onPressed: _start,
+                        icon: const Icon(Icons.refresh_rounded, size: 17),
+                        label: Text('nav_retry_gps'.tr()),
+                      ),
+                      const SizedBox(height: 6),
+                      // raw error honestly, chhota — fisherman ko upar wala
+                      // button chahiye, judge ko yeh detail
+                      Text(_gpsErr ?? '',
+                          textAlign: TextAlign.center,
+                          style: t.textTheme.bodySmall?.copyWith(
+                              color: t.colorScheme.secondary, fontSize: 10)),
+                    ]),
+                  ),
                 ),
               )
             : GridView.count(

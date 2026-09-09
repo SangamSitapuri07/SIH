@@ -139,5 +139,9 @@
   "nav_set_start": "सुरुवातीचा पॉइंट सेट कर (manual)",
   "nav_start_gps": "सुरुवात: लाइव्ह GPS",
   "nav_start_manual": "सुरुवात: तुमचा पॉइंट {}, {}",
-  "nav_demo_note": "Plan mode: मार्ग + सुरक्षा निर्णय चालेल; लाइव्ह steering/alerts थांबेल (बोट खरंच तिथे नाही)"
+  "nav_demo_note": "Plan mode: मार्ग + सुरक्षा निर्णय चालेल; लाइव्ह steering/alerts थांबेल (बोट खरंच तिथे नाही)",
+  "nav_gps_no_fix": "आत्ता GPS मिळत नाही",
+  "nav_gps_hint": "घरात GPS कमकुवत असतो. Manual start point टाकून PLAN करा, किंवा बाहेर जाऊन GPS पुन्हा करा.",
+  "nav_use_manual": "Manual start point सेट करा",
+  "nav_retry_gps": "GPS पुन्हा करा"
 }

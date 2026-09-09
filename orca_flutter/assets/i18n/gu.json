@@ -139,5 +139,9 @@
   "nav_set_start": "શરૂઆતી પોઇન્ટ સેટ કરો (manual)",
   "nav_start_gps": "શરૂઆત: લાઇવ GPS",
   "nav_start_manual": "શરૂઆત: તમારો પોઇન્ટ {}, {}",
-  "nav_demo_note": "Plan mode: રસ્તો + સુરક્ષા નિર્ણય ચાલશે; લાઇવ steering/alerts pause (બોટ ખરેખર ત્યાં નથી)"
+  "nav_demo_note": "Plan mode: રસ્તો + સુરક્ષા નિર્ણય ચાલશે; લાઇવ steering/alerts pause (બોટ ખરેખર ત્યાં નથી)",
+  "nav_gps_no_fix": "હમણાં GPS મળી રહ્યું નથી",
+  "nav_gps_hint": "ઘરની અંદર GPS નબળું હોય છે. Manual start point નાખી PLAN કરો, કે બહાર જઈ GPS ફરી try કરો.",
+  "nav_use_manual": "Manual start point સેટ કરો",
+  "nav_retry_gps": "GPS ફરી try કરો"
 }

@@ -139,5 +139,9 @@
   "nav_set_start": "सुरवातीचो पॉइंट सेट कर (manual)",
   "nav_start_gps": "सुरवात: लायव्ह GPS",
   "nav_start_manual": "सुरवात: तुमचो पॉइंट {}, {}",
-  "nav_demo_note": "Plan mode: रस्तो + सुरक्षा निर्णय चालतलो; लायव्ह steering/alerts थांबतले (बोट खरेंच थंय ना)"
+  "nav_demo_note": "Plan mode: रस्तो + सुरक्षा निर्णय चालतलो; लायव्ह steering/alerts थांबतले (बोट खरेंच थंय ना)",
+  "nav_gps_no_fix": "आतां GPS मेळ्ळो ना",
+  "nav_gps_hint": "घरा भितर GPS दुबळो. Manual start point घालून PLAN कर, वा भायर वचून GPS परत कर.",
+  "nav_use_manual": "Manual start point सेट करात",
+  "nav_retry_gps": "GPS परत करात"
 }

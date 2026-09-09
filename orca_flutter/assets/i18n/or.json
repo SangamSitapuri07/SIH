@@ -139,5 +139,9 @@
   "nav_set_start": "ଆରମ୍ଭ ବିନ୍ଦୁ ସେଟ କର (manual)",
   "nav_start_gps": "ଆରମ୍ଭ: ଲାଇଭ GPS",
   "nav_start_manual": "ଆରମ୍ଭ: ତୁମର ବିନ୍ଦୁ {}, {}",
-  "nav_demo_note": "Plan mode: ବାଟ + ସୁରକ୍ଷା ନିଷ୍ପତ୍ତି ଚାଲିବ; ଲାଇଭ steering/alerts ବନ୍ଦ (ଡଙ୍ଗା ସତରେ ସେଠାରେ ନାହିଁ)"
+  "nav_demo_note": "Plan mode: ବାଟ + ସୁରକ୍ଷା ନିଷ୍ପତ୍ତି ଚାଲିବ; ଲାଇଭ steering/alerts ବନ୍ଦ (ଡଙ୍ଗା ସତରେ ସେଠାରେ ନାହିଁ)",
+  "nav_gps_no_fix": "ଏବେ GPS ମିଳୁନାହିଁ",
+  "nav_gps_hint": "ଘର ଭିତରେ GPS ଦୁର୍ବଳ। Manual start point ଦେଇ PLAN କର, କିମ୍ବା ବାହାରକୁ ଯାଇ GPS ପୁଣି ଚେଷ୍ଟା କର।",
+  "nav_use_manual": "Manual start point ସେଟ କର",
+  "nav_retry_gps": "GPS ପୁଣି ଚେଷ୍ଟା କର"
 }

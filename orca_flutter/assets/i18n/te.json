@@ -139,5 +139,9 @@
   "nav_set_start": "ప్రారంభ పాయింట్ సెట్ చేయి (manual)",
   "nav_start_gps": "ప్రారంభం: లైవ్ GPS",
   "nav_start_manual": "ప్రారంభం: మీ పాయింట్ {}, {}",
-  "nav_demo_note": "Plan mode: దారు + భద్రతా నిర్ణయం పనిచేస్తుంది; లైవ్ steering/alerts ఆగాయి (పడవ నిజంగా అక్కడ లేదు)"
+  "nav_demo_note": "Plan mode: దారు + భద్రతా నిర్ణయం పనిచేస్తుంది; లైవ్ steering/alerts ఆగాయి (పడవ నిజంగా అక్కడ లేదు)",
+  "nav_gps_no_fix": "ఇప్పుడు GPS అందుబాటులో లేదు",
+  "nav_gps_hint": "ఇంట్లో GPS బలహీనం. Manual start పాయింట్ పెట్టి PLAN చేయండి, లేదా బయటికి వెళ్లి GPS మళ్లీ ప్రయత్నించండి.",
+  "nav_use_manual": "Manual start పాయింట్ సెట్ చేయండి",
+  "nav_retry_gps": "GPS మళ్లీ ప్రయత్నించండి"
 }

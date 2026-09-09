@@ -139,5 +139,9 @@
   "nav_set_start": "Set start point (manual)",
   "nav_start_gps": "Start: live GPS",
   "nav_start_manual": "Start: your point {}, {}",
-  "nav_demo_note": "Plan mode: route + safety verdict work; live steering/alerts pause (boat not really there)"
+  "nav_demo_note": "Plan mode: route + safety verdict work; live steering/alerts pause (boat not really there)",
+  "nav_gps_no_fix": "GPS fix not available right now",
+  "nav_gps_hint": "Indoors GPS is weak. Set a manual start point to PLAN the route, or step out and retry GPS.",
+  "nav_use_manual": "Set manual start point",
+  "nav_retry_gps": "Retry GPS"
 }

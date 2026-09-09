@@ -139,5 +139,9 @@
   "nav_set_start": "শুরুর পয়েন্ট সেট করো (manual)",
   "nav_start_gps": "শুরু: লাইভ GPS",
   "nav_start_manual": "শুরু: তোমার পয়েন্ট {}, {}",
-  "nav_demo_note": "Plan mode: রাস্তা + নিরাপত্তা সিদ্ধান্ত চলবে; লাইভ steering/alerts বিরতি (নৌকা আসলে সেখানে নেই)"
+  "nav_demo_note": "Plan mode: রাস্তা + নিরাপত্তা সিদ্ধান্ত চলবে; লাইভ steering/alerts বিরতি (নৌকা আসলে সেখানে নেই)",
+  "nav_gps_no_fix": "এই মুহূর্তে GPS পাওয়া যাচ্ছে না",
+  "nav_gps_hint": "ঘরের ভিতরে GPS দুর্বল। Manual start point দিয়ে PLAN করো, বা বাইরে গিয়ে GPS আবার চেষ্টা করো।",
+  "nav_use_manual": "Manual start point সেট করো",
+  "nav_retry_gps": "GPS আবার চেষ্টা করো"
 }

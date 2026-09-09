@@ -139,5 +139,9 @@
   "nav_set_start": "ಆರಂಭ ಬಿಂದು ಹೊಂದಿಸು (manual)",
   "nav_start_gps": "ಆರಂಭ: ಲೈವ್ GPS",
   "nav_start_manual": "ಆರಂಭ: ನಿಮ್ಮ ಬಿಂದು {}, {}",
-  "nav_demo_note": "Plan mode: ದಾರಿ + ಸುರಕ್ಷತಾ ನಿರ್ಧಾರ ಕೆಲಸ ಮಾಡುತ್ತದೆ; ಲೈವ್ steering/alerts ವಿರಾಮ (ದೋಣಿ ನಿಜವಾಗಿ ಅಲ್ಲಿಲ್ಲ)"
+  "nav_demo_note": "Plan mode: ದಾರಿ + ಸುರಕ್ಷತಾ ನಿರ್ಧಾರ ಕೆಲಸ ಮಾಡುತ್ತದೆ; ಲೈವ್ steering/alerts ವಿರಾಮ (ದೋಣಿ ನಿಜವಾಗಿ ಅಲ್ಲಿಲ್ಲ)",
+  "nav_gps_no_fix": "ಈಗ GPS ಸಿಗುತ್ತಿಲ್ಲ",
+  "nav_gps_hint": "ಮನೆಯೊಳಗೆ GPS ದುರ್ಬಲ. Manual start ಬಿಂದು ಹಾಕಿ PLAN ಮಾಡಿ, ಅಥವಾ ಹೊರಗೆ ಹೋಗಿ GPS ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
+  "nav_use_manual": "Manual start ಬಿಂದು ಹೊಂದಿಸಿ",
+  "nav_retry_gps": "GPS ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ"
 }

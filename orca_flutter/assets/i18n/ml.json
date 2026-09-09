@@ -139,5 +139,9 @@
   "nav_set_start": "തുടക്ക പോയിന്റ് സജ്ജമാക്കൂ (manual)",
   "nav_start_gps": "തുടക്കം: ലൈവ് GPS",
   "nav_start_manual": "തുടക്കം: നിങ്ങളുടെ പോയിന്റ് {}, {}",
-  "nav_demo_note": "Plan mode: വഴി + സുരക്ഷാ തീരുമാനം പ്രവർത്തിക്കും; ലൈവ് steering/alerts നിർത്തും (ബോട്ട് യഥാർത്ഥത്തിൽ അവിടെയില്ല)"
+  "nav_demo_note": "Plan mode: വഴി + സുരക്ഷാ തീരുമാനം പ്രവർത്തിക്കും; ലൈവ് steering/alerts നിർത്തും (ബോട്ട് യഥാർത്ഥത്തിൽ അവിടെയില്ല)",
+  "nav_gps_no_fix": "ഇപ്പോൾ GPS ലഭ്യമല്ല",
+  "nav_gps_hint": "വീട്ടിനുള്ളിൽ GPS ദുർബലം. Manual start പോയിന്റ് ഇട്ട് PLAN ചെയ്യുക, അല്ലെങ്കിൽ പുറത്തിറങ്ങി GPS വീണ്ടും ശ്രമിക്കുക.",
+  "nav_use_manual": "Manual start പോയിന്റ് സജ്ജമാക്കുക",
+  "nav_retry_gps": "GPS വീണ്ടും ശ്രമിക്കുക"
 }
