@@ -71,6 +71,14 @@ function parseLL(txt: string): LL | string {
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** Truth-first knots display: 1 decimal so a raw 19.6 kn NEVER masquerades
+    as "20" sitting next to the ≥20 kn rule line — every cell must be
+    auditable against the printed thresholds (judge-proofing, B10a). */
+const fmtKn = (v: number) => {
+  const r = Math.round(v * 10) / 10;
+  return Number.isInteger(r) ? String(r) : r.toFixed(1);
+};
+
 // demo presets = REAL ocean coords (integration test values we already
 // ran against the live backend — Mumbai→SW 55 NM came back GO 5/5)
 const ROUTE_PRESETS: { label: string; s: LL; d: LL }[] = [
@@ -839,9 +847,9 @@ export default function NavigateLab() {
                             </td>
                             <td className="py-1.5 pr-2 text-[#DBE4F3]">{p.wave_m != null ? p.wave_m.toFixed(1) : "—"}</td>
                             <td className="py-1.5 pr-2 text-[#DBE4F3]">{p.wave_48h_max_m != null ? p.wave_48h_max_m.toFixed(1) : "—"}</td>
-                            <td className="py-1.5 pr-2 text-[#DBE4F3]">{p.wind_kn != null ? p.wind_kn.toFixed(0) : "—"}</td>
-                            <td className="py-1.5 pr-2 text-[#DBE4F3]">{p.wind_48h_max_kn != null ? p.wind_48h_max_kn.toFixed(0) : "—"}</td>
-                            <td className="py-1.5 pr-2 text-[#DBE4F3]">{p.gust_48h_max_kn != null ? p.gust_48h_max_kn.toFixed(0) : "—"}</td>
+                            <td className="py-1.5 pr-2 text-[#DBE4F3]">{p.wind_kn != null ? fmtKn(p.wind_kn) : "—"}</td>
+                            <td className="py-1.5 pr-2 text-[#DBE4F3]">{p.wind_48h_max_kn != null ? fmtKn(p.wind_48h_max_kn) : "—"}</td>
+                            <td className="py-1.5 pr-2 text-[#DBE4F3]">{p.gust_48h_max_kn != null ? fmtKn(p.gust_48h_max_kn) : "—"}</td>
                             <td className="py-1.5 pr-2 text-[#DBE4F3]">{p.current_kn != null ? p.current_kn.toFixed(2) : "—"}</td>
                             <td className="py-1.5 pr-2 text-[#DBE4F3]">{p.sst_c != null ? p.sst_c.toFixed(1) : "—"}</td>
                             <td className="py-1.5 text-amber-200/80 italic">{p.why ?? p.note ?? ""}</td>

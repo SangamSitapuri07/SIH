@@ -38,6 +38,12 @@ export const STATE_COLOR: Record<PointState, string> = {
   unknown: "#64748b",
 };
 
+/** 1-decimal knots truth (B10a — raw 19.6 must not display as "20" next to the ≥20 rule) */
+const fmtKn = (v: number) => {
+  const r = Math.round(v * 10) / 10;
+  return Number.isInteger(r) ? String(r) : r.toFixed(1);
+};
+
 function badge(html: string, bg: string, size = 26): L.DivIcon {
   return L.divIcon({
     className: "",
@@ -188,8 +194,8 @@ export default function RouteMap({
                   {p.wave_48h_max_m != null && ` (48h max ${p.wave_48h_max_m.toFixed(1)} m)`}
                 </>
               )}
-              {p.wind_48h_max_kn != null && <><br />wind 48h max {p.wind_48h_max_kn.toFixed(0)} kn</>}
-              {p.gust_48h_max_kn != null && <><br />gust 48h max {p.gust_48h_max_kn.toFixed(0)} kn</>}
+              {p.wind_48h_max_kn != null && <><br />wind 48h max {fmtKn(p.wind_48h_max_kn)} kn</>}
+              {p.gust_48h_max_kn != null && <><br />gust 48h max {fmtKn(p.gust_48h_max_kn)} kn</>}
               {p.current_kn != null && <><br />current {p.current_kn.toFixed(2)} kn</>}
               {p.sst_c != null && <><br />SST {p.sst_c.toFixed(1)} °C</>}
               {(p.why || p.note) && <><br /><i>{p.why ?? p.note}</i></>}
