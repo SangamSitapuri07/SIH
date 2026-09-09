@@ -71,3 +71,103 @@ class Marine {
     return (deg: diff.abs().roundToDouble(), left: diff < 0);
   }
 }
+
+/// ─────────────────────────────────────────────────────────────────
+/// (B5) LIVE NAVIGATION ALERT RULES — the real-time "dimag".
+///
+/// Ek GPS tick andar jata hai, alerts bahar aate hain. 100% OFFLINE:
+/// sirf GPS + route legs chahiye (jo route-check ne diye) — internet
+/// ke bina bhi off-course/turn alerts chalte rehte hain (demo USP).
+/// PURE DART — koi I/O nahi, isliye har rule synthetic GPS feed se
+/// unit-test se pin kiya gaya hai (test/marine_test.dart).
+///
+/// Anti-flap discipline (real navigation systems jaisi):
+///   - off-course tabhi bolo jab confirmTicks lagatar bahar (patla
+///     GPS jitter se cross karne pe siren nahi bajega)
+///   - wapas andar aaya tabhi re-arm (har tick pe repeat nahi)
+///   - turn cue ek waypoint pe sirf ek baar
+/// ─────────────────────────────────────────────────────────────────
+class NavAlert {
+  /// 'offcourse' | 'turn' | 'ontrack'
+  final String type;
+
+  /// offcourse/ontrack: current XTE (cross-track error) in NM
+  /// turn: distance to the waypoint in NM
+  final double nm;
+
+  /// offcourse: bearing BACK towards the next waypoint (deg)
+  /// turn: bearing to steer after the turn (deg), else 0
+  final double deg;
+  const NavAlert(this.type, this.nm, this.deg);
+}
+
+class NavRules {
+  /// Route legs as [[lat, lon], ...] — routecheck ke arrays hi.
+  final List<List<double>> legs;
+
+  /// Off-course siren threshold (NM) — us se zyada hat gaye to bolenge.
+  final double offNm;
+
+  /// Turn advisory radius (NM) — waypoint itne kareeb → "ab mudo".
+  final double turnNm;
+
+  /// Kitne lagatar ticks condition confirm karti hai (GPS jitter rokne).
+  final int confirmTicks;
+
+  int leg = 0; // active leg index
+  int _offStreak = 0, _onStreak = 0;
+  bool offActive = false;
+  final Set<int> _turnFired = {}; // ek waypoint pe ek baar hi turn alert
+
+  NavRules(this.legs, {this.offNm = 0.5, this.turnNm = 0.5, this.confirmTicks = 2});
+
+  double _xteNm(double lat, double lon) {
+    final a = legs[leg], b = legs[leg + 1];
+    return Marine.kmToNm(
+        Marine.crossTrackKm(lat, lon, a[0], a[1], b[0], b[1]));
+  }
+
+  double _distToLegEndNm(double lat, double lon) {
+    final b = legs[leg + 1];
+    return Marine.kmToNm(Marine.haversineKm(lat, lon, b[0], b[1]));
+  }
+
+  /// Ek position tick → emitted alerts (0 se zyada bhi ho sakte hain).
+  List<NavAlert> tick(double lat, double lon) {
+    final out = <NavAlert>[];
+    if (legs.length < 2 || leg >= legs.length - 1) return out;
+
+    // — leg advance + TURN cue —
+    final dEnd = _distToLegEndNm(lat, lon);
+    if (dEnd <= turnNm && leg < legs.length - 2 && !_turnFired.contains(leg)) {
+      _turnFired.add(leg);
+      leg++;
+      final b = legs[leg + 1];
+      out.add(NavAlert(
+          'turn',
+          dEnd,
+          Marine.bearingDeg(lat, lon, b[0], b[1])));
+    }
+
+    // — OFF-COURSE (active leg se XTE) + recovery —
+    final xte = _xteNm(lat, lon);
+    final steerBack = Marine.bearingDeg(
+        lat, lon, legs[leg + 1][0], legs[leg + 1][1]);
+    if (xte > offNm) {
+      _offStreak++;
+      _onStreak = 0;
+      if (!offActive && _offStreak >= confirmTicks) {
+        offActive = true;
+        out.add(NavAlert('offcourse', xte, steerBack));
+      }
+    } else {
+      _onStreak++;
+      _offStreak = 0;
+      if (offActive && _onStreak >= confirmTicks) {
+        offActive = false;
+        out.add(NavAlert('ontrack', xte, 0));
+      }
+    }
+    return out;
+  }
+}

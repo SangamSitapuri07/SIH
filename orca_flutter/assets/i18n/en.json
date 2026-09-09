@@ -131,5 +131,9 @@
   "rt_land_detour": "Real detour waypoint found",
   "rt_land_unverified": "Course NOT land-verified",
   "rt_loading": "Analysing the whole route…",
-  "rt_failed": "Route analysis failed"
+  "rt_failed": "Route analysis failed",
+  "al_offcourse": "Off course by {} NM — steer {}° back",
+  "al_turn": "Turn now: {}° ({} NM to waypoint)",
+  "al_ontrack": "Back on course ✔",
+  "al_dest_worse": "Destination weather got worse: {}"
 }

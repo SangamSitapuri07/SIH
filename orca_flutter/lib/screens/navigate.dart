@@ -20,7 +20,7 @@ import 'home.dart' show orcaFix;
 final _notif = FlutterLocalNotificationsPlugin();
 bool _notifReady = false;
 
-Future<void> _notifyArrival(String body) async {
+Future<void> _notifyArrival(String body, [int id = 7]) async {
   try {
     if (!_notifReady) {
       await _notif.initialize(const InitializationSettings(
@@ -28,8 +28,8 @@ Future<void> _notifyArrival(String body) async {
       _notifReady = true;
     }
     await _notif.show(
-        7,
-        'ORCA 🐟',
+        id,
+        'ORCA ⚠️',
         body,
         const NotificationDetails(
             android: AndroidNotificationDetails('orca_nav', 'Navigation',
@@ -76,6 +76,9 @@ class _NavigateScreenState extends State<NavigateScreen>
       _rtAdv = null;
       _rtAdvFor = null;
       _rtAdvErr = null;
+      _rules = null; // (B5)
+      _bannerTxt = null;
+      _tgtColorRank = 1;
     }
     if (widget.app.navTarget == null) {
       _tgtAdv = null;
@@ -84,8 +87,12 @@ class _NavigateScreenState extends State<NavigateScreen>
       _rtAdv = null;
       _rtAdvFor = null;
       _rtAdvErr = null;
+      _rules = null;
+      _bannerTxt = null;
+      _wxTimer?.cancel();
     } else {
       _maybeTgtAdv();
+      _startWxWatcher(); // (B5) destination badli to alert
     }
     if (mounted) setState(() {});
   }
@@ -94,6 +101,92 @@ class _NavigateScreenState extends State<NavigateScreen>
   Map<String, dynamic>? _rtAdv;
   Object? _rtAdvErr;
   Object? _rtAdvFor;
+
+  // ── (B5) LIVE ALERTS — offline NavRules + destination watcher ──
+  NavRules? _rules;
+  String? _bannerTxt;
+  Color? _bannerCol;
+  DateTime? _bannerAt;
+  Timer? _wxTimer;
+  int _tgtColorRank = 1; // destination advisory ka last rank (green0/amber1/red2)
+
+  void _setBanner(String txt, Color col) {
+    _bannerTxt = txt;
+    _bannerCol = col;
+    _bannerAt = DateTime.now();
+    if (mounted) setState(() {});
+  }
+
+  /// (B5) route-check ke REAL legs se offline alert-engine banao.
+  /// Yahan se internet ke BINA bhi har fix pe alerts chalte hain.
+  void _wireRulesFrom(Map<String, dynamic>? route) {
+    final ls = (route?['legs'] as List?) ?? [];
+    if (ls.length >= 2) {
+      _rules = NavRules([
+        for (final l in ls) [_legLat(l), _legLon(l)],
+      ], offNm: _offCourseNm);
+    } else {
+      _rules = null;
+    }
+  }
+
+  String _alertText(NavAlert a) => a.type == 'offcourse'
+      ? 'al_offcourse'
+          .tr(args: [a.nm.toStringAsFixed(1), a.deg.toStringAsFixed(0)])
+      : a.type == 'turn'
+          ? 'al_turn'
+              .tr(args: [a.nm.toStringAsFixed(1), a.deg.toStringAsFixed(0)])
+          : 'al_ontrack'.tr();
+
+  void _tickAlerts(Position fix) {
+    final rules = _rules;
+    if (rules == null || widget.app.navTarget == null) return;
+    for (final a in rules.tick(fix.latitude, fix.longitude)) {
+      final col = a.type == 'offcourse'
+          ? OrcaTheme.dangerRed
+          : a.type == 'turn'
+              ? OrcaTheme.warnAmber
+              : OrcaTheme.okGreen;
+      final txt = _alertText(a);
+      _setBanner(txt, col);
+      _notifyArrival(txt, a.type == 'ontrack' ? 11 : 10);
+    }
+  }
+
+  /// (B5) destination conditions 15 min me do-jaanch — haalat BIGDI
+  /// (green→amber→red) to skipper ko batao. Network chahiye; offline
+  /// rahe to silently agle round pe try (koi fake data nahi).
+  void _startWxWatcher() {
+    _wxTimer?.cancel();
+    _wxTimer = Timer.periodic(const Duration(minutes: 15), (t) async {
+      final tgt = widget.app.navTarget;
+      if (tgt == null || !mounted) {
+        t.cancel();
+        return;
+      }
+      try {
+        final a = await OrcaApi.advisory(widget.settings.base, tgt.lat, tgt.lon);
+        if (!mounted || widget.app.navTarget != tgt) return;
+        final c = '${a['color']}';
+        final rank = c == 'red'
+            ? 2
+            : c == 'amber'
+                ? 1
+                : c == 'green'
+                    ? 0
+                    : 1;
+        if (rank > _tgtColorRank) {
+          final txt = 'al_dest_worse'
+              .tr(args: [rank == 2 ? 'rt_nogo'.tr() : 'rt_caution'.tr()]);
+          _setBanner(txt, rank == 2 ? OrcaTheme.dangerRed : OrcaTheme.warnAmber);
+          _notifyArrival(txt, 12);
+        }
+        _tgtColorRank = rank;
+      } catch (_) {
+        /* offline — agli baar try; kabhi status invent nahi karte */
+      }
+    });
+  }
 
   /// (B4) "jahan ho se is point tak jaana safe?" — POORA rasta
   /// (~30km sampling + har point ka live marine data). GPS fix milte
@@ -130,6 +223,15 @@ class _NavigateScreenState extends State<NavigateScreen>
           widget.settings.base, tgt.lat, tgt.lon);
       if (mounted && widget.app.navTarget == tgt) {
         setState(() => _tgtAdv = r);
+        final c = '${r['color']}'; // (B5) rank sync — yahi baseline hai
+        _tgtColorRank =
+            c == 'red'
+                ? 2
+                : c == 'amber'
+                    ? 1
+                    : c == 'green'
+                        ? 0
+                        : 1;
       }
     } catch (e) {
       if (mounted && widget.app.navTarget == tgt) {
@@ -194,6 +296,7 @@ class _NavigateScreenState extends State<NavigateScreen>
     _maybeRouteCheck();
     _checkArrival(fix);
     _maybeRtAdv(); // (B4) fix milte hi transit verdict (one-shot per target)
+    _tickAlerts(fix); // (B5) live off-course / turn / recover alerts (offline)
     // wakelock: target hai to screen on rakho
     final wantWake = widget.app.navTarget != null;
     if (wantWake != _wakeOn) {
@@ -226,6 +329,7 @@ class _NavigateScreenState extends State<NavigateScreen>
           widget.settings.base, fix.latitude, fix.longitude, tgt.lat, tgt.lon);
       if (mounted && widget.app.navTarget == tgt) {
         setState(() => _route = r);
+        _wireRulesFrom(r); // (B5) offline alert-engine LIVE
       }
     } catch (e) {
       if (mounted && widget.app.navTarget == tgt) {
@@ -237,6 +341,7 @@ class _NavigateScreenState extends State<NavigateScreen>
                 {'lat': tgt.lat, 'lon': tgt.lon},
               ],
             });
+        _wireRulesFrom(_route); // fallback line pe bhi alerts chalenge
       }
     }
   }
@@ -363,6 +468,7 @@ class _NavigateScreenState extends State<NavigateScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _posSub?.cancel();
+    _wxTimer?.cancel();
     widget.app.removeListener(_onTarget);
     if (_wakeOn) WakelockPlus.disable();
     _saveTrace();
@@ -480,6 +586,30 @@ class _NavigateScreenState extends State<NavigateScreen>
           arrived: arrived,
           offCourse: offCourse,
           steerTxt: steerTxt),
+      // ── (B5) LIVE ALERT banner — 60s tak fresh dikhta hai ──
+      if (_bannerTxt != null &&
+          _bannerAt != null &&
+          DateTime.now().difference(_bannerAt!) < const Duration(seconds: 60))
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+              color: (_bannerCol ?? OrcaTheme.warnAmber).withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _bannerCol ?? OrcaTheme.warnAmber)),
+          child: Row(children: [
+            Icon(Icons.notifications_active_rounded,
+                color: _bannerCol ?? OrcaTheme.warnAmber, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(_bannerTxt!,
+                  style: t.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: _bannerCol ?? OrcaTheme.warnAmber)),
+            ),
+          ]),
+        ),
       // ── mini map ──
       SizedBox(
         height: 220,
@@ -570,6 +700,9 @@ class _NavigateScreenState extends State<NavigateScreen>
                 _rtAdv = null;
                 _rtAdvFor = null;
                 _rtAdvErr = null;
+                _rules = null;
+                _bannerTxt = null;
+                _wxTimer?.cancel();
                 if (_wakeOn) WakelockPlus.disable();
                 _wakeOn = false;
                 setState(() {});
