@@ -799,6 +799,35 @@ export default function NavigateLab() {
                   Worst-point rule: sabse bura point hi verdict decide karta hai — average kabhi nahi
                   (average danger ko chhupa deta hai).
                 </div>
+                {(() => {
+                  // KYUN saamne hona chahiye — NO-GO land se ya weather se,
+                  // aur KAUNSA point decide kiya (B12: verdict ambiguity killed)
+                  const pts = ra.points ?? [];
+                  const danger = pts.find((p) => p.state === "danger");
+                  const caution = pts.find((p) => p.state === "caution");
+                  const unknowns = pts.filter((p) => p.state === "unknown").length;
+                  let line: string | null = null;
+                  if (ra.verdict.land_verified === false) {
+                    line = "🎯 kyun: course hi LAND se atka hua hai (destination tak paani ka raasta nahi)";
+                  } else if (danger) {
+                    line = `🎯 kyun: point ${pts.indexOf(danger) + 1} — ${danger.why ?? danger.note ?? "danger"}`;
+                  } else if (caution && ra.verdict.level === "caution") {
+                    line = `🎯 kyun: point ${pts.indexOf(caution) + 1} — ${caution.why ?? caution.note ?? "caution"}`;
+                  } else if (unknowns > 0 && ra.verdict.level === "caution") {
+                    line = `🎯 kyun: ${unknowns} point(s) ne data nahi diya → unknown = savdhani (kabhi blind-GO nahi)`;
+                  }
+                  if (!line) return null;
+                  return (
+                    <div className="mt-1 text-[12px] font-bold text-white">
+                      {line}
+                      {danger && unknowns > 0 && (
+                        <span className="ml-2 text-[11px] font-medium text-[#9FB0D1]">
+                          · +{unknowns} unknown (reason table+sources mein — chhupaya nahi)
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <StatChip label="points known" value={`${ra.verdict.points_known}/${ra.verdict.points_total}`} />
                   <StatChip
