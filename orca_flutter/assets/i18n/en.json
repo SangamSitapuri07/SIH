@@ -209,5 +209,18 @@
   "vp_s2": "GLOBE 1 km land mask",
   "vp_s3": "land on course → auto sea reroute",
   "vp_analyze": "Analyze route ➜",
-  "vp_loading": "Fetching live sources… (first time 20–30 s, then instant from cache)"
+  "vp_loading": "Fetching live sources… (first time 20–30 s, then instant from cache)",
+  "ra_active": "[ACTIVE]",
+  "ra_kyun": "why",
+  "ra_point_word": "point",
+  "ra_why_generic": "worst observed point",
+  "ra_why_unknown": "some points returned no data (unknown) — worst-point rule decided",
+  "ra_allclear": "all sampled points clear — no danger/caution",
+  "ra_direct": "direct",
+  "ra_routed": "sea route",
+  "ra_reroute_t": "🌊 LAND INTERCEPTION PREVENTED",
+  "ra_reroute": "Straight course crossed land — a verified sea route was computed ({n} waypoints, GLOBE 1 km land mask).",
+  "ra_pt_lbl": "Point",
+  "ra_honest_footer": "UNKNOWN points are never assumed safe — the verdict is decided by the WORST point.",
+  "map_nav_here": "Navigate here ➜"
 }

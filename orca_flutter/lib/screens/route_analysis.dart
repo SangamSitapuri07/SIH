@@ -49,6 +49,127 @@ class RouteAnalysisScreen extends StatelessWidget {
   String _fmt(dynamic x, String u, [int dp = 1]) =>
       x is num ? '${x.toStringAsFixed(dp)}$u' : '—';
 
+  // ── (B16 P2) mockup-5 widgets ────────────────────────────────────
+  Widget _verdictRow(ThemeData t, String lvl, String emoji, String key,
+      Color c, String active) {
+    final on = active == lvl;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: on ? c.withOpacity(0.16) : c.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: c.withOpacity(on ? 0.85 : 0.22), width: on ? 1.6 : 1),
+      ),
+      child: Row(children: [
+        Text(emoji, style: const TextStyle(fontSize: 15)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(key.tr(),
+              style: t.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: on ? c : c.withOpacity(0.45))),
+        ),
+        if (on)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration:
+                BoxDecoration(color: c, borderRadius: BorderRadius.circular(6)),
+            child: Text('ra_active'.tr(),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.8)),
+          ),
+      ]),
+    );
+  }
+
+  Widget _chip(ThemeData t, String txt, Color c) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+            color: c.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: c.withOpacity(0.4))),
+        child: Text(txt,
+            style: t.textTheme.bodySmall?.copyWith(
+                color: c, fontWeight: FontWeight.w800, fontSize: 11)),
+      );
+
+  int _findState(List pts, String want) {
+    for (var i = 0; i < pts.length; i++) {
+      if ('${pts[i]['state']}' == want) return i;
+    }
+    return -1;
+  }
+
+  Widget _kyunLine(ThemeData t, List pts) {
+    // (B12) worst-point kyun — pehla danger > caution > unknown > all-clear
+    final di = _findState(pts, 'danger');
+    final ci = _findState(pts, 'caution');
+    final ui = _findState(pts, 'unknown');
+    String txt;
+    Color col;
+    if (di >= 0 || ci >= 0) {
+      final i = di >= 0 ? di : ci;
+      final why = pts[i]['why'];
+      txt =
+          "🎯 ${'ra_kyun'.tr()}: ${'ra_point_word'.tr()} ${i + 1} — ${why ?? 'ra_why_generic'.tr()}";
+      col = di >= 0 ? OrcaTheme.dangerRed : OrcaTheme.warnAmber;
+    } else if (ui >= 0) {
+      txt = "🎯 ${'ra_kyun'.tr()}: ${'ra_why_unknown'.tr()}";
+      col = OrcaTheme.warnAmber;
+    } else {
+      txt = "🎯 ${'ra_kyun'.tr()}: ${'ra_allclear'.tr()}";
+      col = OrcaTheme.okGreen;
+    }
+    return Text(txt,
+        style: t.textTheme.bodySmall?.copyWith(
+            color: col, fontWeight: FontWeight.w700, fontSize: 11.5));
+  }
+
+  Widget _nmChips(ThemeData t) {
+    final rerouted = rt?['rerouted'] == true;
+    final direct = rt?['straight_distance_nm'];
+    final routed = route['distance_nm'] ?? rt?['distance_nm'];
+    return Wrap(spacing: 8, runSpacing: 6, children: [
+      _chip(
+          t,
+          direct is num
+              ? '📏 ${direct.toStringAsFixed(1)} NM · ${'ra_direct'.tr()}'
+              : '${_fmt(route['distance_nm'] ?? rt?['distance_nm'], ' NM')} · ${'ra_direct'.tr()}',
+          t.colorScheme.secondary),
+      if (rerouted && routed is num)
+        _chip(t, '🌊 ${routed.toStringAsFixed(1)} NM · ${'ra_routed'.tr()}',
+            const Color(0xFF38BDF8)),
+    ]);
+  }
+
+  Widget _rerouteBanner(ThemeData t) {
+    final wps = (rt?['waypoints'] as List?) ?? const [];
+    const cyan = Color(0xFF38BDF8);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: cyan.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cyan.withOpacity(0.45)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('ra_reroute_t'.tr(),
+            style: t.textTheme.bodySmall?.copyWith(
+                color: cyan, fontWeight: FontWeight.w900, letterSpacing: 0.6)),
+        const SizedBox(height: 4),
+        Text('ra_reroute'.tr(args: ['${wps.length}']),
+            style: t.textTheme.bodySmall?.copyWith(
+                color: cyan, fontSize: 11, height: 1.45)),
+      ]),
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
@@ -119,6 +240,17 @@ class RouteAnalysisScreen extends StatelessWidget {
                         height: 26,
                         child: const Icon(Icons.flag_rounded,
                             color: OrcaTheme.dangerRed, size: 24)),
+                  // (B11) seapath waypoints — chhote cyan dots (reroute bends)
+                  for (final w in ((rt?['waypoints'] as List?) ?? const []))
+                    Marker(
+                      point: LatLng(_lat(w), _lon(w)),
+                      width: 8,
+                      height: 8,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                            color: Color(0xFF38BDF8), shape: BoxShape.circle),
+                      ),
+                    ),
                   // analysis sample points — state-colored numbered dots
                   for (var i = 0; i < pts.length; i++)
                     Marker(
@@ -176,35 +308,44 @@ class RouteAnalysisScreen extends StatelessWidget {
 
         // ── verdict banner / failure ──
         const SizedBox(height: 12),
-        if (rt != null)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-                color: lvlColor.withOpacity(0.10),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: lvlColor.withOpacity(0.7), width: 1.5)),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(lvlKey.tr(),
-                  style: t.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w900, color: lvlColor, fontSize: 22)),
-              Text(
-                  'rt_pts'.tr(args: [
-                    '${v['points_known'] ?? 0}',
-                    '${v['points_total'] ?? 0}'
-                  ]),
-                  style: t.textTheme.bodySmall
-                      ?.copyWith(color: t.colorScheme.secondary)),
-              if ((rt?['safe_window_at_start'] as Map?)?['found'] == true)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                      '⏱ ${'rt_window'.tr()}: ${rt?['safe_window_at_start']['note'] ?? ''}',
-                      style: t.textTheme.bodySmall
-                          ?.copyWith(color: OrcaTheme.okGreen, fontSize: 11)),
-                ),
+        if (rt != null) ...[
+          _verdictRow(t, 'go', '✅', 'rt_go', OrcaTheme.okGreen, level),
+          const SizedBox(height: 6),
+          _verdictRow(
+              t, 'caution', '⚠️', 'rt_caution', OrcaTheme.warnAmber, level),
+          const SizedBox(height: 6),
+          _verdictRow(t, 'nogo', '⛔', 'rt_nogo', OrcaTheme.dangerRed, level),
+          if (level == 'unknown') ...[
+            const SizedBox(height: 6),
+            _verdictRow(t, 'unknown', '⚪', 'rt_unknown', Colors.grey, level),
+          ],
+          const SizedBox(height: 4),
+          Text(
+            'rt_pts'.tr(args: [
+              '${v['points_known'] ?? 0}',
+              '${v['points_total'] ?? 0}'
             ]),
-          )
+            style: t.textTheme.bodySmall
+                ?.copyWith(color: t.colorScheme.secondary),
+          ),
+          if ((rt?['safe_window_at_start'] as Map?)?['found'] == true)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                "⏱ ${'rt_window'.tr()}: ${rt?['safe_window_at_start']['note'] ?? ''}",
+                style: t.textTheme.bodySmall
+                    ?.copyWith(color: OrcaTheme.okGreen, fontSize: 11),
+              ),
+            ),
+          const SizedBox(height: 10),
+          _kyunLine(t, pts),
+          const SizedBox(height: 8),
+          _nmChips(t),
+          if (rt?['rerouted'] == true) ...[
+            const SizedBox(height: 8),
+            _rerouteBanner(t),
+          ],
+        ]
         else
           Container(
             width: double.infinity,
@@ -313,7 +454,7 @@ class RouteAnalysisScreen extends StatelessWidget {
                             size: 11, color: _stateColor('${pts[i]['state']}')),
                         const SizedBox(width: 6),
                         Text(
-                            '${Marine.kmToNm((pts[i]['sail_km'] as num? ?? 0).toDouble()).toStringAsFixed(0)} NM',
+                            "${'ra_pt_lbl'.tr()} ${i + 1} · ${Marine.kmToNm((pts[i]['sail_km'] as num? ?? 0).toDouble()).toStringAsFixed(0)} NM",
                             style: t.textTheme.bodyMedium
                                 ?.copyWith(fontWeight: FontWeight.w900)),
                         const Spacer(),
@@ -363,6 +504,15 @@ class RouteAnalysisScreen extends StatelessWidget {
               ),
             ),
         ],
+
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text('ra_honest_footer'.tr(),
+              style: t.textTheme.bodySmall?.copyWith(
+                  fontSize: 9.5,
+                  color: t.colorScheme.secondary,
+                  height: 1.4)),
+        ),
 
         // ── sources honesty ──
         if (rt != null) ...[

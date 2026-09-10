@@ -343,7 +343,26 @@ class _MapScreenState extends State<MapScreen> {
                     fontSize: 10.5, color: Color(0xFF92400E))),
           ),
         ],
-        // (B10) "Go" button hidden — Navigate tab web pe test ho raha hai
+        // (B16 P3) "Go" — wapas LIVE: probe set + Voyage tab jump
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: () {
+              final la = (h['lat'] as num?)?.toDouble();
+              final lo = (h['lon'] as num?)?.toDouble();
+              if (la == null || lo == null) return;
+              widget.app.setProbe(LatLng(la, lo));
+              widget.app.navTarget = NavTarget(
+                  '🦠 ${la.toStringAsFixed(3)}, ${lo.toStringAsFixed(3)}',
+                  la,
+                  lo);
+              widget.app.jumpTab?.call(2);
+            },
+            icon: const Icon(Icons.explore_rounded, size: 16),
+            label: Text('map_nav_here'.tr()),
+          ),
+        ),
       ]),
     );
   }
@@ -488,7 +507,23 @@ class _MapScreenState extends State<MapScreen> {
                 label: Text('fetch_here'.tr()),
               ),
             ),
-            // (B10) "Navigate here" hidden — Navigate tab abhi web lab mein
+            // (B16 P3) "Navigate here" — wapas LIVE (Voyage tab index 2)
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  widget.app.setProbe(ll);
+                  widget.app.navTarget = NavTarget(
+                      '📍 ${ll.latitude.toStringAsFixed(3)}, ${ll.longitude.toStringAsFixed(3)}',
+                      ll.latitude,
+                      ll.longitude);
+                  widget.app.jumpTab?.call(2);
+                },
+                icon: const Icon(Icons.explore_rounded, size: 16),
+                label: Text('map_nav_here'.tr()),
+              ),
+            ),
           ]),
         ]),
       ),
