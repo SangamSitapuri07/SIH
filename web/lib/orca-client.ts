@@ -491,6 +491,21 @@ export const fetchRouteAdvisory = (fromLat: number, fromLon: number, toLat: numb
 
 /* ── voyage planner: "TU analyze kar — kahan jaun?" ── */
 
+export interface CrowdInfo {
+  /** "low|moderate|high" = measured crowd pressure, "unknown" = honest no-data */
+  level: "low" | "moderate" | "high" | "unknown";
+  /** ORCA fishers already sent to this 0.25° cell in the last 24 h (anonymous) */
+  community_recent: number;
+  /** same-cell + 0.5×neighbour spill-over load */
+  community_load: number;
+  community_penalty: number;
+  /** REAL GFW AIS fleet hours within ~50 km over last 30 days (top-3 only) */
+  gfw_hours_30d?: number | null;
+  gfw_penalty: number;
+  /** honest note when GFW fleet check failed — no penalty silently added */
+  note?: string | null;
+}
+
 export interface VoyageReco {
   lat: number;
   lon: number;
@@ -507,6 +522,10 @@ export interface VoyageReco {
   sst_c?: number | null;
   why?: string | null;
   score: number;
+  /** pre-spread score when community/GFW pressure moved it (B14) */
+  score_base?: number;
+  /** crowd-spread measurement — "sabko same jagah mat bhejo" (B14) */
+  crowd?: CrowdInfo | null;
   /** auditable score arithmetic — every +/− explained in words */
   reasons: string[];
 }
@@ -517,9 +536,11 @@ export interface VoyageResponse {
   max_km: number;
   recommendations: VoyageReco[];
   candidates_evaluated?: number;
+  /** B14: recommendations are load-balanced across the community */
+  spreading?: boolean;
   /** honest failure log — sources that failed appear here, never hidden */
   notes?: string[];
-  sources?: { pfz?: string; chl?: string; weather?: string };
+  sources?: { pfz?: string; chl?: string; weather?: string; fleet?: string; community?: string };
   /** the scoring formula spelled out, exactly as computed */
   scoring?: string;
   analyzed_at?: string;

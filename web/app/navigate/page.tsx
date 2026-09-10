@@ -514,6 +514,9 @@ export default function NavigateLab() {
                         </div>
                         <span className="shrink-0 rounded-lg bg-cyan-400/15 border border-cyan-400/40 px-2 py-0.5 text-[12px] font-bold text-cyan-200">
                           {r.score}
+                          {r.score_base != null && r.score_base !== r.score && (
+                            <span className="ml-1 text-[9px] font-semibold text-[#7d8db3] line-through">{r.score_base}</span>
+                          )}
                         </span>
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#9FB0D1]">
@@ -523,8 +526,27 @@ export default function NavigateLab() {
                         {r.sst_c != null && <span>🌡 {r.sst_c.toFixed(1)} °C</span>}
                         {r.chl != null && <span>🦠 chl {r.chl.toFixed(1)} mg/m³</span>}
                         <StatePill state={r.state} />
+                        {r.crowd && (
+                          <span
+                            className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${
+                              r.crowd.level === "low"
+                                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+                                : r.crowd.level === "moderate"
+                                ? "bg-amber-500/15 text-amber-300 border-amber-500/40"
+                                : r.crowd.level === "high"
+                                ? "bg-rose-500/15 text-rose-300 border-rose-500/40"
+                                : "bg-slate-500/15 text-slate-300 border-slate-500/40"
+                            }`}
+                            title="Crowd-spread (B14): ORCA community picks (24 h, anonymous 0.25° cells) + GFW AIS fleet hours (30 d)"
+                          >
+                            👥 {r.crowd.level === "high" ? "bheed ZYADA" : r.crowd.level === "moderate" ? "bheed madhyam" : r.crowd.level === "low" ? "bheed kam" : "bheed ?"}
+                            {r.crowd.gfw_hours_30d != null && ` · 🚢 ${r.crowd.gfw_hours_30d}h/30d`}
+                            {r.crowd.community_recent > 0 && ` · ${r.crowd.community_recent} ORCA pick${r.crowd.community_recent > 1 ? "s" : ""}/24h`}
+                          </span>
+                        )}
                       </div>
                       {r.why && <div className="mt-1 text-[10.5px] italic text-amber-200/80">{r.why}</div>}
+                      {r.crowd?.note && <div className="mt-0.5 text-[10px] text-slate-400">🚢 {r.crowd.note}</div>}
                       <details className="mt-1.5 group">
                         <summary className="cursor-pointer text-[10.5px] font-bold text-[#4D5D80] group-open:text-cyan-300 hover:text-cyan-200">
                           score ka breakdown ▸ (auditable — har +/− ka reason)
