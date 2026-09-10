@@ -2,7 +2,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
 import 'picker.dart';
-import 'screens/ai_tab.dart';
+import 'screens/voyage_planner.dart';
 import 'screens/home.dart';
 import 'screens/info.dart';
 import 'screens/map_screen.dart';
@@ -111,8 +111,8 @@ class _HomeShellState extends State<HomeShell> {
     _pages = [
       HomeScreen(settings: widget.settings, app: widget.app),
       MapScreen(settings: widget.settings, app: widget.app),
-      // (B10) NavigateScreen hidden — testing on web first
-      AiTab(settings: widget.settings, app: widget.app),
+      // (B16) Voyage tab LIVE again — web-lab-polished planner (mockup-locked)
+      VoyagePlannerScreen(settings: widget.settings, app: widget.app),
       SosScreen(settings: widget.settings, app: widget.app),
       InfoScreen(settings: widget.settings, app: widget.app),
     ];
@@ -144,8 +144,8 @@ class _BottomBar extends StatelessWidget {
     const items = <(IconData, String, bool)>[
       (Icons.home_rounded, 'tab_home', false),
       (Icons.map_rounded, 'tab_map', false),
-      // (B10) tab_nav hidden for now — web par polish hame pehle karni hai
-      (Icons.psychology_alt_rounded, 'tab_ai', false),
+      // (B16) tab_nav LIVE — VoyagePlannerScreen (mockup-locked)
+      (Icons.explore_rounded, 'tab_nav', false),
       (Icons.sos_rounded, 'tab_sos', true),
       (Icons.info_outline_rounded, 'tab_info', false),
     ];
