@@ -726,6 +726,15 @@ export interface LiveStartResponse {
 
 /* ── B19: rescue dispatch payloads ── */
 
+/** ORCA Radio message (case channel — B20). */
+export interface CaseMsg {
+  from: string;
+  mine: boolean;
+  text: string;
+  preset: boolean;
+  age_sec: number;
+}
+
 /** Mujh pe aayi hui RESCUE REQUEST (ping ke andar hi aata hai). */
 export interface RescueRequestPayload {
   case_id: string;
@@ -736,6 +745,8 @@ export interface RescueRequestPayload {
   bearing_deg: number;
   offer_age_sec: number;
   expires_in_sec: number;
+  /** 📻 ORCA Radio feed (B20) */
+  messages: CaseMsg[];
 }
 
 /** Victim ke SOS ka live dispatch status (ping ke andar hi aata hai). */
@@ -762,6 +773,8 @@ export interface MySosStatus {
   declined: number;
   expired: number;
   accepted: MySosAccepted[];
+  /** 📻 ORCA Radio feed (B20) */
+  messages: CaseMsg[];
 }
 
 export interface LivePingResponse {
@@ -781,6 +794,8 @@ export interface LiveNearbyResponse {
   boats: LiveBoat[];
   count: number;
   sos_count: number;
+  /** B20: listener-mode users (radar pe nahi dikhte — privacy) */
+  watchers: number;
   generated_at: number;
 }
 
@@ -789,9 +804,14 @@ export const liveStart = (lat: number, lon: number, label?: string, session?: st
     { lat, lon, ...(label ? { label } : {}), ...(session ? { session } : {}) }, 15_000);
 
 export const livePing = (session: string, lat: number, lon: number,
-  extra?: { speed_kn?: number; heading_deg?: number; label?: string }) =>
+  extra?: { speed_kn?: number; heading_deg?: number; label?: string; watch?: boolean }) =>
   apiPost<LivePingResponse>("/api/v1/live/ping",
     { session, lat, lon, ...(extra ?? {}) }, 15_000);
+
+/** B20: ORCA Radio — case channel pe message bhejo. */
+export const liveRescueMsg = (session: string, caseId: string, text: string, preset = false) =>
+  apiPost<{ ok: boolean; sent: boolean; count: number }>(
+    "/api/v1/live/rescue/msg", { session, case_id: caseId, text, preset }, 15_000);
 
 export const liveSos = (session: string, note?: string, lat?: number, lon?: number) =>
   apiPost<{ ok: boolean; sos: boolean; case: MySosStatus } & LiveBoat>("/api/v1/live/sos",
@@ -830,6 +850,7 @@ export const liveBoat = (pubId: string) =>
 
 export interface LiveStats {
   active_boats: number;
+  watchers: number;
   sos_active: number;
   oldest_ping_age_sec: number;
   auto_delete_after_sec: number;

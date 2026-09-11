@@ -1,24 +1,26 @@
 "use client";
 
-/* B19 — ORCA Live Beacon "Samudri Rakshak Net" (web lab, MRCC-style dispatch).
- * Workflow (research: real maritime SAR / MRCC — Maritime Rescue
- * Coordination Centre ka standard):
- *   MAYDAY → fisher 1-tap SOS (kuch type/copy NAHI)
- *   TRACE  → backend KHUD nearest beacons dhoondhta hai
- *   RELAY  → un boats ke ping mein hi RESCUE REQUEST (accept/decline)
- *   ACK    → accepted rescuer ka live doori/bearing/ETA victim tak
- *   ESCALATE → 60s no-accept → radius 10→25→50 NM aur boats ko
- *   RESOLVE → victim "theek hoon" ya rescuer "pahunch gaya"
+/* B19+B20 — ORCA Live Beacon "Samudri Rakshak Net" (web lab).
+ * MRCC-style dispatch + watch/listen mode + ORCA Radio + rescue nav.
+ *   LISTEN  → bina beacon ke bhi SOS sune (position ~11km ROUND, privacy)
+ *   MAYDAY  → 1-tap SOS; backend khud nearest boats trace karta hai
+ *   RELAY   → unke ping mein hi RESCUE REQUEST → FULL-SCREEN alert
+ *   ACK     → ✅ MADAD KARUNGA → dono taraf live doori/ETA + RADIO
+ *   NAV     → rescuer apna route-check/route-advisory analyze kar sakta
+ *   ESCALATE→ 60s no-accept → radius 10→25→50 NM
  * Is page pe koi fake/demo boat invent nahi hota — sab backend se. */
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  CaseMsg,
   LiveBoat,
   LiveNearbyResponse,
   LiveStats,
   MySosStatus,
   RescueRequestPayload,
+  RouteAdvisory,
+  fetchRouteAdvisory,
   fmtLat,
   fmtLon,
   liveBoat,
@@ -26,6 +28,7 @@ import {
   livePing,
   liveRescueAnswer,
   liveRescueComplete,
+  liveRescueMsg,
   liveSos,
   liveSosClear,
   liveStart,
@@ -38,6 +41,7 @@ type Phase = "idle" | "active";
 const SESS_KEY = "orca.live.session";
 const PUB_KEY = "orca.live.pubid";
 const LABEL_KEY = "orca.live.label";
+const WATCH_ID_KEY = "orca.live.watchid";
 
 const C = {
   bg: "bg-[#0A0E1A]",
@@ -47,6 +51,17 @@ const C = {
   input:
     "w-full bg-[#0A0E1A] border border-[#1E2A44] rounded-lg px-3 py-2 text-sm text-white placeholder:text-[#34446A] focus:outline-none focus:border-cyan-500/60",
 };
+
+const PRESETS = [
+  "🌊 leher zyada hai",
+  "🔋 battery 20% bachi",
+  "⛽ fuel kam hai",
+  "🧊 paani ghus raha hai",
+  "📍 position same hai",
+  "👥 4 log hain boat pe",
+  "🩹 chot lagi hai",
+  "👍 theek hoon abhi",
+];
 
 function fmtAge(sec: number): string {
   if (sec < 60) return `${Math.max(0, Math.round(sec))}s pehle`;
@@ -66,8 +81,54 @@ function Trend({ prev, cur }: { prev: number | undefined; cur: number }) {
   return <span className="text-[#4D5D80]">→</span>;
 }
 
-/* ── SVG rescue radar — REAL bearing+distance. SOS = pulsing red,
- *    madad mein gayi boat = teal ring (on_rescue social badge). ── */
+/* ── ORCA Radio — case comms (victim ↔ accepted rescuer). Feed ping
+ *    ke andar hi aata hai; koi extra polling nahi. ── */
+function CaseComms({ messages, onSend, busy, accent }: {
+  messages: CaseMsg[];
+  onSend: (text: string, preset: boolean) => void;
+  busy: boolean;
+  accent: "red" | "emerald";
+}) {
+  const [txt, setTxt] = useState("");
+  const ring = accent === "red" ? "border-red-500/40" : "border-emerald-500/40";
+  const mine = accent === "red" ? "bg-red-500/20 text-red-100" : "bg-emerald-500/20 text-emerald-100";
+  return (
+    <div className={`mt-3 rounded-xl border ${ring} bg-black/30 p-3`}>
+      <div className={`text-[10px] font-bold tracking-wider ${C.faint} mb-2`}>📻 ORCA RADIO — live channel (victim ↔ rescuer)</div>
+      <div className="space-y-1.5 max-h-40 overflow-y-auto mb-2">
+        {messages.length === 0 && <div className={`text-[11px] ${C.faint}`}>Abhi koi message nahi — presets se shuru karo, ek tap mein jaata hai.</div>}
+        {messages.map((m, i) => (
+          <div key={i} className={`flex ${m.mine ? "justify-end" : "justify-start"}`}>
+            <span className={`text-[12px] rounded-lg px-2.5 py-1.5 max-w-[85%] ${m.mine ? mine : "bg-[#1E2A44]/60 text-white"}`}>
+              {m.preset ? "⚡ " : ""}{m.text}
+              <span className={`block text-[9px] opacity-60`}>{m.mine ? "tum" : m.from} · {fmtAge(m.age_sec)}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-1 mb-2">
+        {PRESETS.map((p) => (
+          <button key={p} disabled={busy} onClick={() => onSend(p, true)}
+            className="text-[10px] bg-[#0A0E1A] hover:bg-[#0E1526] border border-[#1E2A44] rounded-lg px-2 py-1 text-[#9FB0D1]">
+            {p}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-1.5">
+        <input value={txt} onChange={(e) => setTxt(e.target.value)} maxLength={140}
+          onKeyDown={(e) => { if (e.key === "Enter" && txt.trim()) { onSend(txt.trim(), false); setTxt(""); } }}
+          placeholder="message likho (140c)…"
+          className="flex-1 bg-[#0A0E1A] border border-[#1E2A44] rounded-lg px-2.5 py-1.5 text-xs text-white placeholder:text-[#34446A] focus:outline-none" />
+        <button disabled={busy || !txt.trim()} onClick={() => { onSend(txt.trim(), false); setTxt(""); }}
+          className="text-xs bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50 rounded-lg px-3 py-1.5 text-cyan-100 disabled:opacity-40">
+          bhejo
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── SVG rescue radar ── */
 function Radar({ boats, radiusNm, selfSos }: {
   boats: LiveBoat[];
   radiusNm: number;
@@ -144,6 +205,13 @@ export default function LiveBeaconPage() {
   const [trackBoat, setTrackBoat] = useState<LiveBoat | null>(null);
   const [trackErr, setTrackErr] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  // B20: watch mode
+  const [watchOn, setWatchOn] = useState(true);
+  const [watchPings, setWatchPings] = useState(0);
+  // B20: rescue route analysis
+  const [navBusy, setNavBusy] = useState(false);
+  const [navRes, setNavRes] = useState<RouteAdvisory | null>(null);
+  const [navErr, setNavErr] = useState<string | null>(null);
 
   const coordsRef = useRef<{ lat: number; lon: number }>({ lat: 13.08, lon: 80.29 });
   const sessionRef = useRef("");
@@ -155,8 +223,8 @@ export default function LiveBeaconPage() {
   const resolvedShownRef = useRef<string | null>(null);
   const labelRef = useRef("");
   labelRef.current = label;
-  /** ping-loop rescue-request accepted-state compare ke liye */
   const rescueWasAcceptedRef = useRef(false);
+  const sirenRef = useRef<{ stop: () => void } | null>(null);
 
   const myCoords = useCallback((): { lat: number; lon: number } | null => {
     const lat = parseFloat(latTxt);
@@ -166,25 +234,61 @@ export default function LiveBeaconPage() {
     return { lat, lon };
   }, [latTxt, lonTxt]);
 
-  /* ── mount: rescue mode? resume session? stats? ── */
+  /* ── siren (fullscreen alert) — WebAudio, koi file nahi ── */
+  const startSiren = useCallback(() => {
+    try {
+      navigator.vibrate?.([400, 150, 400, 150, 400, 300, 600]);
+      const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AC) return;
+      const ctx = new AC();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      gain.gain.value = 0.06;
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      let hi = true;
+      const t = setInterval(() => { osc.frequency.value = hi ? 880 : 620; hi = !hi; }, 550);
+      sirenRef.current = {
+        stop: () => {
+          clearInterval(t);
+          try { osc.stop(); ctx.close(); } catch { /* noop */ }
+        },
+      };
+    } catch { /* autoplay blocked — silently visual only */ }
+  }, []);
+  const stopSiren = useCallback(() => {
+    sirenRef.current?.stop();
+    sirenRef.current = null;
+    try { navigator.vibrate?.(0); } catch { /* noop */ }
+  }, []);
+
+  /* ── mount: rescue mode? session? watch id? stats? ── */
   useEffect(() => {
     try {
       const q = new URLSearchParams(window.location.search);
       const t = q.get("track");
       if (t) setTrackId(t);
-      const s = sessionStorage.getItem(SESS_KEY);
+      let s = sessionStorage.getItem(SESS_KEY);
       const p = sessionStorage.getItem(PUB_KEY);
       const l = sessionStorage.getItem(LABEL_KEY);
       if (s && p) {
-        setSession(s); setPubId(p);
-        if (l) setLabel(l);
+        setLabel(l ?? "");
+        setPubId(p);
         setPhase("active");
+      } else {
+        s = localStorage.getItem(WATCH_ID_KEY) ?? "";
+        if (!s) {
+          s = (crypto.randomUUID?.() ?? `w${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`).replace(/-/g, "").slice(0, 24);
+          localStorage.setItem(WATCH_ID_KEY, s);
+        }
       }
+      if (s) setSession(s);
     } catch { /* SSR safety */ }
     liveStats().then(setNetStats).catch(() => setNetStats(null));
   }, []);
 
-  /* ── ping loop — ping hi alert channel hai (request + status sab andar) ── */
+  /* ── ping loop (beacon ON) — ping hi alert channel hai ── */
   useEffect(() => {
     if (phase !== "active" || !session) return;
     let cancelled = false;
@@ -197,15 +301,13 @@ export default function LiveBeaconPage() {
         setLastPingAt(Date.now());
         setErr(null);
         setMySos(r.my_sos);
-        // rescuer: request aayi/gayi?
         const hadAccepted = rescueWasAcceptedRef.current;
         rescueWasAcceptedRef.current = r.rescue_request?.my_state === "accepted";
         setRescueReq(r.rescue_request);
         if (hadAccepted && !r.rescue_request && !cancelled) {
-          setRescueEndedMsg("Rescue case band ho gaya — ho sakta hai victim theek ho gaya ho ya rescue complete ho gaya ho. 🙏");
+          setRescueEndedMsg("Rescue case band ho gaya — victim theek ho gaya ya rescue complete ho gaya. 🙏");
         }
         if (!r.rescue_request) prevRescDistRef.current = null;
-        // victim: rescuer ne complete kiya?
         if (r.sos_resolved && resolvedShownRef.current !== r.sos_resolved.case_id) {
           resolvedShownRef.current = r.sos_resolved.case_id;
           setSos(false); setMySos(null);
@@ -214,13 +316,46 @@ export default function LiveBeaconPage() {
             : "SOS case close ho gaya.");
         }
       } catch (e) {
-        if (!cancelled) setErr(`Ping fail — network/backend? (${e instanceof Error ? e.message : String(e)}) — ORCA retry karta rahega; position FAKE nahi hogi kabhi.`);
+        if (!cancelled) setErr(`Ping fail — network/backend? (${e instanceof Error ? e.message : String(e)}) — ORCA retry karta rahega.`);
       }
     };
     beat();
     const t = setInterval(beat, Math.max(3, intervalSec) * 1000);
     return () => { cancelled = true; clearInterval(t); };
   }, [phase, session, intervalSec]);
+
+  /* ── WATCH loop (beacon OFF) — bina beacon ke bhi SOS sune ── */
+  useEffect(() => {
+    if (phase !== "idle" || !watchOn || trackId || !session) return;
+    let cancelled = false;
+    const beat = async () => {
+      const c = coordsRef.current;
+      try {
+        const r = await livePing(sessionRef.current, c.lat, c.lon, { watch: true });
+        if (cancelled) return;
+        setWatchPings((n) => n + 1);
+        // request aayi toh fullscreen alert state mein aa jaayenge
+        setRescueReq((prev) => {
+          const next = r.rescue_request;
+          if (prev?.my_state === "accepted" && !next) {
+            setRescueEndedMsg("Rescue case band ho gaya. 🙏");
+          }
+          return prev?.my_state === "accepted" && !next ? null : (next ?? prev);
+        });
+      } catch { /* watch silent-fail: listener mode kabhi err page nahi dikhata */ }
+    };
+    beat();
+    const t = setInterval(beat, 12_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [phase, watchOn, trackId, session]);
+
+  /* ── siren control: fullscreen alert ke saath ── */
+  const showFullAlert = rescueReq !== null && rescueReq.my_state !== "accepted";
+  useEffect(() => {
+    if (showFullAlert) startSiren();
+    else stopSiren();
+    return () => stopSiren();
+  }, [showFullAlert, startSiren, stopSiren]);
 
   /* victim: accepted rescuers ke distance trends */
   useEffect(() => {
@@ -325,8 +460,20 @@ export default function LiveBeaconPage() {
     if (!rescueReq) return;
     setBusy(true);
     try {
-      const r = await liveRescueAnswer(session, rescueReq.case_id, accept);
-      if (accept && r.rescue) setRescueReq(r.rescue);
+      if (accept && phase !== "active") {
+        // watch listener → beacon upgrade (consent: khud MADAD dabaya)
+        const c = myCoords();
+        if (c) {
+          const r = await liveStart(c.lat, c.lon, label.trim() || "ORCA rescuer", session || undefined);
+          setSession(r.session); setPubId(r.pub_id); setPhase("active");
+          try {
+            sessionStorage.setItem(SESS_KEY, r.session);
+            sessionStorage.setItem(PUB_KEY, r.pub_id);
+          } catch { /* noop */ }
+        }
+      }
+      const r = await liveRescueAnswer(sessionRef.current, rescueReq.case_id, accept);
+      if (accept && r.rescue) { setRescueReq(r.rescue); rescueWasAcceptedRef.current = true; }
       if (!accept) setRescueReq(null);
       setErr(null);
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
@@ -337,11 +484,33 @@ export default function LiveBeaconPage() {
     if (!rescueReq) return;
     setBusy(true);
     try {
-      await liveRescueComplete(session, rescueReq.case_id);
+      await liveRescueComplete(sessionRef.current, rescueReq.case_id);
       setRescueReq(null);
+      setNavRes(null);
       setRescueEndedMsg("✅ TUMNE RESCUE COMPLETE MARK KIYA — ek zindagi bachayi. Victim ka SOS auto-clear ho gaya. 🙏");
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     setBusy(false);
+  };
+
+  const sendMsg = async (caseId: string, text: string, preset: boolean) => {
+    try { await liveRescueMsg(sessionRef.current, caseId, text, preset); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+  };
+
+  /* 🧭 B20: rescuer apna rescue route intelligently analyze kare —
+   * same battle-tested route-check/advisory engine (GLOBE land mask
+   * + 48h wave/wind/gust per point) jo voyage flow chalata hai. */
+  const analyzeRescueRoute = async () => {
+    if (!rescueReq) return;
+    setNavBusy(true); setNavErr(null); setNavRes(null);
+    try {
+      const c = coordsRef.current;
+      const r = await fetchRouteAdvisory(c.lat, c.lon, rescueReq.victim.lat, rescueReq.victim.lon);
+      setNavRes(r);
+    } catch (e) {
+      setNavErr(e instanceof Error ? e.message : String(e));
+    }
+    setNavBusy(false);
   };
 
   const stopBeacon = async () => {
@@ -351,8 +520,9 @@ export default function LiveBeaconPage() {
     setBusy(true);
     try { await liveStop(session); } catch { /* best-effort */ }
     try { sessionStorage.removeItem(SESS_KEY); sessionStorage.removeItem(PUB_KEY); sessionStorage.removeItem(LABEL_KEY); } catch { /* noop */ }
-    setSession(""); setPubId(""); setPhase("idle"); setSos(false); setMySos(null);
-    setRescueReq(null); setResolvedMsg(null); setRescueEndedMsg(null);
+    setSession(localStorage.getItem(WATCH_ID_KEY) ?? session);
+    setPubId(""); setPhase("idle"); setSos(false); setMySos(null);
+    setRescueReq(null); setResolvedMsg(null); setRescueEndedMsg(null); setNavRes(null);
     setPings(0); setLastPingAt(null); setNearbyRes(null);
     liveStats().then(setNetStats).catch(() => setNetStats(null));
     setBusy(false);
@@ -367,11 +537,10 @@ export default function LiveBeaconPage() {
   };
 
   const otherBoats = (nearbyRes?.boats ?? []).filter((b) => b.pub_id !== pubId);
-  const sosBoats = otherBoats.filter((b) => b.sos);
   const rescTrendPrev = rescueReq ? (prevRescDistRef.current ?? undefined) : undefined;
   if (rescueReq) prevRescDistRef.current = rescueReq.distance_nm;
 
-  /* ══════════════════ RESCUE VIEW (share link) ══════════════════ */
+  /* ══ RESCUE VIEW (share link — family) ══ */
   if (trackId) {
     return (
       <div className={`min-h-screen ${C.bg} text-white flex flex-col items-center px-4 py-6`}>
@@ -384,7 +553,7 @@ export default function LiveBeaconPage() {
           {trackErr && (
             <div className={`${C.card} rounded-xl p-4 text-sm text-amber-300/90 leading-relaxed`}>
               ⚠️ {trackErr}
-              <div className={`mt-2 text-xs ${C.faint}`}>ORCA kabhi purani/fake position nahi dikhata — beacon band/expire ho gaya toh seedha bolte hain.</div>
+              <div className={`mt-2 text-xs ${C.faint}`}>ORCA kabhi purani/fake position nahi dikhata.</div>
             </div>
           )}
           {trackBoat && (
@@ -404,93 +573,150 @@ export default function LiveBeaconPage() {
                 <div className={C.faint}>Position</div>
                 <div className="font-mono text-cyan-300">{fmtLat(trackBoat.lat)}, {fmtLon(trackBoat.lon)}</div>
                 <div className={C.faint}>Last ping</div>
-                <div className={trackBoat.age_sec > 120 ? "text-amber-300" : "text-emerald-300"}>{fmtAge(trackBoat.age_sec)}{trackBoat.age_sec > 120 ? " — purana, dhyan se" : " — LIVE"}</div>
+                <div className={trackBoat.age_sec > 120 ? "text-amber-300" : "text-emerald-300"}>{fmtAge(trackBoat.age_sec)}{trackBoat.age_sec > 120 ? " — purana" : " — LIVE"}</div>
                 {trackBoat.sos_note && (<><div className={C.faint}>Message</div><div className="text-amber-200">{trackBoat.sos_note}</div></>)}
-                {typeof trackBoat.speed_kn === "number" && (<><div className={C.faint}>Speed</div><div>{trackBoat.speed_kn} kn {typeof trackBoat.heading_deg === "number" ? `· ${trackBoat.heading_deg}° ${compass(trackBoat.heading_deg)}` : ""}</div></>)}
               </div>
               <div className={`mt-3 pt-3 border-t border-[#1E2A44] text-xs ${C.faint} leading-relaxed`}>
-                📡 Har 5 sec auto-refresh · VHF Ch 16 pe bulate raho · Indian Coast Guard <span className="text-white font-semibold">1554</span> · SOLAS Reg 33: paas ki har badi ship legally madad karne ko bound hai.
+                📡 Har 5 sec auto-refresh · VHF Ch 16 · Indian Coast Guard <span className="text-white font-semibold">1554</span>
               </div>
             </div>
           )}
-          <div className={`mt-4 text-[11px] ${C.faint} leading-relaxed text-center`}>
-            Yeh link family/rescue team ke liye hai — live track jab tak beacon ON hai. Fishermen ke beech ki madad app ke andar hi hoti hai (uske liye link ki zaroorat nahi).
-          </div>
         </div>
       </div>
     );
   }
 
-  /* ══════════════════ BEACON VIEW ══════════════════ */
+  /* ══ MAIN ══ */
   return (
     <div className={`min-h-screen ${C.bg} text-white flex flex-col items-center px-4 py-6`}>
+
+      {/* ═══ FULL-SCREEN RESCUE ALERT (warning-notification style) ═══ */}
+      {showFullAlert && rescueReq && (
+        <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4">
+          <div className="absolute inset-2 sm:inset-4 rounded-3xl border-4 border-red-500 animate-pulse pointer-events-none" />
+          <div className="w-full max-w-md text-center relative">
+            <div className="text-6xl mb-2 animate-bounce">🆘</div>
+            <div className="text-2xl sm:text-3xl font-black text-red-400 tracking-tight leading-tight">
+              PAAS MEIN HELP<br />MAANGI GAYI HAI!
+            </div>
+            <div className="mt-1 text-sm text-red-200/80">ek ORCA boat mushkil mein hai — tum sabse kareeb ho</div>
+
+            <div className="mt-5 bg-red-950/40 border border-red-500/50 rounded-2xl p-4 text-left">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-lg font-bold text-white">{rescueReq.victim.label ?? "ORCA boat"}</span>
+                <span className="text-[10px] font-mono text-red-300/70">SOS {rescueReq.victim.sos_age_sec !== undefined ? fmtAge(rescueReq.victim.sos_age_sec) : ""}</span>
+              </div>
+              {rescueReq.victim.sos_note && <div className="text-amber-200 text-sm mt-1">"{rescueReq.victim.sos_note}"</div>}
+              <div className="mt-3 flex items-center justify-center gap-3">
+                <div className="text-center">
+                  <div className="text-4xl font-black text-white">{rescueReq.distance_nm}<span className="text-lg text-red-300"> NM</span></div>
+                  <div className="text-[10px] text-red-300/70 tracking-wider">DOORI TUMSE</div>
+                </div>
+                <div className="text-5xl text-red-400" style={{ transform: `rotate(${rescueReq.bearing_deg}deg)` }}>➤</div>
+                <div className="text-center">
+                  <div className="text-4xl font-black text-white">{rescueReq.bearing_deg}°</div>
+                  <div className="text-[10px] text-red-300/70 tracking-wider">{compass(rescueReq.bearing_deg)} DISHA</div>
+                </div>
+              </div>
+              <div className={`mt-2 text-center text-[11px] ${rescueReq.expires_in_sec < 120 ? "text-red-400" : "text-red-200/60"}`}>
+                ⏳ request {Math.floor(rescueReq.expires_in_sec / 60)}:{String(rescueReq.expires_in_sec % 60).padStart(2, "0")} min mein expire
+              </div>
+            </div>
+
+            <button onClick={() => answerRescue(true)} disabled={busy}
+              className="mt-5 w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-[#032117] font-black rounded-2xl px-6 py-5 text-xl shadow-[0_0_40px_rgba(16,185,129,0.35)]">
+              ✅ HAAN — MAIN AA RAHA HOON
+            </button>
+            <button onClick={() => answerRescue(false)} disabled={busy}
+              className="mt-2 w-full bg-transparent border border-[#1E2A44] hover:border-red-500/40 text-[#9FB0D1] rounded-2xl px-6 py-3 text-sm">
+              ❌ nahi paaunga (request doosri boats pe jaayegi)
+            </button>
+            <div className="mt-3 text-[10px] text-[#4D5D80]">Accept karne par tumhari EXACT live position victim ke saath share hogi (consent = tumhara tap). Mana karo toh kuch share nahi hota.</div>
+          </div>
+        </div>
+      )}
+
       <div className="w-full max-w-5xl">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div>
             <h1 className="text-lg font-bold tracking-tight">📡 Live Beacon <span className="text-cyan-300/90">· Samudri Rakshak Net</span></h1>
-            <p className={`text-xs ${C.faint} mt-0.5`}>1-tap SOS → system KHUD paas ke boats trace karke unhe request bhejta hai — fishermen rescuing fishermen</p>
+            <p className={`text-xs ${C.faint} mt-0.5`}>1-tap SOS → system KHUD paas ke boats trace karke request bhejta hai — bina beacon ke bhi SUN sakte ho (watch mode)</p>
           </div>
           <Link href="/" className="text-xs text-cyan-300 hover:text-cyan-200 border border-[#1E2A44] rounded-lg px-3 py-1.5">← ORCA home</Link>
         </div>
 
         {err && <div className="mb-4 rounded-xl border border-red-500/50 bg-red-950/30 px-4 py-3 text-sm text-red-200">{err}</div>}
 
-        {/* ═══ RESCUE REQUEST (mujh pe aayi) ═══ */}
-        {rescueReq && (
-          <div className={`mb-4 rounded-xl border-2 ${rescueReq.my_state === "accepted" ? "border-emerald-500 bg-emerald-950/30" : "border-amber-400 bg-amber-950/30"} px-4 py-4`}>
+        {/* ═══ RESCUER GUIDANCE (accepted — in-page) ═══ */}
+        {rescueReq && rescueReq.my_state === "accepted" && (
+          <div className="mb-4 rounded-xl border-2 border-emerald-500 bg-emerald-950/30 px-4 py-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="relative flex h-3.5 w-3.5">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${rescueReq.my_state === "accepted" ? "bg-emerald-400" : "bg-amber-400"} opacity-75`} />
-                <span className={`relative inline-flex rounded-full h-3.5 w-3.5 ${rescueReq.my_state === "accepted" ? "bg-emerald-500" : "bg-amber-400"}`} />
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500" />
               </span>
-              <span className={`font-bold ${rescueReq.my_state === "accepted" ? "text-emerald-200" : "text-amber-200"}`}>
-                {rescueReq.my_state === "accepted" ? "🚤 TUM MADAD PE JA RAHE HO — course yeh raha" : "🆘 RESCUE REQUEST — paas mein ek bhai mushkil mein hai!"}
-              </span>
+              <span className="font-bold text-emerald-200">🚤 TUM MADAD PE JA RAHE HO — live guidance</span>
             </div>
-            <div className="grid sm:grid-cols-3 gap-2 text-sm mb-3">
+            <div className="grid sm:grid-cols-3 gap-2 text-sm mb-1">
               <div className="bg-black/30 border border-[#1E2A44] rounded-lg px-3 py-2">
                 <div className={`text-[10px] ${C.faint}`}>Victim</div>
                 <div className="font-semibold text-white">{rescueReq.victim.label ?? rescueReq.victim.pub_id}</div>
                 {rescueReq.victim.sos_note && <div className="text-[11px] text-amber-200 mt-0.5">"{rescueReq.victim.sos_note}"</div>}
+                <div className="mt-1 font-mono text-[11px] text-cyan-300">{fmtLat(rescueReq.victim.lat)}, {fmtLon(rescueReq.victim.lon)}</div>
               </div>
               <div className="bg-black/30 border border-[#1E2A44] rounded-lg px-3 py-2">
-                <div className={`text-[10px] ${C.faint}`}>Doori · disha (tumse)</div>
+                <div className={`text-[10px] ${C.faint}`}>Doori · disha (har ping taaza)</div>
                 <div className="font-bold text-lg text-white">
                   {rescueReq.distance_nm} NM <Trend prev={rescTrendPrev} cur={rescueReq.distance_nm} />
                   <span className={`text-sm ${C.body}`}> · {rescueReq.bearing_deg}° {compass(rescueReq.bearing_deg)}</span>
-                  <span className="inline-block text-cyan-300" style={{ transform: `rotate(${rescueReq.bearing_deg}deg)` }}> ➤</span>
+                  <span className="inline-block text-emerald-300" style={{ transform: `rotate(${rescueReq.bearing_deg}deg)` }}> ➤</span>
                 </div>
               </div>
               <div className="bg-black/30 border border-[#1E2A44] rounded-lg px-3 py-2">
                 <div className={`text-[10px] ${C.faint}`}>SOS kitna purana</div>
-                <div className="text-white">{rescueReq.victim.sos_age_sec !== undefined ? fmtAge(rescueReq.victim.sos_age_sec) : fmtAge(rescueReq.offer_age_sec)}</div>
-                {rescueReq.my_state !== "accepted" && (
-                  <div className={`text-[10px] mt-0.5 ${rescueReq.expires_in_sec < 120 ? "text-red-400" : C.faint}`}>
-                    request {Math.floor(rescueReq.expires_in_sec / 60)}:{String(rescueReq.expires_in_sec % 60).padStart(2, "0")} min mein expire
-                  </div>
-                )}
+                <div className="text-white">{rescueReq.victim.sos_age_sec !== undefined ? fmtAge(rescueReq.victim.sos_age_sec) : "—"}</div>
               </div>
             </div>
-            {rescueReq.my_state === "accepted" ? (
-              <div className="flex gap-2 flex-wrap">
-                <button onClick={completeRescue} disabled={busy}
-                  className="flex-1 min-w-[220px] bg-emerald-600 hover:bg-emerald-500 font-bold rounded-xl px-4 py-3.5 text-white">
-                  ✅ PAHUNCH GAYA / SAB SAFE — rescue complete
-                </button>
-                <div className={`text-[11px] ${C.faint} basis-full`}>Course har ping pe taaza hota rehta hai (doori ↓ ghat rahi hai toh sahi ja rahe ho). VHF Ch 16 se contact karte raho.</div>
-              </div>
-            ) : (
-              <div className="flex gap-2 flex-wrap">
-                <button onClick={() => answerRescue(true)} disabled={busy}
-                  className="flex-1 min-w-[180px] bg-emerald-600 hover:bg-emerald-500 font-bold rounded-xl px-4 py-3.5 text-white text-base">
-                  ✅ MADAD KARUNGA — course milega
-                </button>
-                <button onClick={() => answerRescue(false)} disabled={busy}
-                  className="bg-[#0A0E1A] hover:bg-[#0E1526] border border-[#1E2A44] rounded-xl px-4 py-3.5 text-[#9FB0D1]">
-                  ❌ Nahi paaunga
-                </button>
-              </div>
-            )}
+
+            {/* 🧭 rescue route intelligence */}
+            <div className="mt-2">
+              <button onClick={analyzeRescueRoute} disabled={navBusy}
+                className="w-full bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/50 rounded-xl px-4 py-3 text-sm font-bold text-sky-200 disabled:opacity-50">
+                {navBusy ? "⏳ route analyze ho raha (weather + land mask)…" : "🧭 RESCUE ROUTE ANALYZE KARO — kya main safe pahunch paunga?"}
+              </button>
+              {navErr && <div className="mt-2 text-[11px] text-amber-300/90">⚠️ {navErr} — ORCA guess nahi karega; compass bearing upar se lo.</div>}
+              {navRes && (
+                <div className="mt-2 rounded-xl border border-sky-400/40 bg-black/30 p-3 text-[12px]">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`font-black px-2 py-0.5 rounded ${navRes.verdict.level === "go" ? "bg-emerald-500/20 text-emerald-300" : navRes.verdict.level === "caution" ? "bg-amber-500/20 text-amber-300" : navRes.verdict.level === "nogo" ? "bg-red-500/20 text-red-300" : "bg-slate-500/20 text-slate-300"}`}>
+                      {navRes.verdict.level === "go" ? "✅ JA SAKTE HO" : navRes.verdict.level === "caution" ? "⚠️ SAVDHANI SE" : navRes.verdict.level === "nogo" ? "⛔ KHATARNAAK — mat jao" : "❓ VERIFY NAHI"}
+                    </span>
+                    <span className="text-white font-semibold">{navRes.distance_nm.toFixed(1)} NM</span>
+                    {navRes.rerouted && <span className="text-sky-300">↩️ land se ghuma ke {navRes.waypoints?.length ?? 0} waypoints</span>}
+                    <span className={C.faint}>{navRes.verdict.points_known}/{navRes.verdict.points_total} points forecast mille</span>
+                  </div>
+                  <div className={`mt-1.5 ${C.faint} leading-relaxed`}>
+                    {(() => {
+                      const worst = navRes.points.find((p) => p.state === "danger") ?? navRes.points.find((p) => p.state === "caution");
+                      return worst
+                        ? `Sabse kharab point ${worst.sail_km.toFixed(0)} km pe: ${worst.why ?? "forecast dekho"}`
+                        : navRes.land_ok === false
+                          ? `⚠️ seedhi line LAND se guzarti hai — reroute follow karo`
+                          : `Poora rasta analyze — 48h forecast mein koi danger point nahi mila.`;
+                    })()}
+                    {navRes.land_ok === null && " · ⚠️ land-mask verify nahi hua — coast ke paas dhyan se"}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <CaseComms messages={rescueReq.messages} busy={busy} accent="emerald"
+              onSend={(t, p) => sendMsg(rescueReq.case_id, t, p)} />
+
+            <button onClick={completeRescue} disabled={busy}
+              className="mt-3 w-full bg-emerald-600 hover:bg-emerald-500 font-bold rounded-xl px-4 py-3.5 text-white">
+              ✅ PAHUNCH GAYA / SAB SAFE — rescue complete
+            </button>
           </div>
         )}
 
@@ -501,7 +727,7 @@ export default function LiveBeaconPage() {
           </div>
         )}
 
-        {/* ═══ MERA SOS + DISPATCH STATUS ═══ */}
+        {/* ═══ MERA SOS + DISPATCH STATUS + RADIO ═══ */}
         {sos && (
           <div className="mb-4 rounded-xl border-2 border-red-500 bg-red-950/50 px-4 py-4">
             <div className="flex items-center gap-2">
@@ -515,7 +741,7 @@ export default function LiveBeaconPage() {
             {mySos && (
               <>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="text-xs bg-black/40 border border-red-500/40 rounded-lg px-2.5 py-1.5 text-red-100">🛰️ <b>{mySos.dispatched}</b> boats ko request gayi ({mySos.tier_nm} NM)</span>
+                  <span className="text-xs bg-black/40 border border-red-500/40 rounded-lg px-2.5 py-1.5 text-red-100">🛰️ <b>{mySos.dispatched}</b> ko request gayi ({mySos.tier_nm} NM)</span>
                   <span className="text-xs bg-black/40 border border-[#1E2A44] rounded-lg px-2.5 py-1.5 text-[#9FB0D1]">👀 <b>{mySos.seen}</b> ne dekha</span>
                   {mySos.declined > 0 && <span className="text-xs bg-black/40 border border-[#1E2A44] rounded-lg px-2.5 py-1.5 text-[#9FB0D1]">❌ <b>{mySos.declined}</b> ne mana</span>}
                   <span className={`text-xs rounded-lg px-2.5 py-1.5 border ${mySos.accepted.length ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-200" : "border-[#1E2A44] bg-black/40 text-[#4D5D80]"}`}>
@@ -526,7 +752,7 @@ export default function LiveBeaconPage() {
                 {mySos.status === "open" && mySos.accepted.length === 0 && (
                   <div className="mt-2 text-xs text-amber-300/90 bg-amber-400/10 border border-amber-400/30 rounded-lg px-3 py-2">
                     ⏳ {mySos.escalate_in_sec !== null
-                      ? `Koi accept nahi? System KHUD radius badha dega — abhi ${mySos.tier_nm} NM, ${mySos.escalate_in_sec}s mein ${mySos.tiers_nm[Math.min((mySos.tiers_nm.indexOf(mySos.tier_nm) + 1), mySos.tiers_nm.length - 1)]} NM tak aur boats ko request jaayegi.`
+                      ? `Koi accept nahi? System KHUD radius badha dega — abhi ${mySos.tier_nm} NM, ${mySos.escalate_in_sec}s mein ${mySos.tiers_nm[Math.min(mySos.tiers_nm.indexOf(mySos.tier_nm) + 1, mySos.tiers_nm.length - 1)]} NM tak aur boats ko request.`
                       : `Maximum radius (${mySos.tier_nm} NM) tak request jaa chuki — Coast Guard 1554 / VHF Ch 16 bhi try karo.`}
                   </div>
                 )}
@@ -539,23 +765,28 @@ export default function LiveBeaconPage() {
                           <span className="text-emerald-300 font-bold">🚤 {a.label ?? "ORCA boat"} MADAD PE AA RAHA HAI</span>
                           {typeof a.eta_min === "number"
                             ? <span className="text-xs bg-emerald-400/20 border border-emerald-400/40 rounded-lg px-2 py-1 text-emerald-100">ETA ~{a.eta_min} min</span>
-                            : <span className={`text-xs ${C.faint}`}>(speed unknown — doori live dekho, ETA invent nahi karenge)</span>}
+                            : <span className={`text-xs ${C.faint}`}>(doori live dekho — ETA invent nahi karenge)</span>}
                         </div>
                         <div className="mt-1 text-sm text-emerald-100">
                           <b className="text-lg">{a.distance_nm} NM</b> <Trend prev={accTrends[a.pub_id]} cur={a.distance_nm} /> · {a.bearing_deg}° {compass(a.bearing_deg)}
                           <span className="inline-block text-emerald-300" style={{ transform: `rotate(${a.bearing_deg}deg)` }}> ➤</span>
-                          <span className={`text-xs ml-2 ${a.age_sec > 60 ? "text-amber-300" : C.faint}`}>· uska ping {fmtAge(a.age_sec)}</span>
+                          <span className={`text-xs ml-2 ${a.age_sec > 60 ? "text-amber-300" : C.faint}`}>· ping {fmtAge(a.age_sec)}</span>
                         </div>
                       </div>
                     ))}
                   </div>
                 )}
+
+                {mySos.accepted.length > 0 && (
+                  <CaseComms messages={mySos.messages} busy={busy} accent="red"
+                    onSend={(t, p) => sendMsg(mySos.case_id, t, p)} />
+                )}
               </>
             )}
 
-            <div className="mt-3 text-xs text-red-300/80">Himmat rakho. Coast Guard <span className="font-bold text-white">1554</span> · VHF Ch 16 se paas ki ships bulao (SOLAS Reg 33: wo legally aane ko bound hain).</div>
+            <div className="mt-3 text-xs text-red-300/80">Himmat rakho. Coast Guard <span className="font-bold text-white">1554</span> · VHF Ch 16 (SOLAS Reg 33: paas ki ships legally aane ko bound hain).</div>
             <div className={`mt-2 pt-2 border-t border-red-500/20 flex items-center gap-2 flex-wrap`}>
-              <span className={`text-[10px] ${C.faint}`}>family/rescue team ke liye backup link:</span>
+              <span className={`text-[10px] ${C.faint}`}>family backup link:</span>
               <code className="text-[10px] bg-black/40 border border-red-500/30 rounded-lg px-2 py-1 text-red-100/80 break-all">{shareUrl}</code>
               <button onClick={copyShare} className="text-[10px] bg-red-500/10 hover:bg-red-500/20 border border-red-400/40 rounded-lg px-2 py-1 text-red-100/80">
                 {copied ? "✅ copied" : "copy"}
@@ -578,9 +809,27 @@ export default function LiveBeaconPage() {
               <>
                 <h2 className="text-sm font-bold text-white mb-1">▶️ Beacon shuru karo</h2>
                 <p className={`text-xs ${C.body} mb-3 leading-relaxed`}>
-                  Voyage ke waqt tumhara phone ek AIS-transponder ban jaata hai — anonymous, tumhare control mein. SOS dabate hi system paas ke boats ko khud se request bhejta hai; tumhe sirf madad ka intezaar karna hai.
+                  Voyage ke waqt tumhara phone ek AIS-transponder ban jaata hai — anonymous, tumhare control mein.
                 </p>
-                <label className={`block text-xs ${C.faint} mb-1`}>Boat ka naam <span className="text-[#34446A]">(optional — boats isi naam se pehchanengi)</span></label>
+
+                {/* WATCH MODE strip */}
+                <div className={`mb-3 rounded-xl border px-3 py-2.5 flex items-center gap-2 ${watchOn ? "border-cyan-400/40 bg-cyan-400/5" : "border-[#1E2A44]"}`}>
+                  <span className="text-base">👂</span>
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-xs font-semibold ${watchOn ? "text-cyan-300" : C.body}`}>
+                      Watch mode {watchOn ? "ON" : "OFF"} {watchOn && <span className={C.faint}>· {watchPings} listen-pings</span>}
+                    </div>
+                    <div className={`text-[10px] ${C.faint} leading-snug`}>
+                      Bina beacon ke bhi paas ke SOS ka <b>full-screen alert</b> aa jaayega. Privacy: position ~11 km tak <b>round</b> ho ke jaati hai — exact trail kabhi nahi.
+                    </div>
+                  </div>
+                  <button onClick={() => setWatchOn((v) => !v)}
+                    className={`text-[10px] rounded-lg px-2 py-1.5 border shrink-0 ${watchOn ? "border-cyan-400/60 text-cyan-300" : "border-[#1E2A44] text-[#4D5D80]"}`}>
+                    {watchOn ? "band" : "chalu"}
+                  </button>
+                </div>
+
+                <label className={`block text-xs ${C.faint} mb-1`}>Boat ka naam <span className="text-[#34446A]">(optional)</span></label>
                 <input className={`${C.input} mb-3`} value={label} onChange={(e) => setLabel(e.target.value)} maxLength={40} placeholder="e.g. SeaStar · Chennai" />
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <div>
@@ -601,15 +850,16 @@ export default function LiveBeaconPage() {
                 </button>
                 {netStats && (
                   <div className={`mt-3 text-[11px] ${C.faint} text-center`}>
-                    abhi network mein <span className="text-cyan-300 font-semibold">{netStats.active_boats}</span> live beacons · <span className={netStats.sos_active > 0 ? "text-red-400 font-semibold" : ""}>{netStats.sos_active}</span> SOS
+                    abhi <span className="text-cyan-300 font-semibold">{netStats.active_boats}</span> beacons + <span className="text-cyan-300/80">{netStats.watchers}</span> listeners · <span className={netStats.sos_active > 0 ? "text-red-400 font-semibold" : ""}>{netStats.sos_active}</span> SOS
                   </div>
                 )}
                 <div className={`mt-4 pt-3 border-t border-[#1E2A44] text-[11px] ${C.faint} leading-relaxed`}>
-                  <span className="text-[#9FB0D1] font-semibold">SOS ke baad kya hota hai (automatic):</span><br />
-                  1️⃣ backend paas ke beacons trace karta hai (10 NM)<br />
-                  2️⃣ unhe request jaati hai — ✅ madad / ❌ mana<br />
-                  3️⃣ jo accept kare uski live doori + ETA tumhe dikhti hai<br />
-                  4️⃣ 60s mein koi accept nahi → 25 → 50 NM tak badhta hai
+                  <span className="text-[#9FB0D1] font-semibold">SOS ke baad (sab automatic):</span><br />
+                  1️⃣ backend paas ke beacons + listeners trace karta hai<br />
+                  2️⃣ unhe <b>full-screen alert</b> aata hai — ✅ madad / ❌ mana<br />
+                  3️⃣ jo accept kare: live doori+ETA + 📻 ORCA Radio channel<br />
+                  4️⃣ 60s mein koi accept nahi → 10→25→50 NM escalate<br />
+                  5️⃣ rescuer apna <b>rescue route (weather+land)</b> bhi analyze kar sakta hai
                 </div>
               </>
             ) : (
@@ -636,7 +886,7 @@ export default function LiveBeaconPage() {
                   </div>
                   <div className="bg-[#0A0E1A] border border-[#1E2A44] rounded-lg py-2">
                     <div className="text-lg font-bold text-white">{nearbyRes?.count ?? 0}</div>
-                    <div className={`text-[9px] ${C.faint}`}>boats 20 NM mein</div>
+                    <div className={`text-[9px] ${C.faint}`}>boats 20 NM</div>
                   </div>
                 </div>
 
@@ -696,7 +946,7 @@ export default function LiveBeaconPage() {
           <div className={`${C.card} rounded-xl p-4`}>
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-sm font-bold text-white">🛰️ Paas ke ORCA boats <span className={`font-normal ${C.faint}`}>(20 NM · 10s refresh)</span></h2>
-              <span className={`text-[10px] font-mono ${C.faint}`}>{phase === "active" ? "LIVE" : "radar tab chalega jab beacon ON"}</span>
+              <span className={`text-[10px] font-mono ${C.faint}`}>{phase === "active" ? "LIVE" : watchOn ? "👂 watching" : "radar beacon ON pe jagega"}</span>
             </div>
 
             {phase === "active" ? (
@@ -705,7 +955,7 @@ export default function LiveBeaconPage() {
                 <div className="mt-3 space-y-2">
                   {otherBoats.length === 0 && (
                     <div className={`text-xs ${C.faint} text-center py-4 border border-dashed border-[#1E2A44] rounded-xl`}>
-                      Abhi 20 NM mein koi doosra ORCA boat nahi — demo ke liye doosri window/device mein ek aur beacon kholo (coords thode door, e.g. 13.10, 80.31).
+                      Abhi 20 NM mein koi doosri beacon-boat nahi{nearbyRes?.watchers ? ` (${nearbyRes.watchers} listeners sun rahe hain — invisible hain)` : ""}.
                     </div>
                   )}
                   {otherBoats.map((b) => (
@@ -732,13 +982,15 @@ export default function LiveBeaconPage() {
               </>
             ) : (
               <div className={`text-xs ${C.faint} text-center py-10 border border-dashed border-[#1E2A44] rounded-xl leading-relaxed px-6`}>
-                Pehle beacon shuru karo 👈 — phir yahan rescue radar jagega.<br />
-                <span className="text-[#34446A]">Demo: Window A beacon @ 13.08,80.29 → SOS · Window B beacon @ 13.10,80.31 → RESCUE REQUEST aayegi ✅/❌ · accept karo toh dono taraf live tracking + ETA</span>
+                {watchOn
+                  ? <>👂 <b className="text-cyan-300">WATCH MODE LIVE</b> — beacon ke bina bhi paas ka SOS seedha <b>full-screen alert</b> ban ke aayega.<br />
+                    <span className="text-[#34446A]">Demo: Window A beacon @ 13.08,80.29 → SOS · Window B sirf yeh page khuli (watch ON) → B pe siren + fullscreen popup sirf ~12 sec mein!</span></>
+                  : <>Watch mode OFF hai — SOS alerts nahi aayenge. Upar se chalu karo ya beacon shuru karo.</>}
               </div>
             )}
 
             <div className={`mt-4 pt-3 border-t border-[#1E2A44] text-[10px] ${C.faint} leading-relaxed`}>
-              <span className="text-[#9FB0D1] font-semibold">Honesty:</span> radar sirf backend ke REAL pings dikhata hai — is page pe koi fake/demo boat invent nahi hota. Doori/bearing/ETA sab REAL GPS pings se; speed na ho toh ETA nahi dikhate. Request marzi se accept hoti hai — koi force nahi. Position utni hi purani jitna `age` likha hai; 12 h purana SOS server se auto-delete.
+              <span className="text-[#9FB0D1] font-semibold">Honesty:</span> sab kuch backend ke REAL pings se — koi fake/demo boat nahi. Watch mode ~11 km rounded privacy ke saath. Request marzi se accept hoti hai. ETA sirf real speed pe. 12 h purana SOS auto-delete. ORCA Radio case ke saath wipe hoti hai.
             </div>
           </div>
         </div>
@@ -746,5 +998,3 @@ export default function LiveBeaconPage() {
     </div>
   );
 }
-
-/* Rescue-view ke andar helper — ab simple reh gaya (family view). */
