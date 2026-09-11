@@ -42,6 +42,24 @@ const SESS_KEY = "orca.live.session";
 const PUB_KEY = "orca.live.pubid";
 const LABEL_KEY = "orca.live.label";
 const WATCH_ID_KEY = "orca.live.watchid";
+/* B22: har release ka visible tag — ab ek nazar mein pakdo ki page pe
+ * NAYA code serve ho raha hai ya kisi ZOMBIE dev server ka purana.
+ * (User ka demo isi confusion se toota tha — port 3000 pe stale UI.) */
+const WEB_BUILD = "B22";
+
+/* B22: watch id PER-WINDOW (sessionStorage) — pehle localStorage tha jo
+ * saare windows SHARE karte hain. Same-browser demo mein Window A aur B
+ * ka watch id SAME ho jaata tha → B ke listen-pings A ke beacon ko
+ * overwrite karte the aur dispatch khud-victim ko request kabhi nahi
+ * bhejta — "notification + navigation nahi aa raha" ka ASLI root cause. */
+function getWatchId(): string {
+  let s = sessionStorage.getItem(WATCH_ID_KEY) ?? "";
+  if (!s) {
+    s = (crypto.randomUUID?.() ?? `w${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`).replace(/-/g, "").slice(0, 24);
+    sessionStorage.setItem(WATCH_ID_KEY, s);
+  }
+  return s;
+}
 
 const C = {
   bg: "bg-[#0A0E1A]",
@@ -239,13 +257,37 @@ export default function LiveBeaconPage() {
    * badalti thi ping mein — demo-wire-up bug jo user ne pakda) */
   useEffect(() => { myCoords(); }, [myCoords]);
 
-  /* ── siren (fullscreen alert) — WebAudio, koi file nahi ── */
+  /* ── siren (fullscreen alert) — WebAudio, koi file nahi ──
+   * B22 FIX: Chrome ka autoplay rule — bina user-gesture ke AudioContext
+   * SUSPENDED rehta hai (sound bilkul nahi bajti — "notification nahi
+   * aaya" ka ek hissa). Pehle click/type pe context bana ke RESUME kar
+   * lete hain; siren usi UNLOCKED context pe bajegi. */
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  useEffect(() => {
+    const unlock = () => {
+      try {
+        const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AC) return;
+        audioCtxRef.current = audioCtxRef.current ?? new AC();
+        void audioCtxRef.current.resume();
+      } catch { /* noop */ }
+    };
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
   const startSiren = useCallback(() => {
     try {
       navigator.vibrate?.([400, 150, 400, 150, 400, 300, 600]);
       const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AC) return;
-      const ctx = new AC();
+      const ctx = audioCtxRef.current ?? new AC();  // unlocked ctx reuse (nahi to suspended)
+      audioCtxRef.current = ctx;
+      void ctx.resume();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = "sine";
@@ -257,10 +299,10 @@ export default function LiveBeaconPage() {
       sirenRef.current = {
         stop: () => {
           clearInterval(t);
-          try { osc.stop(); ctx.close(); } catch { /* noop */ }
+          try { osc.stop(); } catch { /* noop */ }  // ctx reuse hoga — close MAT karo
         },
       };
-    } catch { /* autoplay blocked — silently visual only */ }
+    } catch { /* autoplay blocked — visual alert to chalega hi */ }
   }, []);
   const stopSiren = useCallback(() => {
     sirenRef.current?.stop();
@@ -282,11 +324,7 @@ export default function LiveBeaconPage() {
         setPubId(p);
         setPhase("active");
       } else {
-        s = localStorage.getItem(WATCH_ID_KEY) ?? "";
-        if (!s) {
-          s = (crypto.randomUUID?.() ?? `w${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`).replace(/-/g, "").slice(0, 24);
-          localStorage.setItem(WATCH_ID_KEY, s);
-        }
+        s = getWatchId();  // B22: per-window (shared localStorage se windows collide karte the)
       }
       if (s) setSession(s);
     } catch { /* SSR safety */ }
@@ -531,7 +569,8 @@ export default function LiveBeaconPage() {
     setBusy(true);
     try { await liveStop(session); } catch { /* best-effort */ }
     try { sessionStorage.removeItem(SESS_KEY); sessionStorage.removeItem(PUB_KEY); sessionStorage.removeItem(LABEL_KEY); } catch { /* noop */ }
-    setSession(localStorage.getItem(WATCH_ID_KEY) ?? session);
+    let wid = session; try { wid = getWatchId(); } catch { /* noop */ }
+    setSession(wid);  // B22: wapas is window ke apne watch id pe
     setPubId(""); setPhase("idle"); setSos(false); setMySos(null);
     setRescueReq(null); setResolvedMsg(null); setRescueEndedMsg(null); setNavRes(null);
     setPings(0); setLastPingAt(null); setNearbyRes(null);
@@ -557,7 +596,7 @@ export default function LiveBeaconPage() {
       <div className={`min-h-screen ${C.bg} text-white flex flex-col items-center px-4 py-6`}>
         <div className="w-full max-w-lg">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-lg font-bold tracking-tight">🆘 RESCUE VIEW <span className={C.faint + " text-xs font-normal"}>Samudri Rakshak Net</span></h1>
+            <h1 className="text-lg font-bold tracking-tight">🆘 RESCUE VIEW <span className={C.faint + " text-xs font-normal"}>Samudri Rakshak Net</span> <span className="ml-1 rounded-md border border-[#1E2A44] px-1.5 py-0.5 text-[9px] font-mono text-cyan-300/80 align-middle">{WEB_BUILD}</span></h1>
             <button onClick={() => { setTrackId(null); history.replaceState(null, "", "/live"); }}
               className="text-xs text-cyan-300 hover:text-cyan-200 border border-[#1E2A44] rounded-lg px-3 py-1.5">← beacon apna</button>
           </div>
@@ -656,7 +695,7 @@ export default function LiveBeaconPage() {
       <div className="w-full max-w-5xl">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div>
-            <h1 className="text-lg font-bold tracking-tight">📡 Live Beacon <span className="text-cyan-300/90">· Samudri Rakshak Net</span></h1>
+            <h1 className="text-lg font-bold tracking-tight">📡 Live Beacon <span className="text-cyan-300/90">· Samudri Rakshak Net</span> <span className="ml-1 rounded-md border border-[#1E2A44] px-1.5 py-0.5 text-[9px] font-mono text-cyan-300/80 align-middle">{WEB_BUILD}</span></h1>
             <p className={`text-xs ${C.faint} mt-0.5`}>1-tap SOS → system KHUD paas ke boats trace karke request bhejta hai — bina beacon ke bhi SUN sakte ho (watch mode)</p>
           </div>
           <Link href="/" className="text-xs text-cyan-300 hover:text-cyan-200 border border-[#1E2A44] rounded-lg px-3 py-1.5">← ORCA home</Link>
@@ -838,6 +877,7 @@ export default function LiveBeaconPage() {
                     </div>
                     <div className={`text-[10px] ${C.faint} leading-snug`}>
                       Bina beacon ke bhi paas ke SOS ka <b>full-screen alert</b> aa jaayega. Privacy: position ~11 km tak <b>round</b> ho ke jaati hai — exact trail kabhi nahi.
+                      {watchOn && <span className="block mt-0.5 text-amber-300/80">🔊 Siren ke liye page pe <b>ek tap</b> kar dena (Chrome ka sound-unlock rule) — alert khud aayega.</span>}
                     </div>
                   </div>
                   <button onClick={() => setWatchOn((v) => !v)}
