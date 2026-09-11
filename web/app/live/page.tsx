@@ -234,6 +234,11 @@ export default function LiveBeaconPage() {
     return { lat, lon };
   }, [latTxt, lonTxt]);
 
+  /* B21 FIX: type kiye coords turant pings mein laagu ho — pehle sirf
+   * start/SOS/analyze pe sync hota tha (coords change → position nahi
+   * badalti thi ping mein — demo-wire-up bug jo user ne pakda) */
+  useEffect(() => { myCoords(); }, [myCoords]);
+
   /* ── siren (fullscreen alert) — WebAudio, koi file nahi ── */
   const startSiren = useCallback(() => {
     try {
@@ -503,6 +508,12 @@ export default function LiveBeaconPage() {
   const analyzeRescueRoute = async () => {
     if (!rescueReq) return;
     setNavBusy(true); setNavErr(null); setNavRes(null);
+    // B21: 0.5 NM se kam — zero-length route ko API pe mat bhejo
+    if (rescueReq.distance_nm < 0.5) {
+      setNavBusy(false);
+      setNavErr(`Victim bahut paas hai (${rescueReq.distance_nm} NM) — route analysis ki zaroorat nahi; seedha ${rescueReq.bearing_deg}° ${compass(rescueReq.bearing_deg)} pe jao.`);
+      return;
+    }
     try {
       const c = coordsRef.current;
       const r = await fetchRouteAdvisory(c.lat, c.lon, rescueReq.victim.lat, rescueReq.victim.lon);
@@ -549,6 +560,12 @@ export default function LiveBeaconPage() {
             <h1 className="text-lg font-bold tracking-tight">🆘 RESCUE VIEW <span className={C.faint + " text-xs font-normal"}>Samudri Rakshak Net</span></h1>
             <button onClick={() => { setTrackId(null); history.replaceState(null, "", "/live"); }}
               className="text-xs text-cyan-300 hover:text-cyan-200 border border-[#1E2A44] rounded-lg px-3 py-1.5">← beacon apna</button>
+          </div>
+          {/* B21: is page ka role CLEAR karo — ye buttons wala rescuer
+              console NAHI hai (user ne yahin notifications dhoondhe) */}
+          <div className="mb-4 rounded-xl border border-cyan-400/40 bg-cyan-400/5 px-4 py-3 text-xs text-cyan-100/90 leading-relaxed">
+            👪 <b>Ye READ-ONLY family tracking page hai</b> — link jo family/team ko bheji jaati hai, sirf DEKHNE ke liye.
+            <b> Madad karne wale rescuer ke liye</b> main page kholo (<span className="font-mono">/live</span>) — wahan Watch mode apne aap ON hai aur SOS ka <b>full-screen alert + accept button</b> aata hai.
           </div>
           {trackErr && (
             <div className={`${C.card} rounded-xl p-4 text-sm text-amber-300/90 leading-relaxed`}>
@@ -843,8 +860,10 @@ export default function LiveBeaconPage() {
                 </div>
                 <div className="flex gap-2 mb-3">
                   <button onClick={useMyGps} disabled={busy} className="flex-1 text-xs bg-[#0A0E1A] hover:bg-[#0E1526] border border-[#1E2A44] rounded-lg px-3 py-2 text-[#9FB0D1]">📍 Meri GPS location</button>
-                  <button onClick={() => { setLatTxt("13.08000"); setLonTxt("80.29000"); }} className="text-xs bg-[#0A0E1A] hover:bg-[#0E1526] border border-[#1E2A44] rounded-lg px-3 py-2 text-[#4D5D80]">Chennai demo</button>
+                  <button onClick={() => { setLatTxt("13.08000"); setLonTxt("80.29000"); }} className="text-xs bg-[#0A0E1A] hover:bg-[#0E1526] border border-[#1E2A44] rounded-lg px-3 py-2 text-[#4D5D80]" title="Pehli boat (victim) demo coords">boat-1 demo</button>
+                  <button onClick={() => { setLatTxt("13.10000"); setLonTxt("80.31000"); }} className="text-xs bg-[#0A0E1A] hover:bg-[#0E1526] border border-[#1E2A44] rounded-lg px-3 py-2 text-cyan-300/90" title="Doosri boat (rescuer) — 1.7 NM door">boat-2 demo</button>
                 </div>
+                <div className={`text-[10px] ${C.faint} mb-3 -mt-1`}>demo mein 2 windows ke coords <b>ALAG</b> rakho (boat-1 vs boat-2) — warna sab 0 NM dikhega.</div>
                 <button onClick={startBeacon} disabled={busy} className="w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-[#06202A] font-bold rounded-xl px-4 py-3 text-sm transition-colors">
                   {busy ? "⏳ shuru ho raha…" : "🟢 VOYAGE BEACON SHURU KARO"}
                 </button>
