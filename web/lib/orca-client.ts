@@ -693,3 +693,92 @@ export async function streamChat(
     }
   }
 }
+
+/* ── B18: ORCA Live Beacon — "Samudri Rakshak Net" ─────────────────
+ * AIS-waali philosophy fisher ke phone pe: voyage ke dauraan anonymous
+ * GPS ping → live beacon. SOS → ping ke response mein hi paas ke boats
+ * ko alert. Privacy by design: identity kuch nahi, 2 h silence →
+ * auto-delete, stop = instant poora delete. */
+
+export interface LiveBoat {
+  pub_id: string;
+  lat: number;
+  lon: number;
+  age_sec: number;
+  sos: boolean;
+  label?: string;
+  speed_kn?: number;
+  heading_deg?: number;
+  sos_age_sec?: number;
+  sos_note?: string;
+  distance_nm?: number;
+  bearing_deg?: number;
+}
+
+export interface LiveStartResponse {
+  ok: boolean;
+  created: boolean;
+  session: string;
+  pub_id: string;
+}
+
+export interface LivePingResponse {
+  ok: boolean;
+  created: boolean;
+  pub_id: string;
+  sos_nearby: LiveBoat[];
+  sos_nearby_count: number;
+}
+
+export interface LiveNearbyResponse {
+  center: { lat: number; lon: number };
+  radius_nm: number;
+  boats: LiveBoat[];
+  count: number;
+  sos_count: number;
+  generated_at: number;
+}
+
+export const liveStart = (lat: number, lon: number, label?: string, session?: string) =>
+  apiPost<LiveStartResponse>("/api/v1/live/start",
+    { lat, lon, ...(label ? { label } : {}), ...(session ? { session } : {}) }, 15_000);
+
+export const livePing = (session: string, lat: number, lon: number,
+  extra?: { speed_kn?: number; heading_deg?: number; label?: string }) =>
+  apiPost<LivePingResponse>("/api/v1/live/ping",
+    { session, lat, lon, ...(extra ?? {}) }, 15_000);
+
+export const liveSos = (session: string, note?: string, lat?: number, lon?: number) =>
+  apiPost<{ ok: boolean; sos: boolean } & LiveBoat>("/api/v1/live/sos",
+    { session, ...(note ? { note } : {}), ...(lat !== undefined ? { lat } : {}), ...(lon !== undefined ? { lon } : {}) }, 15_000);
+
+export const liveSosClear = (session: string) =>
+  apiPost<{ ok: boolean; sos: boolean; pub_id: string }>("/api/v1/live/sos/clear", { session }, 15_000);
+
+export const liveStop = (session: string) =>
+  apiPost<{ ok: boolean; deleted: boolean }>("/api/v1/live/stop", { session }, 15_000);
+
+export const liveNearby = (lat: number, lon: number, radiusNm = 20) =>
+  apiGet<LiveNearbyResponse>(
+    `/api/v1/live/nearby?lat=${lat}&lon=${lon}&radius_nm=${radiusNm}`, 15_000);
+
+export interface LiveSosListResponse {
+  sos: LiveBoat[];
+  count: number;
+  generated_at: number;
+}
+export const liveSosList = () => apiGet<LiveSosListResponse>("/api/v1/live/sos", 15_000);
+
+export const liveBoat = (pubId: string) =>
+  apiGet<{ ok: boolean; boat: LiveBoat }>(`/api/v1/live/boat/${encodeURIComponent(pubId)}`, 15_000);
+
+export interface LiveStats {
+  active_boats: number;
+  sos_active: number;
+  oldest_ping_age_sec: number;
+  auto_delete_after_sec: number;
+  default_radius_nm: number;
+  privacy: string;
+  model: string;
+}
+export const liveStats = () => apiGet<LiveStats>("/api/v1/live/stats", 15_000);

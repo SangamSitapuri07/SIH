@@ -241,6 +241,16 @@ export default function Home() {
           <span className="text-[19px] leading-none">🧭</span>
           <span className="text-[9px] font-medium leading-none tracking-wide">voyage</span>
         </Link>
+        {/* (B18) Live Beacon — "Samudri Rakshak Net": anonymous ping +
+            SOS rescue web lab; baaqi tabs ke saath independent page */}
+        <Link
+          href="/live"
+          title="Live Beacon — SOS rescue net"
+          className="w-11 sm:w-12 flex flex-col items-center gap-1 py-2.5 rounded-xl transition-all duration-150 text-[#4D5D80] hover:bg-white/[0.04] hover:text-[#9FB0D1]"
+        >
+          <span className="text-[19px] leading-none">📡</span>
+          <span className="text-[9px] font-medium leading-none tracking-wide">rescue</span>
+        </Link>
         <div className="mt-auto pb-1 text-[8px] font-medium tracking-[0.2em] text-[#34446A] [writing-mode:vertical-rl] rotate-180 select-none">
           SIH 2026 · PS 176
         </div>
