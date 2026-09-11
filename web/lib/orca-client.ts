@@ -713,6 +713,8 @@ export interface LiveBoat {
   sos_note?: string;
   distance_nm?: number;
   bearing_deg?: number;
+  /** B19: ye boat kisi rescue pe gayi hui hai — "madad mein" badge */
+  on_rescue?: boolean;
 }
 
 export interface LiveStartResponse {
@@ -722,12 +724,55 @@ export interface LiveStartResponse {
   pub_id: string;
 }
 
+/* ── B19: rescue dispatch payloads ── */
+
+/** Mujh pe aayi hui RESCUE REQUEST (ping ke andar hi aata hai). */
+export interface RescueRequestPayload {
+  case_id: string;
+  my_state: "pending" | "seen" | "accepted";
+  victim: LiveBoat;
+  /** mujhSE victim tak (guidance direction) */
+  distance_nm: number;
+  bearing_deg: number;
+  offer_age_sec: number;
+  expires_in_sec: number;
+}
+
+/** Victim ke SOS ka live dispatch status (ping ke andar hi aata hai). */
+export interface MySosAccepted {
+  pub_id: string;
+  label?: string;
+  distance_nm: number;
+  bearing_deg: number;
+  age_sec: number;
+  /** sirf real speed pe — warna null (invent kabhi nahi) */
+  eta_min: number | null;
+}
+
+export interface MySosStatus {
+  case_id: string;
+  status: "open" | "assigned" | "resolved";
+  tier_nm: number;
+  tiers_nm: number[];
+  case_age_sec: number;
+  /** open + accept nahi → kitne sec mein radius badhega (null = final tier) */
+  escalate_in_sec: number | null;
+  dispatched: number;
+  seen: number;
+  declined: number;
+  expired: number;
+  accepted: MySosAccepted[];
+}
+
 export interface LivePingResponse {
   ok: boolean;
   created: boolean;
   pub_id: string;
   sos_nearby: LiveBoat[];
   sos_nearby_count: number;
+  rescue_request: RescueRequestPayload | null;
+  my_sos: MySosStatus | null;
+  sos_resolved?: { by: "rescuer" | "victim"; case_id: string };
 }
 
 export interface LiveNearbyResponse {
@@ -749,7 +794,7 @@ export const livePing = (session: string, lat: number, lon: number,
     { session, lat, lon, ...(extra ?? {}) }, 15_000);
 
 export const liveSos = (session: string, note?: string, lat?: number, lon?: number) =>
-  apiPost<{ ok: boolean; sos: boolean } & LiveBoat>("/api/v1/live/sos",
+  apiPost<{ ok: boolean; sos: boolean; case: MySosStatus } & LiveBoat>("/api/v1/live/sos",
     { session, ...(note ? { note } : {}), ...(lat !== undefined ? { lat } : {}), ...(lon !== undefined ? { lon } : {}) }, 15_000);
 
 export const liveSosClear = (session: string) =>
@@ -757,6 +802,17 @@ export const liveSosClear = (session: string) =>
 
 export const liveStop = (session: string) =>
   apiPost<{ ok: boolean; deleted: boolean }>("/api/v1/live/stop", { session }, 15_000);
+
+/** B19: rescuer ka jawab — madad karunga (true) ya nahi paaunga (false). */
+export const liveRescueAnswer = (session: string, caseId: string, accept: boolean, reason?: string) =>
+  apiPost<{ ok: boolean; state: string; case_id: string; rescue?: RescueRequestPayload }>(
+    "/api/v1/live/rescue/answer",
+    { session, case_id: caseId, accept, ...(reason ? { reason } : {}) }, 15_000);
+
+/** B19: accepted rescuer — "pahunch gaya / sab safe" → victim SOS auto-clear. */
+export const liveRescueComplete = (session: string, caseId: string) =>
+  apiPost<{ ok: boolean; resolved: boolean; case_id: string; victim_pub_id: string }>(
+    "/api/v1/live/rescue/complete", { session, case_id: caseId }, 15_000);
 
 export const liveNearby = (lat: number, lon: number, radiusNm = 20) =>
   apiGet<LiveNearbyResponse>(
