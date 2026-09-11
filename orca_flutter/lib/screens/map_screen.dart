@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api.dart';
+import 'point_analysis.dart';
 import '../marine.dart';
 import '../state.dart';
 import '../theme.dart';
@@ -363,6 +364,29 @@ class _MapScreenState extends State<MapScreen> {
             label: Text('map_nav_here'.tr()),
           ),
         ),
+        const SizedBox(height: 8),
+        // (B17) 🤖 — hotspot ka environment + agent analysis
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () {
+              final la = (h['lat'] as num?)?.toDouble();
+              final lo = (h['lon'] as num?)?.toDouble();
+              if (la == null || lo == null) return;
+              Navigator.of(context).pop();
+              Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => PointAnalysisScreen(
+                      settings: widget.settings,
+                      app: widget.app,
+                      lat: la,
+                      lon: lo,
+                      name:
+                          '🦠 ${la.toStringAsFixed(3)}, ${lo.toStringAsFixed(3)}')));
+            },
+            icon: const Icon(Icons.psychology_alt_rounded, size: 16),
+            label: Text('pa_ai_btn'.tr()),
+          ),
+        ),
       ]),
     );
   }
@@ -525,6 +549,26 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
           ]),
+          const SizedBox(height: 8),
+          // (B17) 🤖 — long-pressed point ka environment + agent analysis
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => PointAnalysisScreen(
+                        settings: widget.settings,
+                        app: widget.app,
+                        lat: ll.latitude,
+                        lon: ll.longitude,
+                        name:
+                            '📍 ${ll.latitude.toStringAsFixed(3)}, ${ll.longitude.toStringAsFixed(3)}')));
+              },
+              icon: const Icon(Icons.psychology_alt_rounded, size: 16),
+              label: Text('pa_ai_btn'.tr()),
+            ),
+          ),
         ]),
       ),
     );

@@ -6,6 +6,7 @@ import '../api.dart';
 import '../data/harbours.dart';
 import '../state.dart';
 import '../theme.dart';
+import 'point_analysis.dart';
 import 'route_analysis.dart';
 
 /// (B16) VOYAGE PLANNER — web-lab (B10→B15) ka 1:1 mobile port.
@@ -823,14 +824,44 @@ class _VoyagePlannerState extends State<VoyagePlannerScreen> {
         const SizedBox(height: 8),
 
         // CTA → transit pre-filled
-        _bigBtn(_Lab.tealBr, '${'wiz_set_target'.tr()} ➜', () {
-          final la = (r['lat'] as num?)?.toDouble();
-          final lo = (r['lon'] as num?)?.toDouble();
-          if (la == null || lo == null) return;
-          _intent = 'transit';
-          _setDest(la, lo, '${r['name'] ?? 'spot'}');
-          setState(() => _step = _VpStep.transit);
-        }),
+        Row(children: [
+          Expanded(
+            child: _bigBtn(_Lab.tealBr, '${'wiz_set_target'.tr()} ➜', () {
+              final la = (r['lat'] as num?)?.toDouble();
+              final lo = (r['lon'] as num?)?.toDouble();
+              if (la == null || lo == null) return;
+              _intent = 'transit';
+              _setDest(la, lo, '${r['name'] ?? 'spot'}');
+              setState(() => _step = _VpStep.transit);
+            }),
+          ),
+          const SizedBox(width: 8),
+          // (B17) 🤖 — is spot ka environment + 10-agent analysis
+          OutlinedButton(
+            onPressed: () {
+              final la = (r['lat'] as num?)?.toDouble();
+              final lo = (r['lon'] as num?)?.toDouble();
+              if (la == null || lo == null) return;
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => PointAnalysisScreen(
+                  settings: widget.settings,
+                  app: widget.app,
+                  lat: la,
+                  lon: lo,
+                  name: '${r['name'] ?? 'spot'}',
+                ),
+              ));
+            },
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: _Lab.sky.withOpacity(0.6)),
+              padding:
+                  const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('🤖', style: TextStyle(fontSize: 15)),
+          ),
+        ]),
       ]),
     );
   }

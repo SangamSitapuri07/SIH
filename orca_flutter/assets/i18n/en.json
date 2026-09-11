@@ -222,5 +222,10 @@
   "ra_reroute": "Straight course crossed land — a verified sea route was computed ({n} waypoints, GLOBE 1 km land mask).",
   "ra_pt_lbl": "Point",
   "ra_honest_footer": "UNKNOWN points are never assumed safe — the verdict is decided by the WORST point.",
-  "map_nav_here": "Navigate here ➜"
+  "map_nav_here": "Navigate here ➜",
+  "pa_title": "AI Analysis",
+  "pa_env": "Live environment (advisory)",
+  "pa_env_fail": "Fetch failed — honest reason:",
+  "pa_ai_hdr": "10-agent AI analysis",
+  "pa_ai_btn": "🤖 AI analysis"
 }
