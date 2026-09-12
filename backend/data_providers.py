@@ -5,6 +5,7 @@ import io
 import xml.etree.ElementTree as ET
 from typing import Dict, Any, List
 import httpx
+from gfw_provider import GfwProvider
 
 class DataProvidersEngine:
     """
@@ -14,6 +15,7 @@ class DataProvidersEngine:
     """
 
     def __init__(self):
+        self.gfw = GfwProvider()
         self.provider_status = {
             "open_meteo_marine": {"name": "Open-Meteo Marine (MFWAM/ECMWF)", "status": "OK", "latency_ms": 142},
             "open_meteo_forecast": {"name": "Open-Meteo Forecast (ECMWF IFS)", "status": "OK", "latency_ms": 115},
@@ -21,7 +23,7 @@ class DataProvidersEngine:
             "isro_mosdac": {"name": "ISRO MOSDAC OCM-3 (Oceansat-3)", "status": "CREDENTIAL_REQUIRED", "latency_ms": None},
             "incois_pfz": {"name": "INCOIS PFZ (GeoServer WFS)", "status": "CONFIGURED", "latency_ms": None},
             "incois_las": {"name": "INCOIS Live Access Server", "status": "UNREACHABLE", "latency_ms": None, "reason": "GOI server connection timeout (>30s)"},
-            "gfw_ais": {"name": "Global Fishing Watch (AIS Effort)", "status": "TOKEN_REQUIRED", "latency_ms": None},
+            "gfw_ais": {"name": "Global Fishing Watch (AIS Effort)", "status": "CONFIGURED" if self.gfw.configured else "TOKEN_REQUIRED", "latency_ms": None},
             "jtwc_cyclone": {"name": "JTWC US Navy Cyclone Warnings", "status": "CONFIGURED", "latency_ms": None},
             "globe_land_mask": {"name": "GLOBE 1km Land Mask (Offline)", "status": "OK", "latency_ms": 2, "offline": True}
         }
@@ -139,7 +141,7 @@ class DataProvidersEngine:
             return True
         return False
 
-    def fetch_zone_snapshot(self, lat: float, lon: float) -> Dict[str, Any]:
+    def fetch_zone_snapshot(self, lat: float, lon: float, include_gfw: bool = False) -> Dict[str, Any]:
         """Fetch live marine and forecast observations for a coordinate."""
         now_ts = int(time.time())
         on_land = self.is_land(lat, lon)
@@ -158,12 +160,16 @@ class DataProvidersEngine:
             "latitude": lat,
             "longitude": lon,
             "current": "wave_height,wave_period,wind_wave_height,wind_wave_direction,swell_wave_height,swell_wave_period,ocean_current_velocity,ocean_current_direction,sea_surface_temperature",
+            "hourly": "wave_height,wave_period,swell_wave_height,swell_wave_period",
+            "forecast_days": 3,
             "timezone": "UTC",
         }
         forecast_params = {
             "latitude": lat,
             "longitude": lon,
             "current": "wind_speed_10m,wind_gusts_10m",
+            "hourly": "wind_speed_10m,wind_gusts_10m",
+            "forecast_days": 3,
             "wind_speed_unit": "kn",
             "timezone": "UTC",
         }
@@ -176,7 +182,9 @@ class DataProvidersEngine:
                 forecast_response = client.get(forecast_url, params=forecast_params)
                 forecast_response.raise_for_status()
             marine = marine_response.json().get("current", {})
-            forecast = forecast_response.json().get("current", {})
+            forecast_payload = forecast_response.json()
+            forecast = forecast_payload.get("current", {})
+            hourly = forecast_payload.get("hourly", {})
             wave_height = marine.get("wave_height")
             wave_period = marine.get("wave_period")
             wind_speed_kn = forecast.get("wind_speed_10m")
@@ -198,6 +206,8 @@ class DataProvidersEngine:
 
         chlorophyll = self.fetch_noaa_chlorophyll(lat, lon)
         pfz = self.fetch_incois_pfz()
+        gfw_effort = self.gfw.fetch_effort(lat, lon) if include_gfw else {"status": "not_requested", "source": "Global Fishing Watch"}
+        gfw_fleet = self.gfw.fetch_fishing_vessels_in_region(lat, lon) if include_gfw else {"status": "not_requested", "source": "Global Fishing Watch"}
         sources_used = [
             {"name": "Open-Meteo Marine", "dataset": "Live marine current", "latency_ms": latency_ms, "status": "FRESH"},
             {"name": "Open-Meteo Forecast", "dataset": "Live ECMWF forecast current", "latency_ms": latency_ms, "status": "FRESH"},
@@ -211,6 +221,11 @@ class DataProvidersEngine:
             sources_used.append({"name": pfz["source"], "dataset": pfz["dataset"], "status": "FRESH"})
         else:
             sources_failed.append(pfz)
+        for gfw_result, label in ((gfw_effort, "fishing effort"), (gfw_fleet, "fleet")):
+            if gfw_result.get("status") in {"fresh", "cached"}:
+                sources_used.append({"name": f"{gfw_result['source']} ({label})", "dataset": gfw_result["dataset"], "status": gfw_result["status"].upper()})
+            elif include_gfw:
+                sources_failed.append(gfw_result)
 
         return {
             "latitude": lat,
@@ -228,6 +243,19 @@ class DataProvidersEngine:
                 "current_speed_kn": current_kn,
                 "current_direction_deg": marine.get("ocean_current_direction"),
                 "chlorophyll_mg_m3": chlorophyll.get("value"),
+                "fishing_effort_hours": gfw_effort.get("hours"),
+                "fishing_vessel_ids": gfw_effort.get("vessel_ids"),
+                "fleet_vessel_count": gfw_fleet.get("vessel_count"),
+                "fleet_by_flag": gfw_fleet.get("by_flag", {}),
+                "fleet_by_gear": gfw_fleet.get("by_gear", {}),
+                "gfw_start_date": gfw_effort.get("start_date") or gfw_fleet.get("start_date"),
+                "gfw_end_date": gfw_effort.get("end_date") or gfw_fleet.get("end_date"),
+            },
+            "hourly_forecast": {
+                "time": hourly.get("time", []),
+                "wave_height_m": marine_response.json().get("hourly", {}).get("wave_height", []),
+                "wind_speed_kn": hourly.get("wind_speed_10m", []),
+                "wind_gust_kn": hourly.get("wind_gusts_10m", []),
             },
             "pfz": pfz.get("features", []),
             "sources_used": sources_used,
@@ -257,9 +285,6 @@ class DataProvidersEngine:
                 land_hit = True
 
         detour = None
-        if land_hit:
-            # Generate safe marine detour waypoint
-            detour = [round((from_lat + to_lat) / 2.0 - 0.08, 4), round((from_lon + to_lon) / 2.0 - 0.05, 4)]
 
         return {
             "ok": not land_hit,
@@ -267,7 +292,7 @@ class DataProvidersEngine:
             "distance_km": distance_km,
             "distance_nm": distance_nm,
             "bearing_deg": bearing_deg,
-            "legs": [ [from_lat, from_lon], detour, [to_lat, to_lon] ] if detour else [ [from_lat, from_lon], [to_lat, to_lon] ],
+            "legs": [[from_lat, from_lon], [to_lat, to_lon]],
             "detour": detour,
-            "reason": "Course verified against GLOBE 1km land mask." if not land_hit else "Direct course crosses land. Safe marine detour waypoint calculated."
+            "reason": "Course verified against the configured land check." if not land_hit else "Direct course crosses land. No verified marine detour is available."
         }

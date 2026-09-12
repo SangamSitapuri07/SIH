@@ -23,6 +23,9 @@ backend/.env
 .env
 *.env
 
+# Real MOSDAC products are local test inputs and must not be committed.
+/mosdac/
+
 # ─── Flutter / Dart ───────────────────────────────────────────────────────────
 # Build outputs
 frontend/build/
