@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from data_providers import DataProvidersEngine
 from agents_engine import MultiAgentEngine
 from supabase_service import SupabaseService
+from ollama_client import ollama as _ollama
 
 router = APIRouter(prefix="/api/v1")
 providers = DataProvidersEngine()
@@ -65,8 +66,10 @@ STORE_CATCH = []
 
 @router.get("/health")
 def get_health():
-    """Live source health & system status."""
-    return providers.check_health()
+    """Live source health, system status, and Ollama LLM availability."""
+    health = providers.check_health()
+    health["ollama"] = _ollama.health()
+    return health
 
 @router.get("/zone")
 def get_zone_snapshot(lat: float = Query(20.9), lon: float = Query(70.37)):
