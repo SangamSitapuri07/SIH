@@ -27,7 +27,7 @@ logger = logging.getLogger("orca.ollama")
 
 _DEFAULT_HOST = "http://localhost:11434"
 _DEFAULT_MODEL = "qwen3:8b"
-_DEFAULT_TIMEOUT = 25.0  # seconds — must be < FastAPI route timeout
+_DEFAULT_TIMEOUT = 8.0  # seconds; deterministic analysis remains authoritative
 
 class OllamaClient:
     """
@@ -74,6 +74,10 @@ class OllamaClient:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
+            # Qwen3 thinking mode exceeds the 25s CPU timeout on this hardware
+            # and caused every analytical agent to fall back. Disable thinking
+            # so bounded interpretations complete inside OLLAMA_TIMEOUT_S.
+            "think": False,
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
@@ -98,12 +102,12 @@ class OllamaClient:
 
             data = resp.json()
             response_text = data.get("response", "").strip()
-            logger.debug(f"[Ollama] {self.model} responded in {elapsed_ms} ms ({len(response_text)} chars)")
+            logger.info(f"[Ollama] {self.model} responded in {elapsed_ms} ms ({len(response_text)} chars)")
             return response_text if response_text else None
 
         except httpx.TimeoutException:
             logger.warning(f"[Ollama] Request timed out after {self.timeout}s — using deterministic fallback.")
-            self._available = None  # re-probe next call
+            self._available = False  # avoid repeating the timeout for every agent
             return None
         except Exception as e:
             logger.error(f"[Ollama] Unexpected error: {e}")

@@ -56,7 +56,19 @@ class AgentsRepositoryImpl implements AgentsRepository {
       if (dioErr.type == DioExceptionType.connectionTimeout) {
         return const Result.err(AppFailure.timeout());
       }
-      return const Result.err(AppFailure.serverDown());
+      if (dioErr.type == DioExceptionType.receiveTimeout ||
+          dioErr.type == DioExceptionType.sendTimeout) {
+        return const Result.err(AppFailure.timeout());
+      }
+      if (dioErr.type == DioExceptionType.connectionError) {
+        return const Result.err(AppFailure.serverDown());
+      }
+      final detail = dioErr.response?.data is Map<String, dynamic>
+          ? (dioErr.response!.data['detail'] as String?)
+          : null;
+      return Result.err(AppFailure.unknown(
+        detail ?? 'ORCA Box returned HTTP ${dioErr.response?.statusCode ?? 'an error'} for agent reasoning.',
+      ));
     } catch (e) {
       if (cached != null) {
         final dto = ReasonDto.fromJson(cached.data);

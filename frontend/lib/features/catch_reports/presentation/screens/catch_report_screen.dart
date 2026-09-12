@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/sync/sync_manager.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
-import '../domain/catch_report.dart';
+import '../../domain/catch_report.dart';
 
 final catchReportsProvider = StateNotifierProvider<CatchReportsNotifier, List<CatchReport>>((ref) {
   final syncManager = ref.watch(syncManagerProvider.notifier);
@@ -13,29 +13,7 @@ final catchReportsProvider = StateNotifierProvider<CatchReportsNotifier, List<Ca
 class CatchReportsNotifier extends StateNotifier<List<CatchReport>> {
   final SyncManager _syncManager;
 
-  CatchReportsNotifier(this._syncManager)
-      : super([
-          CatchReport(
-            id: 'rep-1',
-            locationName: 'Veraval Offshore Shelf',
-            latitude: 20.9,
-            longitude: 70.37,
-            species: 'Indian Mackerel',
-            quantityKg: 120.0,
-            catchDate: '2026-09-12',
-            isSynced: true,
-          ),
-          CatchReport(
-            id: 'rep-2',
-            locationName: 'Veraval Offshore Shelf',
-            latitude: 20.9,
-            longitude: 70.37,
-            species: 'Sardine',
-            quantityKg: 85.0,
-            catchDate: '2026-09-11',
-            isSynced: true,
-          ),
-        ]);
+  CatchReportsNotifier(this._syncManager) : super(const <CatchReport>[]);
 
   void addReport(String location, double lat, double lon, String species, double quantityKg, String? note) {
     final report = CatchReport(
@@ -92,7 +70,6 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Fisher-first easy report input card
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -118,8 +95,6 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
                     ],
                   ),
                   const SizedBox(height: 14),
-
-                  // Species selection chips
                   const Text('Select Fish Species:', style: TextStyle(color: OrcaTheme.textSecondary, fontSize: 13)),
                   const SizedBox(height: 8),
                   Wrap(
@@ -143,8 +118,6 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
                     }).toList(),
                   ),
                   const SizedBox(height: 16),
-
-                  // Quantity counter (- / +)
                   const Text('Approximate Quantity (kg):', style: TextStyle(color: OrcaTheme.textSecondary, fontSize: 13)),
                   const SizedBox(height: 8),
                   Row(
@@ -190,20 +163,19 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
                     ],
                   ),
                   const SizedBox(height: 18),
-
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton.icon(
                       onPressed: () {
                         ref.read(catchReportsProvider.notifier).addReport(
-                              'Veraval Offshore Shelf',
-                              20.9,
-                              70.37,
-                              _selectedSpecies,
-                              _quantityKg,
-                              _noteCtrl.text.isNotEmpty ? _noteCtrl.text : null,
-                            );
+                          'Veraval Offshore Shelf',
+                          20.9,
+                          70.37,
+                          _selectedSpecies,
+                          _quantityKg,
+                          _noteCtrl.text.isNotEmpty ? _noteCtrl.text : null,
+                        );
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Catch report saved locally & queued for cloud sync!'),
@@ -224,49 +196,56 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
               ),
             ),
             const SizedBox(height: 20),
-
-            // Submitted catch log list
-            const Text(
-              'My Submitted Catch Reports',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-            ),
-            const SizedBox(height: 10),
-
-            for (final r in reports) ...[
-              Card(
-                color: OrcaTheme.surface,
-                margin: const EdgeInsets.only(bottom: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: Colors.amber,
-                    child: Icon(Icons.phishing, color: Colors.black),
-                  ),
-                  title: Text(
-                    '${r.species} — ${r.quantityKg.toInt()} kg',
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  subtitle: Text(
-                    '${r.locationName} • Date: ${r.catchDate}',
-                    style: const TextStyle(color: OrcaTheme.textSecondary, fontSize: 12),
-                  ),
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: r.isSynced ? VerdictColors.goBg : VerdictColors.cautionBg,
-                      borderRadius: BorderRadius.circular(6),
+            if (reports.isEmpty) ...[
+              const SizedBox(height: 12),
+              const Center(
+                child: Text(
+                  'No catch reports yet.',
+                  style: TextStyle(fontSize: 15, color: OrcaTheme.textSecondary),
+                ),
+              ),
+            ] else ...[
+              const Text(
+                'My Submitted Catch Reports',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+              const SizedBox(height: 10),
+              for (final r in reports) ...[
+                Card(
+                  color: OrcaTheme.surface,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Colors.amber,
+                      child: Icon(Icons.phishing, color: Colors.black),
                     ),
-                    child: Text(
-                      r.isSynced ? 'SYNCED' : 'QUEUED',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: r.isSynced ? VerdictColors.go : VerdictColors.caution,
+                    title: Text(
+                      '${r.species} — ${r.quantityKg.toInt()} kg',
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                    subtitle: Text(
+                      '${r.locationName} • Date: ${r.catchDate}',
+                      style: const TextStyle(color: OrcaTheme.textSecondary, fontSize: 12),
+                    ),
+                    trailing: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: r.isSynced ? VerdictColors.goBg : VerdictColors.cautionBg,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        r.isSynced ? 'SYNCED' : 'QUEUED',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: r.isSynced ? VerdictColors.go : VerdictColors.caution,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ],
           ],
         ),

@@ -17,7 +17,7 @@ class AdvisoryDto {
   final List<String> sourcesFailed;
   final int knownSources;
   final int totalSources;
-  final String? timestampStr;
+  final DateTime? timestamp;
 
   AdvisoryDto({
     required this.verdict,
@@ -33,8 +33,18 @@ class AdvisoryDto {
     required this.sourcesFailed,
     required this.knownSources,
     required this.totalSources,
-    this.timestampStr,
+    this.timestamp,
   });
+
+  static DateTime? _parseTimestamp(dynamic value) {
+    if (value is int) {
+      return DateTime.fromMillisecondsSinceEpoch(value * 1000, isUtc: true);
+    }
+    if (value is num) {
+      return DateTime.fromMillisecondsSinceEpoch(value.toInt() * 1000, isUtc: true);
+    }
+    return DateFormatter.parseIso(value);
+  }
 
   factory AdvisoryDto.fromJson(Map<String, dynamic> json) {
     final plainEnList = (json['plain_en'] as List<dynamic>?)
@@ -70,7 +80,7 @@ class AdvisoryDto {
       sourcesFailed: failedList,
       knownSources: coverage?['known'] as int? ?? sourcesList.length,
       totalSources: coverage?['total'] as int? ?? (sourcesList.length + failedList.length),
-      timestampStr: json['timestamp'] as String?,
+      timestamp: _parseTimestamp(json['timestamp']),
     );
   }
 
@@ -89,6 +99,23 @@ class AdvisoryDto {
             source: val['source'] as String? ?? 'External Model',
             time: val['time'] as String? ?? 'Now',
             direction: val['direction'] as String?,
+          );
+        } else if (val is num) {
+          final unit = switch (key) {
+            'wave_height_m' || 'swell_height_m' => 'm',
+            'wave_period_s' => 's',
+            'wind_speed_kn' || 'wind_gust_kn' || 'current_speed_kn' => 'kn',
+            'sst_celsius' => 'C',
+            'chlorophyll_mg_m3' => 'mg/m3',
+            _ => '',
+          };
+          parsedVariables[key] = VariableItem(
+            key: key,
+            value: val.toDouble(),
+            unit: unit,
+            status: 'good',
+            source: 'ORCA Box',
+            time: 'Live',
           );
         }
       });
@@ -113,14 +140,14 @@ class AdvisoryDto {
     SafeWindow? parsedSafeWindow;
     if (safeWindowJson != null) {
       parsedSafeWindow = SafeWindow(
-        from: safeWindowJson!['from'] as String? ?? '',
-        to: safeWindowJson!['to'] as String? ?? '',
+        from: safeWindowJson!['from'] as String? ?? safeWindowJson!['start'] as String? ?? '',
+        to: safeWindowJson!['to'] as String? ?? safeWindowJson!['end'] as String? ?? '',
         isSafe: safeWindowJson!['is_safe'] as bool? ?? true,
         hoursRemaining: (safeWindowJson!['hours_remaining'] as num?)?.toDouble(),
       );
     }
 
-    final ts = DateFormatter.parseIso(timestampStr) ?? DateTime.now();
+    final ts = timestamp ?? DateTime.now();
 
     return AdvisoryEntity(
       verdict: verdict,

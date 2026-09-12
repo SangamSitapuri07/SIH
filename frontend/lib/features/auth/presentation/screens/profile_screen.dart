@@ -45,7 +45,7 @@ class ProfileScreen extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          profile.displayName,
+                          profile.displayName.isNotEmpty ? profile.displayName : 'No profile info yet',
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -54,19 +54,21 @@ class ProfileScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${profile.vesselType} • ${profile.homeHarbour}',
+                          (profile.vesselType.isNotEmpty || profile.homeHarbour.isNotEmpty)
+                              ? '${profile.vesselType.isNotEmpty ? profile.vesselType : 'Vessel'} • ${profile.homeHarbour.isNotEmpty ? profile.homeHarbour : 'No harbour set'}'
+                              : 'No vessel or harbour details set',
                           style: const TextStyle(color: OrcaTheme.textSecondary, fontSize: 12),
                         ),
                         const SizedBox(height: 4),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: VerdictColors.goodBg,
+                            color: VerdictColors.goBg,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
                             'AUTHENTICATED • CLOUD SYNC ACTIVE',
-                            style: TextStyle(color: VerdictColors.good, fontSize: 10, fontWeight: FontWeight.bold),
+                            style: TextStyle(color: VerdictColors.go, fontSize: 10, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ],

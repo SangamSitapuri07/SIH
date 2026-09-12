@@ -1,5 +1,7 @@
 import time
 import uuid
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Query, HTTPException, Body
 from pydantic import BaseModel, Field
@@ -7,7 +9,7 @@ from pydantic import BaseModel, Field
 from data_providers import DataProvidersEngine
 from agents_engine import MultiAgentEngine
 from supabase_service import SupabaseService
-from ollama_client import ollama as _ollama
+from mosdac_datasets import registry_status
 
 router = APIRouter(prefix="/api/v1")
 providers = DataProvidersEngine()
@@ -54,11 +56,7 @@ class SyncPayload(BaseModel):
 
 # In-memory store for backend demo
 STORE_PROFILES = {}
-STORE_LOCATIONS = [
-    {"id": "loc-1", "name": "Home Harbour (Veraval)", "latitude": 20.9, "longitude": 70.37, "category": "Harbour", "is_favourite": True},
-    {"id": "loc-2", "name": "Offshore Fishing Zone A", "latitude": 20.75, "longitude": 70.2, "category": "Fishing Area", "is_favourite": True},
-    {"id": "loc-3", "name": "Coastal Shelf Zone B", "latitude": 20.85, "longitude": 70.5, "category": "Fishing Area", "is_favourite": False}
-]
+STORE_LOCATIONS = []
 STORE_HISTORY = []
 STORE_CATCH = []
 
@@ -66,15 +64,37 @@ STORE_CATCH = []
 
 @router.get("/health")
 def get_health():
-    """Live source health, system status, and Ollama LLM availability."""
+    """Live source health and system status for client applications."""
     health = providers.check_health()
-    health["ollama"] = _ollama.health()
+    health["mosdac_activation"] = registry_status()
     return health
 
 @router.get("/zone")
 def get_zone_snapshot(lat: float = Query(20.9), lon: float = Query(70.37)):
     """Spot data snapshot."""
-    return providers.fetch_zone_snapshot(lat, lon)
+    snap = providers.fetch_zone_snapshot(lat, lon)
+    if snap.get("error"):
+        return snap
+    variables = snap.get("variables", {})
+    return {
+        "lat": snap["latitude"],
+        "lon": snap["longitude"],
+        "timestamp": snap["timestamp"],
+        "zone_name": "Live marine observation",
+        "wave_height_m": variables.get("wave_height_m"),
+        "swell_period_s": variables.get("swell_period_s"),
+        "wind_speed_kn": variables.get("wind_speed_kn"),
+        "wind_gust_kn": variables.get("wind_gust_kn"),
+        "wind_direction": variables.get("wind_direction_deg"),
+        "sea_temp_c": variables.get("sst_celsius"),
+        "current_speed_kn": variables.get("current_speed_kn"),
+        "current_direction": variables.get("current_direction_deg"),
+        "chlorophyll_mg_m3": variables.get("chlorophyll_mg_m3"),
+        "sources": [source["name"] for source in snap.get("sources_used", [])],
+        "sources_failed": [failure.get("source", "unknown") for failure in snap.get("sources_failed", [])],
+        "source_details": snap.get("sources_used", []),
+        "pfz": snap.get("pfz", []),
+    }
 
 @router.get("/grid")
 def get_grid(lat: float = Query(20.9), lon: float = Query(70.37), span: float = Query(0.5)):
@@ -86,13 +106,13 @@ def get_grid(lat: float = Query(20.9), lon: float = Query(70.37), span: float = 
             plat = round(lat - (span / 2.0) + (r * step), 4)
             plon = round(lon - (span / 2.0) + (c * step), 4)
             snap = providers.fetch_zone_snapshot(plat, plon)
-            if not snap.get("on_land"):
+            if not snap.get("error"):
                 points.append({
                     "lat": plat,
                     "lon": plon,
                     "wave_h": snap["variables"]["wave_height_m"],
                     "wind_kn": snap["variables"]["wind_speed_kn"],
-                    "chl": snap["variables"]["chlorophyll_mg_m3"]
+                    "chl": snap["variables"].get("chlorophyll_mg_m3")
                 })
     return {"latitude": lat, "longitude": lon, "span": span, "points": points}
 
@@ -144,24 +164,30 @@ def get_advisory(lat: float = Query(20.9), lon: float = Query(70.37)):
         "plain_en": res["plain_en"],
         "plain_hi": res["plain_hi"],
         "variables": {
-            "wave_height_m": vars["wave_height_m"],
-            "wave_period_s": vars["wave_period_s"],
-            "wind_speed_kn": vars["wind_speed_kn"],
-            "wind_gust_kn": vars["wind_gust_kn"],
-            "sst_celsius": vars["sst_celsius"],
-            "current_speed_kn": vars["current_speed_kn"],
-            "chlorophyll_mg_m3": vars["chlorophyll_mg_m3"]
+            key: {
+                "value": value,
+                "unit": {"wave_height_m": "m", "wave_period_s": "s", "wind_speed_kn": "kn", "wind_gust_kn": "kn", "sst_celsius": "C", "current_speed_kn": "kn", "chlorophyll_mg_m3": "mg/m3"}.get(key, ""),
+                "source": "ORCA Box live provider",
+                "time": "Live",
+                "status": "available",
+            }
+            for key, value in {
+                "wave_height_m": vars.get("wave_height_m"),
+                "wave_period_s": vars.get("wave_period_s"),
+                "wind_speed_kn": vars.get("wind_speed_kn"),
+                "wind_gust_kn": vars.get("wind_gust_kn"),
+                "sst_celsius": vars.get("sst_celsius"),
+                "current_speed_kn": vars.get("current_speed_kn"),
+                "chlorophyll_mg_m3": vars.get("chlorophyll_mg_m3"),
+            }.items() if value is not None
         },
-        "safe_window": {
-            "start": "05:30 IST",
-            "end": "16:00 IST",
-            "duration_hours": 10.5,
-            "condition": "Safe departure window before afternoon gust increase."
-        },
+        "safe_window": None,
         "hourly_chart": hourly_chart,
         "sources": snap["sources_used"],
         "sources_failed": snap["sources_failed"],
-        "timestamp": int(time.time())
+        "timestamp": int(time.time()),
+        "agents": res["agents"],
+        "data_coverage": res["data_coverage"],
     }
 
     # Automatically archive to advisory history store
@@ -227,31 +253,60 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
 
 @router.get("/alerts")
 def get_alerts():
-    """Active Alert Cards feed."""
-    return {
-        "alerts": [
-            {
-                "alert_id": "alt-cyclone-01",
-                "severity": "WARNING",
-                "category": "Cyclone Warning",
-                "title": "JTWC Advisory: Depressive Trough in Arabian Sea",
-                "message": "Sustained winds exceeding 28 kn in outer offshore sector. Keep radio monitored.",
-                "issued_at": int(time.time()) - 3600,
-                "expires_at": int(time.time()) + 86400,
-                "source": "JTWC / IMD Bulletin"
-            },
-            {
-                "alert_id": "alt-wave-02",
-                "severity": "CAUTION",
-                "category": "Wave Hazard",
-                "title": "Moderate Swell Increase Expected",
-                "message": "Wave period lengthening to 9.2s after 14:00 IST today.",
-                "issued_at": int(time.time()) - 1800,
-                "expires_at": int(time.time()) + 43200,
-                "source": "Open-Meteo MFWAM"
-            }
-        ]
-    }
+    """Return alerts from official feeds; no synthetic alerts are fabricated."""
+    alerts = []
+    imd = providers.fetch_imd_cap_alerts()
+    if imd.get("status") == "fresh":
+        for item in imd.get("alerts", []):
+            issued_at = item.get("issued_at")
+            try:
+                issued_time = parsedate_to_datetime(issued_at) if issued_at else None
+                if issued_time and (time.time() - issued_time.timestamp()) > 48 * 3600:
+                    continue
+            except (TypeError, ValueError, OverflowError):
+                continue
+            alerts.append({
+                "id": f"imd-{abs(hash(item.get('link') or item.get('title')))}",
+                "severity": "warning",
+                "title": item.get("title") or "IMD weather warning",
+                "message": "Official IMD CAP warning. Open the source for full instructions.",
+                "source": "IMD CAP",
+                "issued_at": issued_at,
+                "is_active": True,
+            })
+    cyclone = providers.fetch_cyclone_sources()
+    for feature in cyclone.get("gdacs", []):
+        props = feature.get("properties", {})
+        event_date = props.get("fromdate")
+        try:
+            if event_date:
+                try:
+                    event_timestamp = datetime.fromisoformat(event_date.replace("Z", "+00:00")).replace(tzinfo=timezone.utc).timestamp()
+                except ValueError:
+                    event_timestamp = parsedate_to_datetime(event_date).timestamp()
+                if time.time() - event_timestamp > 7 * 24 * 3600:
+                    continue
+        except (TypeError, ValueError, OverflowError):
+            continue
+        alerts.append({
+            "id": f"gdacs-{props.get('eventid') or abs(hash(props.get('eventname')))}",
+            "severity": "warning" if props.get("alertlevel") else "caution",
+            "title": props.get("eventname") or "GDACS tropical cyclone event",
+            "message": "Official GDACS tropical cyclone event.",
+            "source": "GDACS",
+            "issued_at": props.get("fromdate"),
+            "is_active": True,
+        })
+    for item in cyclone.get("jtwc", [])[:10]:
+        alerts.append({
+            "id": f"jtwc-{abs(hash(item.get('link') or item.get('title')))}",
+            "severity": "caution",
+            "title": item.get("title") or "JTWC tropical weather headline",
+            "message": "JTWC corroborating headline; full track details remain at the source.",
+            "source": "JTWC",
+            "is_active": True,
+        })
+    return {"alerts": alerts}
 
 @router.get("/agents")
 def list_agents():
@@ -263,28 +318,12 @@ def list_agents():
 @router.get("/profile")
 def get_profile(user_id: Optional[str] = "demo-fisher-01"):
     """Fetch user profile."""
-    prof = STORE_PROFILES.get(user_id, {
-        "user_id": user_id,
-        "display_name": "Captain Ramesh",
-        "preferred_language": "en",
-        "preferred_fishing_area": "Veraval Offshore Zone 1",
-        "home_harbour": "Veraval Harbour",
-        "vessel_type": "Motorized Craft (9m)",
-        "vessel_registration": "GJ-11-MM-4021",
-        "notification_preferences": {
-            "wave_alerts": True,
-            "wind_alerts": True,
-            "cyclone_alerts": True,
-            "pfz_updates": True
-        }
-    })
-    return prof
+    return STORE_PROFILES.get(user_id)
 
 @router.post("/profile")
 def update_profile(data: ProfileUpdate, user_id: Optional[str] = "demo-fisher-01"):
     """Update user profile."""
-    existing = get_profile(user_id)
-    updated = existing.copy()
+    updated = (get_profile(user_id) or {"user_id": user_id}).copy()
     if data.display_name: updated["display_name"] = data.display_name
     if data.preferred_language: updated["preferred_language"] = data.preferred_language
     if data.preferred_fishing_area: updated["preferred_fishing_area"] = data.preferred_fishing_area
@@ -319,9 +358,6 @@ def create_saved_location(loc: SavedLocationCreate):
 @router.get("/history")
 def get_advisory_history():
     """Fetch advisory history log."""
-    if not STORE_HISTORY:
-        # Pre-populate sample history if empty
-        get_advisory(20.9, 70.37)
     return {"history": STORE_HISTORY}
 
 @router.get("/catch-reports")

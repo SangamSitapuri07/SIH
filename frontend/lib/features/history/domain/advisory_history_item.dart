@@ -25,18 +25,18 @@ class AdvisoryHistoryItem {
 
   factory AdvisoryHistoryItem.fromJson(Map<String, dynamic> json) {
     return AdvisoryHistoryItem(
-      id: json['id'] ?? 'hist-${DateTime.now().millisecondsSinceEpoch}',
-      advisoryId: json['advisory_id'] ?? 'adv-001',
-      locationName: json['location_name'] ?? 'Veraval Offshore',
+      id: (json['id'] as String?) ?? 'hist-${DateTime.now().millisecondsSinceEpoch}',
+      advisoryId: (json['advisory_id'] as String?) ?? 'adv-001',
+      locationName: (json['location_name'] as String?) ?? 'Veraval Offshore',
       latitude: (json['latitude'] as num?)?.toDouble() ?? 20.9,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 70.37,
-      verdict: json['verdict'] ?? 'GOOD',
-      headline: json['headline'] ?? 'Safe to sail',
-      majorHazards: List<String>.from(json['major_hazards'] ?? []),
+      verdict: (json['verdict'] as String?) ?? 'GOOD',
+      headline: (json['headline'] as String?) ?? 'Safe to sail',
+      majorHazards: List<String>.from((json['major_hazards'] as Iterable<dynamic>?) ?? []),
       timestamp: json['timestamp'] != null
           ? DateTime.fromMillisecondsSinceEpoch((json['timestamp'] as int) * 1000)
           : DateTime.now(),
-      freshnessLabel: json['freshness_label'] ?? 'Cloud Synced',
+      freshnessLabel: (json['freshness_label'] as String?) ?? 'Cloud Synced',
     );
   }
 }

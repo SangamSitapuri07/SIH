@@ -5,47 +5,7 @@ import '../../../../core/theme/verdict_colors.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../domain/advisory_history_item.dart';
 
-final historyItemsProvider = Provider<List<AdvisoryHistoryItem>>((ref) {
-  final now = DateTime.now();
-  return [
-    AdvisoryHistoryItem(
-      id: 'h-1',
-      advisoryId: 'adv-0830',
-      locationName: 'Veraval Offshore Shelf',
-      latitude: 20.9,
-      longitude: 70.37,
-      verdict: 'CAUTION',
-      headline: 'CAUTION ADVISED — MODERATE SEA',
-      majorHazards: const ['Waves 2.8 m', 'Gusts up to 24 kn'],
-      timestamp: now.subtract(const Duration(minutes: 42)),
-      freshnessLabel: 'Recent',
-    ),
-    AdvisoryHistoryItem(
-      id: 'h-2',
-      advisoryId: 'adv-yesterday',
-      locationName: 'Veraval Offshore Shelf',
-      latitude: 20.9,
-      longitude: 70.37,
-      verdict: 'GOOD',
-      headline: 'SAFE TO SAIL TODAY',
-      majorHazards: const [],
-      timestamp: now.subtract(const Duration(days: 1, hours: 3)),
-      freshnessLabel: 'Archived',
-    ),
-    AdvisoryHistoryItem(
-      id: 'h-3',
-      advisoryId: 'adv-12sep',
-      locationName: 'Porbandar Marine Sector',
-      latitude: 21.63,
-      longitude: 69.6,
-      verdict: 'NO-GO',
-      headline: 'DANGER — ROUGH SEA WARNING',
-      majorHazards: const ['High Waves 4.2 m', 'Gale wind 36 kn'],
-      timestamp: now.subtract(const Duration(days: 2, hours: 5)),
-      freshnessLabel: 'Archived',
-    ),
-  ];
-});
+final historyItemsProvider = Provider<List<AdvisoryHistoryItem>>((ref) => const <AdvisoryHistoryItem>[]);
 
 class HistoryScreen extends ConsumerWidget {
   const HistoryScreen({super.key});
@@ -62,29 +22,39 @@ class HistoryScreen extends ConsumerWidget {
         ),
         backgroundColor: OrcaTheme.surface,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Past Advisory Archive',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+      body: history.isEmpty
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'No advisory history yet.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 15, color: OrcaTheme.textSecondary),
+                ),
+              ),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Past Advisory Archive',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Cloud-synced advisory history for safety audit & trend inspection.',
+                    style: TextStyle(fontSize: 13, color: OrcaTheme.textSecondary),
+                  ),
+                  const SizedBox(height: 16),
+                  for (final item in history) ...[
+                    _buildHistoryCard(item),
+                    const SizedBox(height: 12),
+                  ],
+                ],
+              ),
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Cloud-synced advisory history for safety audit & trend inspection.',
-              style: TextStyle(fontSize: 13, color: OrcaTheme.textSecondary),
-            ),
-            const SizedBox(height: 16),
-
-            for (final item in history) ...[
-              _buildHistoryCard(item),
-              const SizedBox(height: 12),
-            ],
-          ],
-        ),
-      ),
     );
   }
 
@@ -142,7 +112,7 @@ class HistoryScreen extends ConsumerWidget {
                 ),
               ),
               Text(
-                DateFormatter.formatIstTime(item.timestamp.millisecondsSinceEpoch ~/ 1000),
+                DateFormatter.formatIstTime(item.timestamp),
                 style: const TextStyle(color: OrcaTheme.textSecondary, fontSize: 12),
               ),
             ],

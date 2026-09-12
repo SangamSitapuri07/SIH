@@ -2,12 +2,37 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
+import '../../../../core/widgets/orca_app_bar.dart';
 
 class OfficialDashboardScreen extends ConsumerWidget {
   const OfficialDashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isDemo = ref.watch(demoModeProvider);
+
+    if (!isDemo) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'OFFICIAL DASHBOARD',
+            style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
+          ),
+          backgroundColor: OrcaTheme.surface,
+        ),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Official dashboard is unavailable in live mode.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 15, color: OrcaTheme.textSecondary),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(

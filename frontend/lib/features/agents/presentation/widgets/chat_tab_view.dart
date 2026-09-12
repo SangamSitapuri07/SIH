@@ -53,7 +53,7 @@ class ChatTabView extends StatelessWidget {
           const SizedBox(height: 20),
 
           const Text(
-            'DEMONSTRATION SAMPLE QUERIES',
+            'LIVE CHAT UNAVAILABLE',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w800,
@@ -63,17 +63,9 @@ class ChatTabView extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
-          _sampleQueryCard(
-            '🌊 "Why is wave steepness dangerous after 16:00?"',
-            'Ocean Analysis Agent: Swell period decreases to 7.8s while height reaches 2.9m, creating short-period steep chop with steepness index > 0.045.',
-          ),
-          _sampleQueryCard(
-            '🎣 "Where are today\'s INCOIS Potential Fishing Zones?"',
-            'Fisheries Agent: Line #MH-26-09 is located 3.8 km NW of Sasoon Docks at depth 42m with active chlorophyll fronts (0.82 mg/m³).',
-          ),
-          _sampleQueryCard(
-            '🚨 "Why is the overall verdict Caution and not Go?"',
-            'Marine Risk Agent: Worst-case fold logic flagged significant wave height (2.6m) crossing the 2.5m small-craft threshold despite favorable wind and clear land clearance.',
+          const Text(
+            'No live chat response is available. Use the Collaboration Trace after a successful real backend analysis.',
+            style: TextStyle(color: OrcaTheme.textSecondary, fontSize: 12.5),
           ),
         ],
       ),

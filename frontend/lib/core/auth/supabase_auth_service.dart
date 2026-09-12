@@ -24,13 +24,13 @@ class UserProfile {
 
   factory UserProfile.defaultGuest() {
     return const UserProfile(
-      userId: 'guest-fisher-01',
-      displayName: 'Captain Ramesh',
+      userId: 'guest',
+      displayName: 'Guest Fisher',
       preferredLanguage: 'en',
-      preferredFishingArea: 'Veraval Offshore Zone 1',
-      homeHarbour: 'Veraval Harbour',
-      vesselType: 'Motorized Boat (9m)',
-      vesselRegistration: 'GJ-11-MM-4021',
+      preferredFishingArea: '',
+      homeHarbour: '',
+      vesselType: '',
+      vesselRegistration: null,
       notificationPreferences: {
         'wave_alerts': true,
         'wind_alerts': true,
@@ -42,15 +42,15 @@ class UserProfile {
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
-      userId: json['user_id'] ?? 'guest-fisher-01',
-      displayName: json['display_name'] ?? 'Fisherman',
-      preferredLanguage: json['preferred_language'] ?? 'en',
-      preferredFishingArea: json['preferred_fishing_area'] ?? 'Veraval Offshore',
-      homeHarbour: json['home_harbour'] ?? 'Veraval Harbour',
-      vesselType: json['vessel_type'] ?? 'Motorized Boat',
-      vesselRegistration: json['vessel_registration'],
+      userId: (json['user_id'] as String?) ?? 'guest-fisher-01',
+      displayName: (json['display_name'] as String?) ?? 'Fisherman',
+      preferredLanguage: (json['preferred_language'] as String?) ?? 'en',
+      preferredFishingArea: (json['preferred_fishing_area'] as String?) ?? 'Veraval Offshore',
+      homeHarbour: (json['home_harbour'] as String?) ?? 'Veraval Harbour',
+      vesselType: (json['vessel_type'] as String?) ?? 'Motorized Boat',
+      vesselRegistration: json['vessel_registration'] as String?,
       notificationPreferences: Map<String, bool>.from(
-        json['notification_preferences'] ?? {
+        (json['notification_preferences'] as Map?) ?? {
           'wave_alerts': true,
           'wind_alerts': true,
           'cyclone_alerts': true,
