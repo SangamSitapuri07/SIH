@@ -60,7 +60,7 @@ class OfficialDashboardScreen extends ConsumerWidget {
                 const SizedBox(width: 10),
                 _buildStatCard('Active Alerts', '2', Icons.warning_amber, VerdictColors.caution),
                 const SizedBox(width: 10),
-                _buildStatCard('Sources Health', '95%', Icons.cloud_done, VerdictColors.good),
+                _buildStatCard('Sources Health', '95%', Icons.cloud_done, VerdictColors.go),
               ],
             ),
             const SizedBox(height: 18),
@@ -81,11 +81,11 @@ class OfficialDashboardScreen extends ConsumerWidget {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
                   const SizedBox(height: 12),
-                  _buildSectorRow('Veraval Offshore Sector', 'GOOD', VerdictColors.good),
+                  _buildSectorRow('Veraval Offshore Sector', 'GOOD', VerdictColors.go),
                   const Divider(color: Colors.white12),
                   _buildSectorRow('Porbandar Sector', 'CAUTION', VerdictColors.caution),
                   const Divider(color: Colors.white12),
-                  _buildSectorRow('Jafrabad Coastal Sector', 'GOOD', VerdictColors.good),
+                  _buildSectorRow('Jafrabad Coastal Sector', 'GOOD', VerdictColors.go),
                   const Divider(color: Colors.white12),
                   _buildSectorRow('Okha Deep Offshore Sector', 'NO-GO', VerdictColors.noGo),
                 ],
@@ -101,25 +101,25 @@ class OfficialDashboardScreen extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: Colors.white12),
               ),
-              child: Column(
+              child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Aggregated Catch & Ecological Insights',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
-                  const SizedBox(height: 10),
-                  const Row(
+                  SizedBox(height: 10),
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Total Reported Catch Today:', style: TextStyle(color: OrcaTheme.textSecondary, fontSize: 13)),
                       Text('3,480 kg', style: TextStyle(color: OrcaTheme.accent, fontWeight: FontWeight.bold, fontSize: 16)),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  const Text('Top Species Reported:', style: TextStyle(color: OrcaTheme.textSecondary, fontSize: 13)),
-                  const SizedBox(height: 6),
-                  const Wrap(
+                  SizedBox(height: 8),
+                  Text('Top Species Reported:', style: TextStyle(color: OrcaTheme.textSecondary, fontSize: 13)),
+                  SizedBox(height: 6),
+                  Wrap(
                     spacing: 6,
                     children: [
                       Chip(label: Text('Indian Mackerel (45%)'), backgroundColor: Colors.white10),

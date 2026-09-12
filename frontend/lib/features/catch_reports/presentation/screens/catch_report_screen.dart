@@ -207,7 +207,7 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Catch report saved locally & queued for cloud sync!'),
-                            backgroundColor: VerdictColors.good,
+                            backgroundColor: VerdictColors.go,
                           ),
                         );
                       },
@@ -253,7 +253,7 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: r.isSynced ? VerdictColors.goodBg : VerdictColors.cautionBg,
+                      color: r.isSynced ? VerdictColors.goBg : VerdictColors.cautionBg,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -261,7 +261,7 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: r.isSynced ? VerdictColors.good : VerdictColors.caution,
+                        color: r.isSynced ? VerdictColors.go : VerdictColors.caution,
                       ),
                     ),
                   ),

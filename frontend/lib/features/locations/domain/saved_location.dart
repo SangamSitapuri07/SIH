@@ -19,13 +19,13 @@ class SavedLocation {
 
   factory SavedLocation.fromJson(Map<String, dynamic> json) {
     return SavedLocation(
-      id: json['id'] ?? 'loc-${DateTime.now().millisecondsSinceEpoch}',
-      name: json['name'] ?? 'Saved Location',
+      id: json['id'] as String? ?? 'loc-${DateTime.now().millisecondsSinceEpoch}',
+      name: json['name'] as String? ?? 'Saved Location',
       latitude: (json['latitude'] as num).toDouble(),
       longitude: (json['longitude'] as num).toDouble(),
-      category: json['category'] ?? 'Fishing Area',
-      isFavourite: json['is_favourite'] ?? false,
-      notes: json['notes'],
+      category: json['category'] as String? ?? 'Fishing Area',
+      isFavourite: json['is_favourite'] as bool? ?? false,
+      notes: json['notes'] as String?,
     );
   }
 

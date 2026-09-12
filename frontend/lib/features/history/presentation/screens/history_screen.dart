@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
 import '../../../../core/utils/date_formatter.dart';
-import '../domain/advisory_history_item.dart';
+import '../../domain/advisory_history_item.dart';
 
 final historyItemsProvider = Provider<List<AdvisoryHistoryItem>>((ref) {
   final now = DateTime.now();
@@ -16,7 +16,7 @@ final historyItemsProvider = Provider<List<AdvisoryHistoryItem>>((ref) {
       longitude: 70.37,
       verdict: 'CAUTION',
       headline: 'CAUTION ADVISED — MODERATE SEA',
-      majorHazards: ['Waves 2.8 m', 'Gusts up to 24 kn'],
+      majorHazards: const ['Waves 2.8 m', 'Gusts up to 24 kn'],
       timestamp: now.subtract(const Duration(minutes: 42)),
       freshnessLabel: 'Recent',
     ),
@@ -28,7 +28,7 @@ final historyItemsProvider = Provider<List<AdvisoryHistoryItem>>((ref) {
       longitude: 70.37,
       verdict: 'GOOD',
       headline: 'SAFE TO SAIL TODAY',
-      majorHazards: [],
+      majorHazards: const [],
       timestamp: now.subtract(const Duration(days: 1, hours: 3)),
       freshnessLabel: 'Archived',
     ),
@@ -40,7 +40,7 @@ final historyItemsProvider = Provider<List<AdvisoryHistoryItem>>((ref) {
       longitude: 69.6,
       verdict: 'NO-GO',
       headline: 'DANGER — ROUGH SEA WARNING',
-      majorHazards: ['High Waves 4.2 m', 'Gale wind 36 kn'],
+      majorHazards: const ['High Waves 4.2 m', 'Gale wind 36 kn'],
       timestamp: now.subtract(const Duration(days: 2, hours: 5)),
       freshnessLabel: 'Archived',
     ),
@@ -94,7 +94,7 @@ class HistoryScreen extends ConsumerWidget {
 
     switch (item.verdict) {
       case 'GOOD':
-        verdictColor = VerdictColors.good;
+        verdictColor = VerdictColors.go;
         icon = Icons.check_circle_outline;
         break;
       case 'CAUTION':
@@ -165,7 +165,7 @@ class HistoryScreen extends ConsumerWidget {
             const SizedBox(height: 10),
             Wrap(
               spacing: 6,
-              children: item.majorHazards.map((h) => Chip(
+              children: item.majorHazards.map((String h) => Chip(
                 label: Text(h, style: const TextStyle(fontSize: 11, color: Colors.white)),
                 backgroundColor: VerdictColors.noGoBg,
                 side: BorderSide(color: VerdictColors.noGo.withAlpha(100)),

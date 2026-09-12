@@ -49,17 +49,17 @@ class SavedLocationsScreen extends ConsumerWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                   side: BorderSide(
-                    color: loc.isFavourite ? VerdictColors.good : Colors.white12,
+                    color: loc.isFavourite ? VerdictColors.go : Colors.white12,
                     width: loc.isFavourite ? 1.5 : 1.0,
                   ),
                 ),
                 child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   leading: CircleAvatar(
-                    backgroundColor: loc.category == 'Harbour' ? Colors.blue.withAlpha(50) : VerdictColors.good.withAlpha(50),
+                    backgroundColor: loc.category == 'Harbour' ? Colors.blue.withAlpha(50) : VerdictColors.go.withAlpha(50),
                     child: Icon(
                       loc.category == 'Harbour' ? Icons.anchor : Icons.phishing,
-                      color: loc.category == 'Harbour' ? Colors.blue : VerdictColors.good,
+                      color: loc.category == 'Harbour' ? Colors.blue : VerdictColors.go,
                     ),
                   ),
                   title: Row(
@@ -110,9 +110,9 @@ class SavedLocationsScreen extends ConsumerWidget {
     final nameCtrl = TextEditingController();
     final latCtrl = TextEditingController(text: '20.80');
     final lonCtrl = TextEditingController(text: '70.30');
-    String selectedCategory = 'Fishing Area';
+    const String selectedCategory = 'Fishing Area';
 
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: OrcaTheme.surface,
