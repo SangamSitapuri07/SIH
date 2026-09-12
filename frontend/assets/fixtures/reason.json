@@ -1,0 +1,138 @@
+{
+  "location": {"lat": 18.92, "lon": 72.83, "name": "Mumbai Offshore 22NM"},
+  "overall_risk": "MODERATE",
+  "verdict": "caution",
+  "data_coverage": {
+    "known": 7,
+    "total": 8,
+    "sources_failed": ["ESA OC-CCI (Monsoon cloud-mask)"]
+  },
+  "agents": [
+    {
+      "agent_id": "data_validation",
+      "name": "Data Validation",
+      "emoji": "✅",
+      "class": "DETERMINISTIC",
+      "status": "completed",
+      "duration_ms": 42,
+      "verdict": "good",
+      "summary": "7 of 8 datasets passed strict physical range and timestamp integrity QC gates. OC-CCI cloud masked; NOAA primary adopted.",
+      "evidence": ["Open-Meteo range: OK", "NOAA ERDDAP lag: 0d", "INCOIS WFS: valid"],
+      "warnings": []
+    },
+    {
+      "agent_id": "gis_spatial",
+      "name": "GIS & Spatial",
+      "emoji": "🗺️",
+      "class": "DETERMINISTIC",
+      "status": "completed",
+      "duration_ms": 35,
+      "verdict": "good",
+      "summary": "Coordinate 18.92°N, 72.83°E is 22.4 km offshore in Indian EEZ Zone 2. Outside naval firing ranges; nearest harbour Sasoon Docks (22.8 km, 078°).",
+      "evidence": ["Offshore dist: 22.4 km", "EEZ: Indian Exclusive Zone", "Restricted: None"],
+      "warnings": []
+    },
+    {
+      "agent_id": "ocean_analysis",
+      "name": "Ocean Analysis",
+      "emoji": "🌊",
+      "class": "LLM",
+      "status": "completed",
+      "duration_ms": 280,
+      "verdict": "caution",
+      "summary": "Swell period 8.4 s from SSW interacting with 2.6 m wave height. Steepness index 0.038 indicates moderate chop suitable for vessels > 8m.",
+      "evidence": ["Wave: 2.6m", "Swell: 8.4s", "SST: 28.4°C"],
+      "warnings": ["Moderate swell steepness in open sea"]
+    },
+    {
+      "agent_id": "satellite_analysis",
+      "name": "Satellite Analysis",
+      "emoji": "🛰️",
+      "class": "LLM",
+      "status": "completed",
+      "duration_ms": 310,
+      "verdict": "good",
+      "summary": "NOAA DINEOF chlorophyll-a shows 0.82 mg/m³ gradient along shelf break. ISRO OCM-3 granule confirms coastal thermal front 12 km west.",
+      "evidence": ["NOAA DINEOF: 0.82 mg/m³", "OCM-3 thermal front: 12 km W"],
+      "warnings": []
+    },
+    {
+      "agent_id": "weather_hazard",
+      "name": "Weather & Hazard",
+      "emoji": "🌦️",
+      "class": "LLM",
+      "status": "completed",
+      "duration_ms": 240,
+      "verdict": "good",
+      "summary": "No tropical storm/gale warnings in North Arabian Sea (JTWC clean). Wind gusts peak at 24 kn, well below 34 kn WMO gale limit.",
+      "evidence": ["JTWC: Clean", "Gusts: 24 kn (max)"],
+      "warnings": []
+    },
+    {
+      "agent_id": "map_synoptic",
+      "name": "Map Synoptic",
+      "emoji": "🗺️",
+      "class": "DETERMINISTIC",
+      "status": "completed",
+      "duration_ms": 60,
+      "verdict": "good",
+      "summary": "1012 hPa isobar ridge dominates northern sector; no active monsoon trough depression within 200 km radius.",
+      "evidence": ["Pressure: 1012 hPa", "Gradient: 0.8 hPa/100km"],
+      "warnings": []
+    },
+    {
+      "agent_id": "marine_ecology",
+      "name": "Marine Ecology",
+      "emoji": "🐟",
+      "class": "LLM",
+      "status": "completed",
+      "duration_ms": 340,
+      "verdict": "good",
+      "summary": "Chlorophyll-SST thermal frontal boundary provides high zooplankton concentration. Elevated pelagic productivity index (0.78/1.0).",
+      "evidence": ["Productivity index: 0.78", "Upwelling index: moderate"],
+      "warnings": []
+    },
+    {
+      "agent_id": "fisheries_pfz",
+      "name": "Fisheries/PFZ",
+      "emoji": "🎣",
+      "class": "LLM",
+      "status": "completed",
+      "duration_ms": 290,
+      "verdict": "good",
+      "summary": "Official INCOIS PFZ line #MH-26-09 intersects 3.8 km NW of target spot. Expected pelagic species: Mackerel, Sardine, Ribbonfish.",
+      "evidence": ["INCOIS Line: #MH-26-09", "Distance to PFZ: 3.8 km"],
+      "warnings": []
+    },
+    {
+      "agent_id": "anomaly_detection",
+      "name": "Anomaly Detection",
+      "emoji": "🔍",
+      "class": "DETERMINISTIC",
+      "status": "completed",
+      "duration_ms": 55,
+      "verdict": "good",
+      "summary": "Comparison against 2024-2025 Open-Meteo Archive seasonal baseline yields z-score +0.4 (within normal variance envelope).",
+      "evidence": ["SST Z-score: +0.4", "Wave anomaly: +0.15m"],
+      "warnings": []
+    },
+    {
+      "agent_id": "marine_risk",
+      "name": "Marine Risk",
+      "emoji": "🚨",
+      "class": "DETERMINISTIC",
+      "status": "completed",
+      "duration_ms": 40,
+      "verdict": "caution",
+      "summary": "Worst-case fold triggered: Wave height 2.6 m crosses 2.5 m caution threshold. Overall risk rated MODERATE (CAUTION).",
+      "evidence": ["Fold input: Wave (CAUTION), Wind (GOOD), Land (CLEAR)"],
+      "warnings": ["Caution: waves > 2.5m"]
+    }
+  ],
+  "orchestrator_synthesis": {
+    "headline": "Safe for day transit within 15 km coast; exercise caution beyond 20 km offshore after 16:00.",
+    "recommendation": "Depart Sasoon Docks between 06:00 and 10:00 IST. Target PFZ sector 3.8 km NW. Return by 15:30 before afternoon wave buildup.",
+    "trace_owner": "🧠 Orchestrator Agent (SIH26176)",
+    "timestamp": "2026-09-12T08:30:00Z"
+  }
+}

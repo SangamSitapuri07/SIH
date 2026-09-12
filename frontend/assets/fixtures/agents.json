@@ -1,0 +1,101 @@
+[
+  {
+    "id": "data_validation",
+    "name": "Data Validation",
+    "emoji": "✅",
+    "class": "DETERMINISTIC",
+    "role": "QC gate verifying 7 physical datasets, units, ranges, and lag chains",
+    "sources": ["Open-Meteo", "NOAA", "INCOIS", "MOSDAC"],
+    "implemented": true
+  },
+  {
+    "id": "gis_spatial",
+    "name": "GIS & Spatial",
+    "emoji": "🗺️",
+    "class": "DETERMINISTIC",
+    "role": "Calculates offshore distance, EEZ zone, restricted areas, nearest harbours",
+    "sources": ["GLOBE 1km", "PostGIS", "INCOIS WFS"],
+    "implemented": true
+  },
+  {
+    "id": "ocean_analysis",
+    "name": "Ocean Analysis",
+    "emoji": "🌊",
+    "class": "LLM",
+    "role": "Evaluates waves, swell period, wind-wave steepness, currents, and SST",
+    "sources": ["Open-Meteo Marine (MFWAM/ECMWF)"],
+    "implemented": true
+  },
+  {
+    "id": "satellite_analysis",
+    "name": "Satellite Analysis",
+    "emoji": "🛰️",
+    "class": "LLM",
+    "role": "Processes chlorophyll-a and ocean colour (ISRO OCM-3 & NOAA CoastWatch)",
+    "sources": ["ISRO MOSDAC OCM-3", "NOAA CoastWatch", "ESA OC-CCI"],
+    "implemented": true
+  },
+  {
+    "id": "weather_hazard",
+    "name": "Weather & Hazard",
+    "emoji": "🌦️",
+    "class": "LLM",
+    "role": "Tracks cyclonic depressions, WMO 34kn gales, lightning, and squalls",
+    "sources": ["JTWC (US Navy)", "Open-Meteo Forecast"],
+    "implemented": true
+  },
+  {
+    "id": "map_synoptic",
+    "name": "Map Synoptic",
+    "emoji": "🗺️",
+    "class": "DETERMINISTIC",
+    "role": "Extracts isobars, high/low pressure centers, and synoptic features",
+    "sources": ["ECMWF IFS", "Open-Meteo"],
+    "implemented": true
+  },
+  {
+    "id": "marine_ecology",
+    "name": "Marine Ecology",
+    "emoji": "🐟",
+    "class": "LLM",
+    "role": "Synthesizes thermal fronts and chlorophyll gradients into productivity scores",
+    "sources": ["NOAA CoastWatch", "MOSDAC OCM-3", "INCOIS"],
+    "implemented": true
+  },
+  {
+    "id": "fisheries_pfz",
+    "name": "Fisheries/PFZ",
+    "emoji": "🎣",
+    "class": "LLM",
+    "role": "Correlates official INCOIS PFZ lines with live SST/Chlorophyll fronts",
+    "sources": ["INCOIS PFZ GeoServer WFS", "GFW AIS"],
+    "implemented": true
+  },
+  {
+    "id": "anomaly_detection",
+    "name": "Anomaly Detection",
+    "emoji": "🔍",
+    "class": "DETERMINISTIC",
+    "role": "Computes z-scores comparing today vs 2024-2025 seasonal climatology",
+    "sources": ["Open-Meteo Archive"],
+    "implemented": true
+  },
+  {
+    "id": "marine_risk",
+    "name": "Marine Risk",
+    "emoji": "🚨",
+    "class": "DETERMINISTIC",
+    "role": "Executes non-linear worst-case fold across ocean, weather, and land risk",
+    "sources": ["All Agents Output"],
+    "implemented": true
+  },
+  {
+    "id": "orchestrator",
+    "name": "Orchestrator",
+    "emoji": "🧠",
+    "class": "LLM",
+    "role": "Coordinates agent dispatch, validates dependencies, synthesizes final advice",
+    "sources": ["ORCA Situation Board"],
+    "implemented": true
+  }
+]
