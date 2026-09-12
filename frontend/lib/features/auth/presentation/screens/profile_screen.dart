@@ -45,7 +45,7 @@ class ProfileScreen extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          profile.displayName,
+                          profile.displayName.isNotEmpty ? profile.displayName : 'No profile info yet',
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -54,7 +54,9 @@ class ProfileScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${profile.vesselType} • ${profile.homeHarbour}',
+                          (profile.vesselType.isNotEmpty || profile.homeHarbour.isNotEmpty)
+                              ? '${profile.vesselType.isNotEmpty ? profile.vesselType : 'Vessel'} • ${profile.homeHarbour.isNotEmpty ? profile.homeHarbour : 'No harbour set'}'
+                              : 'No vessel or harbour details set',
                           style: const TextStyle(color: OrcaTheme.textSecondary, fontSize: 12),
                         ),
                         const SizedBox(height: 4),

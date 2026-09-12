@@ -19,83 +19,93 @@ class SavedLocationsScreen extends ConsumerWidget {
         ),
         backgroundColor: OrcaTheme.surface,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Saved Fishing Spots & Harbours',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'One-tap safety check and route setup for your frequent areas.',
-              style: TextStyle(
-                fontSize: 13,
-                color: OrcaTheme.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            for (final loc in locations) ...[
-              Card(
-                color: OrcaTheme.surface,
-                margin: const EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                    color: loc.isFavourite ? VerdictColors.go : Colors.white12,
-                    width: loc.isFavourite ? 1.5 : 1.0,
-                  ),
+      body: locations.isEmpty
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'No saved places yet.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 15, color: OrcaTheme.textSecondary),
                 ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  leading: CircleAvatar(
-                    backgroundColor: loc.category == 'Harbour' ? Colors.blue.withAlpha(50) : VerdictColors.go.withAlpha(50),
-                    child: Icon(
-                      loc.category == 'Harbour' ? Icons.anchor : Icons.phishing,
-                      color: loc.category == 'Harbour' ? Colors.blue : VerdictColors.go,
+              ),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Saved Fishing Spots & Harbours',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
                   ),
-                  title: Row(
-                    children: [
-                      Text(
-                        loc.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                  const SizedBox(height: 4),
+                  const Text(
+                    'One-tap safety check and route setup for your frequent areas.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: OrcaTheme.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  for (final loc in locations) ...[
+                    Card(
+                      color: OrcaTheme.surface,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                          color: loc.isFavourite ? VerdictColors.go : Colors.white12,
+                          width: loc.isFavourite ? 1.5 : 1.0,
                         ),
                       ),
-                      if (loc.isFavourite) ...[
-                        const SizedBox(width: 6),
-                        const Icon(Icons.star, color: Colors.amber, size: 16),
-                      ],
-                    ],
-                  ),
-                  subtitle: Text(
-                    '${loc.latitude.toStringAsFixed(2)}° N, ${loc.longitude.toStringAsFixed(2)}° E • ${loc.category}',
-                    style: const TextStyle(color: OrcaTheme.textSecondary, fontSize: 12),
-                  ),
-                  trailing: IconButton(
-                    icon: Icon(
-                      loc.isFavourite ? Icons.star : Icons.star_border,
-                      color: loc.isFavourite ? Colors.amber : Colors.grey,
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        leading: CircleAvatar(
+                          backgroundColor: loc.category == 'Harbour' ? Colors.blue.withAlpha(50) : VerdictColors.go.withAlpha(50),
+                          child: Icon(
+                            loc.category == 'Harbour' ? Icons.anchor : Icons.phishing,
+                            color: loc.category == 'Harbour' ? Colors.blue : VerdictColors.go,
+                          ),
+                        ),
+                        title: Row(
+                          children: [
+                            Text(
+                              loc.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            if (loc.isFavourite) ...[
+                              const SizedBox(width: 6),
+                              const Icon(Icons.star, color: Colors.amber, size: 16),
+                            ],
+                          ],
+                        ),
+                        subtitle: Text(
+                          '${loc.latitude.toStringAsFixed(2)}° N, ${loc.longitude.toStringAsFixed(2)}° E • ${loc.category}',
+                          style: const TextStyle(color: OrcaTheme.textSecondary, fontSize: 12),
+                        ),
+                        trailing: IconButton(
+                          icon: Icon(
+                            loc.isFavourite ? Icons.star : Icons.star_border,
+                            color: loc.isFavourite ? Colors.amber : Colors.grey,
+                          ),
+                          onPressed: () {
+                            ref.read(savedLocationsProvider.notifier).toggleFavourite(loc.id);
+                          },
+                        ),
+                      ),
                     ),
-                    onPressed: () {
-                      ref.read(savedLocationsProvider.notifier).toggleFavourite(loc.id);
-                    },
-                  ),
-                ),
+                  ],
+                ],
               ),
-            ],
-          ],
-        ),
-      ),
+            ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddLocationDialog(context, ref),
         icon: const Icon(Icons.add_location_alt),

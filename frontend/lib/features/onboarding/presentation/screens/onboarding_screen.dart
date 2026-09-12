@@ -141,7 +141,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         decoration: InputDecoration(
                           filled: true,
                           fillColor: OrcaTheme.surface,
-                          hintText: 'http://10.0.2.2:8000',
+                          hintText: '192.168.1.15 or http://192.168.1.15:8000',
                           hintStyle: const TextStyle(color: OrcaTheme.textMuted),
                           prefixIcon: const Icon(Icons.dns, color: OrcaTheme.accent, size: 20),
                           border: OutlineInputBorder(
@@ -163,11 +163,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         child: SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           title: const Text(
-                            'Enable Judge Demo Mode',
+                            'Show Prototype',
                             style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
                           ),
                           subtitle: const Text(
-                            'Uses bundled offline fixtures without requiring a live laptop server',
+                            'Uses bundled demonstration fixtures only for prototype review',
                             style: TextStyle(fontSize: 11, color: OrcaTheme.textMuted),
                           ),
                           value: _demoMode,
@@ -183,11 +183,20 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               // Get Started Button
               ElevatedButton(
                 onPressed: () async {
-                  ref.read(baseUrlProvider.notifier).state = _urlController.text.trim();
+                  final baseUrl = normalizeOrcaBoxUrl(_urlController.text);
+                  if (baseUrl == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Enter a valid IP address or http(s) URL, for example 192.168.1.15.'),
+                      ),
+                    );
+                    return;
+                  }
+                  ref.read(baseUrlProvider.notifier).state = baseUrl;
                   ref.read(selectedLocaleProvider.notifier).state = _selectedLang;
                   ref.read(demoModeProvider.notifier).state = _demoMode;
                   final cache = ref.read(cacheServiceProvider);
-                  await cache.put('settings.base_url', <String, dynamic>{'value': _urlController.text.trim()}, ttl: const Duration(days: 3650));
+                  await cache.put('settings.base_url', <String, dynamic>{'value': baseUrl}, ttl: const Duration(days: 3650));
                   await cache.put('settings.locale', <String, dynamic>{'value': _selectedLang}, ttl: const Duration(days: 3650));
                   await cache.put('settings.demo_mode', <String, dynamic>{'value': _demoMode}, ttl: const Duration(days: 3650));
                   await cache.put(

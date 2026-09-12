@@ -144,10 +144,21 @@ class HomeScreen extends ConsumerWidget {
                         CircularProgressIndicator(color: OrcaTheme.accent),
                         SizedBox(height: 16),
                         Text(
-                          'Fetching live ocean observations...',
+                          'ORCA is analyzing the sea...',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Checking ocean conditions\nChecking weather hazards\nAnalyzing satellite information\nPreparing your safety advisory',
+                          textAlign: TextAlign.center,
                           style: TextStyle(
                             color: OrcaTheme.textSecondary,
-                            fontSize: 14,
+                            fontSize: 12,
+                            height: 1.5,
                           ),
                         ),
                       ],
@@ -169,7 +180,7 @@ class HomeScreen extends ConsumerWidget {
                       const Icon(Icons.error_outline, color: VerdictColors.critical, size: 48),
                       const SizedBox(height: 12),
                       const Text(
-                        'Unable to Load Advisory',
+                        'Unable to load advisory',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -191,7 +202,7 @@ class HomeScreen extends ConsumerWidget {
                           ref.read(advisoryProvider.notifier).fetch(forceRefresh: true);
                         },
                         icon: const Icon(Icons.refresh),
-                        label: const Text('Retry Connection'),
+                        label: const Text('Retry'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: OrcaTheme.accent,
                           foregroundColor: Colors.black,

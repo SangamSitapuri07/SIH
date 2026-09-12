@@ -10,36 +10,7 @@ final savedLocationsProvider = StateNotifierProvider<SavedLocationsNotifier, Lis
 class SavedLocationsNotifier extends StateNotifier<List<SavedLocation>> {
   final SyncManager _syncManager;
 
-  SavedLocationsNotifier(this._syncManager)
-      : super([
-          const SavedLocation(
-            id: 'loc-1',
-            name: 'Home Harbour (Veraval)',
-            latitude: 20.9,
-            longitude: 70.37,
-            category: 'Harbour',
-            isFavourite: true,
-            notes: 'Main departure and landing harbour',
-          ),
-          const SavedLocation(
-            id: 'loc-2',
-            name: 'Offshore Fishing Zone A',
-            latitude: 20.75,
-            longitude: 70.2,
-            category: 'Fishing Area',
-            isFavourite: true,
-            notes: 'High yield Mackerel grounds',
-          ),
-          const SavedLocation(
-            id: 'loc-3',
-            name: 'Coastal Shelf Zone B',
-            latitude: 20.85,
-            longitude: 70.5,
-            category: 'Fishing Area',
-            isFavourite: false,
-            notes: 'Shallow current waters',
-          ),
-        ]);
+  SavedLocationsNotifier(this._syncManager) : super(const <SavedLocation>[]);
 
   void addLocation(String name, double lat, double lon, String category) {
     final loc = SavedLocation(

@@ -1,31 +1,17 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/cache/cache_service.dart';
 
-/// Composition root initializing storage, caches, and foundational services (§10).
+/// Composition root initializing local storage, caches, and foundational services.
+///
+/// The mobile client is edge-first: safety data comes from the ORCA Box and is
+/// cached locally. Optional Supabase sync, when configured, is handled by the
+/// ORCA Box backend rather than requiring cloud credentials in the APK.
 Future<ProviderContainer> bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final cacheService = CacheService();
   await cacheService.init();
-
-  const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-  const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
-
-  if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
-    try {
-      await Supabase.initialize(
-        url: supabaseUrl,
-        publishableKey: supabaseAnonKey,
-      );
-      debugPrint('[Supabase] Initialized with remote cloud instance: $supabaseUrl');
-    } catch (e) {
-      debugPrint('[Supabase] Initialization skipped/failed (offline fallback active): $e');
-    }
-  } else {
-    debugPrint('[Supabase] Unconfigured (SUPABASE_URL not provided). Using local Hive storage & mock sync.');
-  }
 
   final container = ProviderContainer(
     overrides: [

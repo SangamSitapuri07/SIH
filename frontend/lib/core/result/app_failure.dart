@@ -59,7 +59,7 @@ final class BadPayloadFailure extends AppFailure {
 }
 
 final class TimeoutFailure extends AppFailure {
-  const TimeoutFailure([super.message = 'Request timed out after 15 seconds.']);
+  const TimeoutFailure([super.message = 'ORCA Box took too long to complete this request.']);
 }
 
 final class UnknownFailure extends AppFailure {

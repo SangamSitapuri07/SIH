@@ -24,13 +24,13 @@ class UserProfile {
 
   factory UserProfile.defaultGuest() {
     return const UserProfile(
-      userId: 'guest-fisher-01',
-      displayName: 'Captain Ramesh',
+      userId: 'guest',
+      displayName: 'Guest Fisher',
       preferredLanguage: 'en',
-      preferredFishingArea: 'Veraval Offshore Zone 1',
-      homeHarbour: 'Veraval Harbour',
-      vesselType: 'Motorized Boat (9m)',
-      vesselRegistration: 'GJ-11-MM-4021',
+      preferredFishingArea: '',
+      homeHarbour: '',
+      vesselType: '',
+      vesselRegistration: null,
       notificationPreferences: {
         'wave_alerts': true,
         'wind_alerts': true,

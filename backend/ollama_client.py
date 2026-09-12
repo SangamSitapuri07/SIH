@@ -27,7 +27,7 @@ logger = logging.getLogger("orca.ollama")
 
 _DEFAULT_HOST = "http://localhost:11434"
 _DEFAULT_MODEL = "qwen3:8b"
-_DEFAULT_TIMEOUT = 25.0  # seconds — must be < FastAPI route timeout
+_DEFAULT_TIMEOUT = 8.0  # seconds; deterministic analysis remains authoritative
 
 class OllamaClient:
     """
@@ -107,7 +107,7 @@ class OllamaClient:
 
         except httpx.TimeoutException:
             logger.warning(f"[Ollama] Request timed out after {self.timeout}s — using deterministic fallback.")
-            self._available = None  # re-probe next call
+            self._available = False  # avoid repeating the timeout for every agent
             return None
         except Exception as e:
             logger.error(f"[Ollama] Unexpected error: {e}")

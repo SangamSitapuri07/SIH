@@ -151,11 +151,11 @@ class InfoScreen extends ConsumerWidget {
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text(
-                      'Judge Demo Mode (Mock Fixtures)',
+                      'Show Prototype',
                       style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                     subtitle: const Text(
-                      'Runs 100% offline using bundled ISRO/NOAA JSON fixtures',
+                      'Uses bundled demonstration fixtures only when enabled.',
                       style: TextStyle(fontSize: 11, color: OrcaTheme.textMuted),
                     ),
                     value: isDemo,
@@ -170,10 +170,10 @@ class InfoScreen extends ConsumerWidget {
                       if (!context.mounted) return;
                       ToastHelper.show(
                         context,
-                        title: val ? 'Demo Mode Activated' : 'Live Mode Activated',
+                        title: val ? 'Prototype mode enabled' : 'Live mode enabled',
                         message: val
-                            ? 'All screens will now render bundled benchmark fixtures.'
-                            : 'App will connect to live ORCA Box server.',
+                            ? 'Prototype fixtures are now being shown.'
+                            : 'App will connect to the live ORCA Box server.',
                         severity: val ? 'caution' : 'info',
                       );
                     },

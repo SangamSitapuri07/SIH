@@ -51,7 +51,7 @@ class _ServerConfigDialogState extends ConsumerState<ServerConfigDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Enter the IP address of your running ORCA Box mini-PC/laptop on the local WiFi hotspot or LAN:',
+            'Enter the IP address of your running ORCA Box mini-PC/laptop on the same WiFi or LAN. Port 8000 is added automatically.',
             style: TextStyle(fontSize: 12, color: OrcaTheme.textSecondary),
           ),
           const SizedBox(height: 14),
@@ -61,7 +61,7 @@ class _ServerConfigDialogState extends ConsumerState<ServerConfigDialog> {
             decoration: InputDecoration(
               filled: true,
               fillColor: OrcaTheme.surfaceElevated,
-              hintText: 'http://192.168.1.15:8000',
+              hintText: '127.0.0.1 or http://192.168.1.110:8000',
               hintStyle: const TextStyle(color: OrcaTheme.textMuted),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -71,7 +71,7 @@ class _ServerConfigDialogState extends ConsumerState<ServerConfigDialog> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Default for Android emulator: http://10.0.2.2:8000',
+            'Chrome: http://127.0.0.1:8000 • Emulator: http://10.0.2.2:8000 • LAN: http://192.168.1.110:8000',
             style: TextStyle(fontSize: 11, color: OrcaTheme.textMuted),
           ),
         ],
@@ -84,14 +84,21 @@ class _ServerConfigDialogState extends ConsumerState<ServerConfigDialog> {
         ElevatedButton(
           onPressed: () async {
             final text = _controller.text.trim();
-            if (text.isNotEmpty) {
-              ref.read(baseUrlProvider.notifier).state = text;
-              await ref.read(cacheServiceProvider).put(
-                'settings.base_url',
-                <String, dynamic>{'value': text},
-                ttl: const Duration(days: 3650),
+            final normalizedUrl = normalizeOrcaBoxUrl(text);
+            if (normalizedUrl == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Enter a valid IP address or http(s) URL, for example 192.168.1.15.'),
+                ),
               );
+              return;
             }
+            ref.read(baseUrlProvider.notifier).state = normalizedUrl;
+            await ref.read(cacheServiceProvider).put(
+              'settings.base_url',
+              <String, dynamic>{'value': normalizedUrl},
+              ttl: const Duration(days: 3650),
+            );
             if (!context.mounted) return;
             Navigator.of(context).pop();
           },

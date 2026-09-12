@@ -14,27 +14,29 @@ class AlertsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final alertsState = ref.watch(alertsProvider);
+    final isDemo = ref.watch(demoModeProvider);
 
     return Scaffold(
       appBar: OrcaAppBar(
         title: 'MARINE ALERTS',
         subtitle: 'Active Cyclone & Weather Warnings',
-        actions: [
-          // Demo alert simulator button (§4, §8, clearly labelled for demo)
-          IconButton(
-            icon: const Icon(Icons.notification_add_outlined, color: VerdictColors.caution),
-            tooltip: 'Simulate Alert (Demo)',
-            onPressed: () {
-              ref.read(alertsProvider.notifier).simulateDemoAlert();
-              ToastHelper.show(
-                context,
-                title: 'Demo Alert Injected',
-                message: 'Severe squall simulated. Check active feed below.',
-                severity: 'critical',
-              );
-            },
-          ),
-        ],
+        actions: isDemo
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.notification_add_outlined, color: VerdictColors.caution),
+                  tooltip: 'Simulate Alert (Demo)',
+                  onPressed: () {
+                    ref.read(alertsProvider.notifier).simulateDemoAlert();
+                    ToastHelper.show(
+                      context,
+                      title: 'Demo Alert Injected',
+                      message: 'Severe squall simulated. Check active feed below.',
+                      severity: 'critical',
+                    );
+                  },
+                ),
+              ]
+            : null,
       ),
       body: RefreshIndicator(
         onRefresh: () async {

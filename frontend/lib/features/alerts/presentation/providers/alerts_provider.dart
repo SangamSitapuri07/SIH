@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/live/live_channel.dart';
 import '../../../../core/network/dio_provider.dart';
+import '../../../../core/cache/cache_service.dart';
 import '../../../../core/result/result.dart';
 import '../../../../core/widgets/orca_app_bar.dart';
 import '../../data/datasources/alerts_remote.dart';
@@ -21,7 +22,7 @@ final alertsRemoteDataSourceProvider = Provider<AlertsRemoteDataSource>((ref) {
 /// Provider for AlertsRepository.
 final alertsRepositoryProvider = Provider<AlertsRepository>((ref) {
   final remote = ref.watch(alertsRemoteDataSourceProvider);
-  return AlertsRepositoryImpl(remoteDataSource: remote);
+  return AlertsRepositoryImpl(remoteDataSource: remote, cacheService: ref.watch(cacheServiceProvider));
 });
 
 /// Provider for GetAlertsUseCase.

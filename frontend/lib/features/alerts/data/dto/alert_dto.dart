@@ -10,8 +10,8 @@ class AlertDto {
   final String message;
   final String? messageHi;
   final String? source;
-  final String? issuedAtStr;
-  final String? expiresAtStr;
+  final DateTime? issuedAt;
+  final DateTime? expiresAt;
   final String? affectedArea;
   final bool? isActive;
 
@@ -23,11 +23,18 @@ class AlertDto {
     required this.message,
     this.messageHi,
     this.source,
-    this.issuedAtStr,
-    this.expiresAtStr,
+    this.issuedAt,
+    this.expiresAt,
     this.affectedArea,
     this.isActive,
   });
+
+  static DateTime? _parseTimestamp(dynamic value) {
+    if (value is num) {
+      return DateTime.fromMillisecondsSinceEpoch(value.toInt() * 1000, isUtc: true);
+    }
+    return DateFormatter.parseIso(value);
+  }
 
   factory AlertDto.fromJson(Map<String, dynamic> json) {
     return AlertDto(
@@ -38,8 +45,8 @@ class AlertDto {
       message: json['message'] as String? ?? 'Caution advised in maritime operations.',
       messageHi: json['message_hi'] as String?,
       source: json['source'] as String? ?? 'INCOIS / IMD',
-      issuedAtStr: json['issued_at'] as String?,
-      expiresAtStr: json['expires_at'] as String?,
+      issuedAt: _parseTimestamp(json['issued_at']),
+      expiresAt: _parseTimestamp(json['expires_at']),
       affectedArea: json['affected_area'] as String?,
       isActive: json['is_active'] as bool? ?? true,
     );
@@ -54,8 +61,8 @@ class AlertDto {
       message: message,
       messageHi: messageHi,
       source: source ?? 'INCOIS / IMD',
-      issuedAt: DateFormatter.parseIso(issuedAtStr) ?? DateTime.now(),
-      expiresAt: DateFormatter.parseIso(expiresAtStr),
+      issuedAt: issuedAt ?? DateTime.now(),
+      expiresAt: expiresAt,
       affectedArea: affectedArea,
       isActive: isActive ?? true,
     );

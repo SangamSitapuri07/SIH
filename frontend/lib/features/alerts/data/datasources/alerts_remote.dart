@@ -10,11 +10,14 @@ class AlertsRemoteDataSource {
 
   /// Fetches active alerts.
   Future<List<AlertDto>> getActiveAlerts() async {
-    final response = await _dio.get<List<dynamic>>(ApiPaths.alerts);
+    final response = await _dio.get<dynamic>(ApiPaths.alerts);
     if (response.data == null) {
       return <AlertDto>[];
     }
-    return response.data!
+    final rawList = response.data is Map<String, dynamic>
+        ? (response.data['alerts'] as List<dynamic>? ?? <dynamic>[])
+        : response.data as List<dynamic>;
+    return rawList
         .map((e) => AlertDto.fromJson(e as Map<String, dynamic>))
         .toList();
   }

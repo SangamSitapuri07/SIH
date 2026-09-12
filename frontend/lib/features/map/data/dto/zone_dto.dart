@@ -22,7 +22,7 @@ class ZoneDto {
   final double? nearestHarbourDistKm;
   final List<String> sources;
   final List<String> sourcesFailed;
-  final String? timestampStr;
+  final DateTime? timestamp;
 
   ZoneDto({
     required this.lat,
@@ -43,8 +43,18 @@ class ZoneDto {
     this.nearestHarbourDistKm,
     required this.sources,
     required this.sourcesFailed,
-    this.timestampStr,
+    this.timestamp,
   });
+
+  static DateTime? _parseTimestamp(dynamic value) {
+    if (value is int) {
+      return DateTime.fromMillisecondsSinceEpoch(value * 1000, isUtc: true);
+    }
+    if (value is num) {
+      return DateTime.fromMillisecondsSinceEpoch(value.toInt() * 1000, isUtc: true);
+    }
+    return DateFormatter.parseIso(value);
+  }
 
   factory ZoneDto.fromJson(Map<String, dynamic> json) {
     final sourcesList = (json['sources'] as List<dynamic>?)
@@ -75,7 +85,7 @@ class ZoneDto {
       nearestHarbourDistKm: (json['nearest_harbour_dist_km'] as num?)?.toDouble(),
       sources: sourcesList,
       sourcesFailed: failedList,
-      timestampStr: json['timestamp'] as String?,
+      timestamp: _parseTimestamp(json['timestamp']),
     );
   }
 
@@ -99,7 +109,7 @@ class ZoneDto {
       nearestHarbourDistKm: nearestHarbourDistKm,
       sources: sources,
       sourcesFailed: sourcesFailed,
-      timestamp: DateFormatter.parseIso(timestampStr) ?? DateTime.now(),
+      timestamp: timestamp ?? DateTime.now(),
       staleness: staleness,
     );
   }

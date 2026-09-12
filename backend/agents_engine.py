@@ -62,11 +62,18 @@ class MultiAgentEngine:
         lon = snapshot.get("longitude", 70.37)
         vars = snapshot.get("variables", {})
 
-        wave_h = vars.get("wave_height_m", 1.8)
-        wind_kn = vars.get("wind_speed_kn", 16.0)
-        gust_kn = vars.get("wind_gust_kn", 22.0)
-        current_kn = vars.get("current_speed_kn", 1.4)
-        chl = vars.get("chlorophyll_mg_m3", 1.2)
+        required = ("wave_height_m", "wind_speed_kn", "wind_gust_kn")
+        missing = [key for key in required if vars.get(key) is None]
+        if missing:
+            raise ValueError(f"Missing required live safety inputs: {', '.join(missing)}")
+        wave_h = vars["wave_height_m"]
+        wind_kn = vars["wind_speed_kn"]
+        gust_kn = vars["wind_gust_kn"]
+        current_kn = vars.get("current_speed_kn")
+        chl = vars.get("chlorophyll_mg_m3")
+        source_names = [source.get("name", "unknown") for source in snapshot.get("sources_used", [])]
+        current_text = f"{current_kn:.1f} kn" if current_kn is not None else "unavailable"
+        pfz_text = "Official PFZ geometry is available." if snapshot.get("pfz") else "Official PFZ geometry unavailable."
 
         # Agent 1: Data Validation
         val_agent = {
@@ -77,7 +84,7 @@ class MultiAgentEngine:
             "duration_ms": 12,
             "findings": "All 6 required parameters validated cleanly. Freshness check PASSED.",
             "confidence": 0.98,
-            "evidence": ["Open-Meteo fresh (<30m)", "NOAA ERDDAP fresh (<24h)", "MOSDAC granules online"],
+            "evidence": source_names,
             "warnings": []
         }
 
@@ -98,8 +105,8 @@ class MultiAgentEngine:
         ocean_verdict = "SAFE" if wave_h < 2.5 else ("CAUTION" if wave_h < 4.0 else "DANGER")
         ocean_llm = self._analytical_finding(
             "ocean_analysis",
-            [f"wave height {wave_h:.1f} m", f"wave period {vars.get('wave_period_s', 7.2)} s", f"current {current_kn:.1f} kn"],
-            f"Wave height is {wave_h:.1f} m with swell period {vars.get('wave_period_s', 7.2)} s. Surface currents at {current_kn:.1f} kn.",
+            [f"wave height {wave_h:.1f} m", f"wave period {vars.get('wave_period_s', 'unavailable')} s", f"current {current_text}"],
+            f"Wave height is {wave_h:.1f} m with swell period {vars.get('wave_period_s', 'unavailable')} s. Surface currents at {current_text}.",
         )
         ocean_agent = {
             "agent_id": "ocean_analysis",
@@ -107,15 +114,15 @@ class MultiAgentEngine:
             "type": "LLM/Analytical",
             **ocean_llm,
             "confidence": 0.92,
-            "evidence": [f"Wave height = {wave_h:.1f} m", f"Current speed = {current_kn:.1f} kn"],
+            "evidence": [f"Wave height = {wave_h:.1f} m", f"Current speed = {current_text}"],
             "warnings": [] if wave_h < 2.5 else [f"Moderate wave height ({wave_h:.1f} m) requires caution for small motor boats."]
         }
 
         # Agent 4: Satellite Analysis
         satellite_llm = self._analytical_finding(
             "satellite_analysis",
-            [f"chlorophyll-a {chl:.2f} mg/m³", f"SST {vars.get('sst_celsius')} °C", "sources: NOAA CoastWatch ERDDAP, ISRO OCM-3"],
-            f"Chlorophyll-a density measured at {chl:.2f} mg/m³. Satellite evidence is available from NOAA CoastWatch and ISRO OCM-3.",
+            [f"chlorophyll-a {chl} mg/m³", f"SST {vars.get('sst_celsius')} °C"],
+            f"Chlorophyll-a density measured at {chl} mg/m³." if chl is not None else "Chlorophyll measurement unavailable.",
         )
         sat_agent = {
             "agent_id": "satellite_analysis",
@@ -123,7 +130,7 @@ class MultiAgentEngine:
             "type": "LLM/Analytical",
             **satellite_llm,
             "confidence": 0.89,
-            "evidence": ["NOAA NESDIS DINEOF chlorophyll granule", "ISRO OCM-3 granule cross-validated"],
+            "evidence": source_names,
             "warnings": []
         }
 
@@ -151,17 +158,17 @@ class MultiAgentEngine:
             "type": "Deterministic",
             "status": "completed",
             "duration_ms": 18,
-            "findings": "Prepared 0.25° grid interpolation for map display.",
+            "findings": "Prepared map context from the requested live coordinate.",
             "confidence": 0.99,
-            "evidence": ["16 grid nodes rendered"],
+            "evidence": source_names,
             "warnings": []
         }
 
         # Agent 7: Marine Ecology
         ecology_llm = self._analytical_finding(
             "marine_ecology",
-            [f"chlorophyll-a {chl:.2f} mg/m³", f"SST {vars.get('sst_celsius')} °C", "source: NOAA CoastWatch ERDDAP"],
-            "Ecological evidence is available, but a detailed interpretation is unavailable while the local LLM is offline.",
+            [f"chlorophyll-a {chl} mg/m³", f"SST {vars.get('sst_celsius')} °C"],
+            "Ecological interpretation is unavailable without a validated chlorophyll measurement.",
         )
         ecology_agent = {
             "agent_id": "marine_ecology",
@@ -169,15 +176,15 @@ class MultiAgentEngine:
             "type": "LLM/Analytical",
             **ecology_llm,
             "confidence": 0.88,
-            "evidence": ["SST thermal gradient = 0.8°C/km", "Plankton density high"],
+            "evidence": source_names,
             "warnings": []
         }
 
         # Agent 8: Fisheries / PFZ
         pfz_llm = self._analytical_finding(
             "fisheries_pfz",
-            [f"nearest PFZ {snapshot.get('pfz_nearest_km')} km", f"chlorophyll-a {chl:.2f} mg/m³", "source: INCOIS PFZ GeoServer"],
-            "PFZ evidence is available, but a detailed interpretation is unavailable while the local LLM is offline.",
+            [f"PFZ features returned: {len(snapshot.get('pfz', []))}", f"chlorophyll-a {chl} mg/m³"],
+            "PFZ interpretation is unavailable without validated official PFZ geometry and measurements.",
         )
         pfz_agent = {
             "agent_id": "fisheries_pfz",
@@ -185,7 +192,7 @@ class MultiAgentEngine:
             "type": "LLM/Analytical",
             **pfz_llm,
             "confidence": 0.91,
-            "evidence": ["INCOIS official PFZ line geometry", "SST & Chlorophyll overlap match"],
+            "evidence": source_names,
             "warnings": []
         }
 
@@ -198,7 +205,7 @@ class MultiAgentEngine:
             "duration_ms": 25,
             "findings": "SST is +0.4°C relative to 10-year historical baseline for September. Within normal seasonal bounds.",
             "confidence": 0.94,
-            "evidence": ["Open-Meteo Archive 2015-2025 baseline"],
+            "evidence": [],
             "warnings": []
         }
 
@@ -242,12 +249,12 @@ class MultiAgentEngine:
             plain_en = [
                 "Sea conditions are calm and safe for fishing.",
                 f"Waves are low ({wave_h:.1f} m) and wind is gentle ({wind_kn:.1f} kn).",
-                "Potential Fishing Zone is active 4 km away."
+                pfz_text
             ]
             plain_hi = [
                 "समुद्र की स्थिति शांत और मछली पकड़ने के लिए सुरक्षित है।",
                 f"लहरें कम हैं ({wave_h:.1f} मीटर) और हवा हल्की है ({wind_kn:.1f} समुद्री मील)।",
-                "संभावित मत्स्य क्षेत्र 4 किमी दूर सक्रिय है।"
+                "आधिकारिक PFZ geometry उपलब्ध होने पर ही मत्स्य क्षेत्र दिखाया जाएगा।"
             ]
         elif risk_level == "CAUTION":
             headline_en = "CAUTION ADVISED — MODERATE SEA"
@@ -308,8 +315,8 @@ class MultiAgentEngine:
             "plain_hi": plain_hi,
             "agents": agents_list,
             "data_coverage": {
-                "known": 6,
-                "total": 7,
-                "sources_failed": ["INCOIS LAS (Timeout >30s)"]
+                "known": len(source_names),
+                "total": len(source_names) + len(snapshot.get("sources_failed", [])),
+                "sources_failed": [failure.get("source", "unknown") for failure in snapshot.get("sources_failed", [])]
             }
         }

@@ -80,14 +80,7 @@ class HealthNotifier extends StateNotifier<AsyncValue<SystemHealthSnapshot>> {
         state = const AsyncValue.error('Empty health response', StackTrace.empty);
       }
     } catch (e, st) {
-      // Fallback to local health fixture on failure so user sees status
-      try {
-        final raw = await rootBundle.loadString('assets/fixtures/health.json');
-        final json = jsonDecode(raw) as Map<String, dynamic>;
-        state = AsyncValue.data(_parseHealth(json));
-      } catch (_) {
-        state = AsyncValue.error('ORCA Box server unreachable: $e', st);
-      }
+      state = AsyncValue.error('ORCA Box server unreachable: $e', st);
     }
   }
 

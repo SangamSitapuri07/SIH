@@ -19,6 +19,11 @@ class AdvisoryRemoteDataSource {
         'lat': lat,
         'lon': lon,
       },
+      options: Options(
+        connectTimeout: const Duration(seconds: 180),
+        receiveTimeout: const Duration(seconds: 180),
+        sendTimeout: const Duration(seconds: 180),
+      ),
     );
 
     if (response.data == null) {

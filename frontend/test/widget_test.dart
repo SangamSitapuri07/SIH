@@ -3,13 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orca_app/app.dart';
+import 'package:orca_app/core/cache/cache_service.dart';
 import 'package:orca_app/core/widgets/orca_app_bar.dart';
 
 void main() {
   testWidgets('OrcaApp boots successfully with 6 tabs and Home as initial screen', (tester) async {
+    final cache = CacheService();
+    await cache.set('app.onboarding', <String, dynamic>{'complete': true});
+
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          cacheServiceProvider.overrideWithValue(cache),
           demoModeProvider.overrideWith((ref) => true),
         ],
         child: const OrcaApp(),

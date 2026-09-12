@@ -59,6 +59,36 @@ void main() {
       expect(entity.knownSources, equals(4));
     });
 
+    test('Parses backend epoch timestamp without int/String type error', () {
+      final dto = AdvisoryDto.fromJson(<String, dynamic>{
+        'verdict': 'GOOD',
+        'timestamp': 1789218708,
+      });
+
+      expect(dto.timestamp, DateTime.utc(2026, 9, 12, 13, 11, 48));
+      expect(dto.toEntity(StalenessInfo.fromDateTime(DateTime.now())).timestamp,
+          DateTime.utc(2026, 9, 12, 13, 11, 48));
+    });
+
+    test('Keeps ISO timestamps and handles null or malformed timestamps', () {
+      final isoDto = AdvisoryDto.fromJson(<String, dynamic>{
+        'verdict': 'GOOD',
+        'timestamp': '2026-09-12T08:30:00Z',
+      });
+      final nullDto = AdvisoryDto.fromJson(<String, dynamic>{
+        'verdict': 'GOOD',
+        'timestamp': null,
+      });
+      final malformedDto = AdvisoryDto.fromJson(<String, dynamic>{
+        'verdict': 'GOOD',
+        'timestamp': 'not-a-timestamp',
+      });
+
+      expect(isoDto.timestamp, DateTime.utc(2026, 9, 12, 8, 30));
+      expect(nullDto.timestamp, isNull);
+      expect(malformedDto.timestamp, isNull);
+    });
+
     test('Tolerates missing optional fields without crashing (§4)', () {
       final jsonMap = <String, dynamic>{
         'verdict': 'go',
