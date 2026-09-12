@@ -1,0 +1,60 @@
+{
+  "from": {"lat": 18.92, "lon": 72.83, "name": "Sasoon Docks, Mumbai"},
+  "to": {"lat": 18.75, "lon": 72.55, "name": "PFZ Hotspot Delta-4"},
+  "verdict": {
+    "level": "caution",
+    "points_known": 4,
+    "total": 4,
+    "land_verified": true,
+    "headline": "Transit feasible with caution; safe till 15:30 IST before wave steepness increases offshore."
+  },
+  "points": [
+    {
+      "sail_km": 0.0,
+      "lat": 18.92,
+      "lon": 72.83,
+      "wave_m": 1.4,
+      "wind_kn": 12.0,
+      "state": "good",
+      "why": "Sheltered harbour waters, safe conditions."
+    },
+    {
+      "sail_km": 12.5,
+      "lat": 18.88,
+      "lon": 72.78,
+      "wave_m": 1.9,
+      "wind_kn": 14.5,
+      "state": "good",
+      "why": "Detour waypoint, safe coastal passage."
+    },
+    {
+      "sail_km": 28.0,
+      "lat": 18.82,
+      "lon": 72.67,
+      "wave_m": 2.4,
+      "wind_kn": 16.0,
+      "state": "good",
+      "why": "Intermediate shelf waters, acceptable chop."
+    },
+    {
+      "sail_km": 42.6,
+      "lat": 18.75,
+      "lon": 72.55,
+      "wave_m": 2.7,
+      "wind_kn": 17.5,
+      "state": "caution",
+      "why": "Target fishing zone: wave height 2.7m crosses 2.5m caution threshold."
+    }
+  ],
+  "safe_window_at_start": {
+    "from": "06:00 IST",
+    "to": "15:30 IST",
+    "is_safe": true
+  },
+  "sources": [
+    "Open-Meteo Marine (MFWAM)",
+    "Open-Meteo Forecast (ECMWF IFS)",
+    "GLOBE 1km Landmask"
+  ],
+  "timestamp": "2026-09-12T08:30:00Z"
+}

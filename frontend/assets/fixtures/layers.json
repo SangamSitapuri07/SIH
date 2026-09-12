@@ -1,0 +1,42 @@
+[
+  {
+    "id": "wave_height",
+    "name": "Wave Height & Direction",
+    "unit": "m",
+    "source": "Open-Meteo Marine (MFWAM)",
+    "tile_url": "/api/v1/tiles/waves/{z}/{x}/{y}.png",
+    "enabled": true
+  },
+  {
+    "id": "chlorophyll",
+    "name": "Chlorophyll-a (Fish Food)",
+    "unit": "mg/m³",
+    "source": "NOAA CoastWatch / OCM-3",
+    "tile_url": "/api/v1/tiles/chl/{z}/{x}/{y}.png",
+    "enabled": false
+  },
+  {
+    "id": "sst",
+    "name": "Sea Surface Temperature",
+    "unit": "°C",
+    "source": "Open-Meteo Marine",
+    "tile_url": "/api/v1/tiles/sst/{z}/{x}/{y}.png",
+    "enabled": false
+  },
+  {
+    "id": "incois_pfz",
+    "name": "INCOIS PFZ Advisories",
+    "unit": "lines",
+    "source": "INCOIS GeoServer WFS",
+    "tile_url": "/api/v1/tiles/pfz/{z}/{x}/{y}.png",
+    "enabled": true
+  },
+  {
+    "id": "synoptic_press",
+    "name": "Synoptic Isobars & Pressure",
+    "unit": "hPa",
+    "source": "ECMWF IFS",
+    "tile_url": "/api/map/synoptic",
+    "enabled": false
+  }
+]

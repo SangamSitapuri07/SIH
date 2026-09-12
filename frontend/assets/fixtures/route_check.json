@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "detour": true,
+  "land_hit": true,
+  "reason": "Direct rhumb line crosses coastal headland at Colaba point (2km GLOBE mask verification). Real detour waypoint computed 3.2 km offshore.",
+  "distance_km": 42.6,
+  "distance_nm": 23.0,
+  "bearing_deg": 245.0,
+  "legs": [
+    [18.92, 72.83],
+    [18.88, 72.78],
+    [18.75, 72.55]
+  ],
+  "detour_waypoint": {
+    "lat": 18.88,
+    "lon": 72.78,
+    "name": "Colaba Offshore Detour WP1",
+    "clearance_km": 3.2
+  },
+  "sources": ["GLOBE 1km Landmask", "GIS Spatial Engine"],
+  "timestamp": "2026-09-12T08:30:00Z"
+}

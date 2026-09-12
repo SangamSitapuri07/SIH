@@ -1,0 +1,28 @@
+[
+  {
+    "id": "alt-2026-09-01",
+    "severity": "caution",
+    "title": "Rising Swell Advisory — Maharashtra Coast",
+    "title_hi": "लहरों में वृद्धि की चेतावनी — महाराष्ट्र तट",
+    "message": "Wave heights forecast to reach 2.8m–3.2m between 16:00 IST and 22:00 IST due to South-Southwest swell train. Small craft advised to stay within 15 km offshore.",
+    "message_hi": "दक्षिण-दक्षिण-पश्चिम लहरों के कारण शाम 4 से 10 बजे के बीच लहरें 2.8 से 3.2 मीटर तक पहुंच सकती हैं। छोटी नौकाएं तट से 15 किमी के भीतर रहें।",
+    "source": "INCOIS OSF / Open-Meteo Marine",
+    "issued_at": "2026-09-12T07:00:00Z",
+    "expires_at": "2026-09-12T22:00:00Z",
+    "affected_area": "North Maharashtra Coast (18.5°N–19.8°N)",
+    "is_active": true
+  },
+  {
+    "id": "alt-2026-09-02",
+    "severity": "info",
+    "title": "High Pelagic Fish Density (PFZ Alert)",
+    "title_hi": "मछली प्रचुरता क्षेत्र (PFZ चेतावनी)",
+    "message": "Strong thermal gradient and chlorophyll front detected 18 km West of Alibaug. INCOIS advisory line active.",
+    "message_hi": "अलीबाग से 18 किमी पश्चिम में मजबूत थर्मल और क्लोरोफिल क्षेत्र देखा गया है। INCOIS सलाह सक्रिय है।",
+    "source": "INCOIS PFZ / ISRO MOSDAC OCM-3",
+    "issued_at": "2026-09-12T06:00:00Z",
+    "expires_at": "2026-09-13T06:00:00Z",
+    "affected_area": "Alibaug to Murud Offshore",
+    "is_active": true
+  }
+]

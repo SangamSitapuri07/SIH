@@ -1,0 +1,26 @@
+{
+  "lat": 18.92,
+  "lon": 72.83,
+  "zone_name": "Mumbai Offshore Sector 4",
+  "offshore_dist_km": 22.4,
+  "depth_m": 42.0,
+  "wave_height_m": 2.6,
+  "swell_period_s": 8.4,
+  "wind_speed_kn": 16.2,
+  "wind_direction": "SW",
+  "sea_temp_c": 28.4,
+  "current_speed_kn": 1.4,
+  "current_direction": "SSW",
+  "chlorophyll_mg_m3": 0.82,
+  "fishing_effort_hours": 14.2,
+  "nearest_harbour": "Sasoon Docks, Mumbai",
+  "nearest_harbour_dist_km": 22.8,
+  "sources": [
+    "Open-Meteo Marine",
+    "Open-Meteo Forecast",
+    "NOAA CoastWatch",
+    "Global Fishing Watch"
+  ],
+  "sources_failed": [],
+  "timestamp": "2026-09-12T08:30:00Z"
+}

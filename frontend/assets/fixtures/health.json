@@ -1,0 +1,139 @@
+{
+  "status": "healthy",
+  "version": "1.0.0-sih26176",
+  "build_commit": "orca-box-edge-2026.09",
+  "uptime_seconds": 86400,
+  "data_sources": {
+    "open_meteo_marine": {
+      "name": "Open-Meteo Marine",
+      "agency": "MeteoFrance MFWAM / ECMWF",
+      "host": "marine-api.open-meteo.com",
+      "status": "online",
+      "latency_ms": 142,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "96h wave, swell, SST, current live"
+    },
+    "open_meteo_forecast": {
+      "name": "Open-Meteo Forecast",
+      "agency": "ECMWF IFS",
+      "host": "api.open-meteo.com",
+      "status": "online",
+      "latency_ms": 118,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "Hourly wind, gusts, rain live"
+    },
+    "open_meteo_daily": {
+      "name": "Open-Meteo Daily",
+      "agency": "ECMWF IFS",
+      "host": "api.open-meteo.com",
+      "status": "online",
+      "latency_ms": 120,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "Daily WMO sky codes"
+    },
+    "open_meteo_archive": {
+      "name": "Open-Meteo Archive",
+      "agency": "Open-Meteo",
+      "host": "archive-api.open-meteo.com",
+      "status": "online",
+      "latency_ms": 230,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "2024-2025 anomaly baseline cache active"
+    },
+    "noaa_coastwatch": {
+      "name": "NOAA CoastWatch ERDDAP",
+      "agency": "US NOAA NESDIS",
+      "host": "coastwatch.noaa.gov",
+      "status": "online",
+      "latency_ms": 310,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "DINEOF gap-filled chlorophyll live (0-day lag)"
+    },
+    "esa_oc_cci": {
+      "name": "ESA OC-CCI v6",
+      "agency": "ESA / NOAA ERDDAP",
+      "host": "comet.nefsc.noaa.gov",
+      "status": "cloud_masked",
+      "latency_ms": 420,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "Monsoon cloud cover blocks optical sensing; NOAA primary used"
+    },
+    "isro_mosdac": {
+      "name": "ISRO MOSDAC OCM-3",
+      "agency": "ISRO / Space Applications Centre",
+      "host": "mosdac.gov.in",
+      "status": "online",
+      "latency_ms": 580,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "Oceansat-3 OCM-3 granules active (24s wall-cap protected)"
+    },
+    "incois_erddap": {
+      "name": "INCOIS ERDDAP",
+      "agency": "MoES / INCOIS Hyderabad",
+      "host": "erddap.incois.gov.in",
+      "status": "online",
+      "latency_ms": 210,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "Indian ocean regional products synced"
+    },
+    "incois_las": {
+      "name": "INCOIS LAS",
+      "agency": "INCOIS Live Access Server",
+      "host": "las.incois.gov.in",
+      "status": "flaky",
+      "latency_ms": 1250,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "Upstream server slow — honestly labelled; non-blocking fallback"
+    },
+    "incois_pfz": {
+      "name": "INCOIS PFZ GeoServer",
+      "agency": "MoES / INCOIS Hyderabad",
+      "host": "incois.gov.in",
+      "status": "online",
+      "latency_ms": 190,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "Daily Potential Fishing Zone WFS lines loaded"
+    },
+    "gfw_ais": {
+      "name": "Global Fishing Watch",
+      "agency": "Global Fishing Watch",
+      "host": "gateway.api.globalfishingwatch.org",
+      "status": "online",
+      "latency_ms": 340,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "AIS fishing effort and fleet density live"
+    },
+    "jtwc_cyclone": {
+      "name": "JTWC (US Navy)",
+      "agency": "Joint Typhoon Warning Center",
+      "host": "www.metoc.navy.mil",
+      "status": "online",
+      "latency_ms": 290,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "North Indian Ocean cyclone bulletins active (0 storms)"
+    },
+    "globe_landmask": {
+      "name": "GLOBE 1km Land Mask",
+      "agency": "NOAA / Local Raster",
+      "host": "local_bundled",
+      "status": "online",
+      "latency_ms": 1,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "100% offline 1km terrain/coast raster active"
+    },
+    "nominatim_osm": {
+      "name": "Nominatim (OSM)",
+      "agency": "OpenStreetMap",
+      "host": "nominatim.openstreetmap.org",
+      "status": "online",
+      "latency_ms": 180,
+      "last_checked": "2026-09-12T08:30:00Z",
+      "note": "Harbour & coastal location search enabled"
+    }
+  },
+  "cache": {
+    "sqlite_blob_bytes": 48291040,
+    "in_memory_keys": 48,
+    "hit_rate_pct": 94.2
+  }
+}

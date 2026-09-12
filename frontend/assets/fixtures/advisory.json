@@ -1,0 +1,101 @@
+{
+  "verdict": "caution",
+  "color": "#fbbf24",
+  "headline": "Moderate sea state with rising swell (2.6 m). Coastal transit safe; avoid offshore deeper waters after 16:00 IST.",
+  "headline_hi": "मध्यम समुद्री स्थिति, 2.6 मीटर ऊंची लहरें। तटीय क्षेत्र सुरक्षित; शाम 4 बजे के बाद गहरे समुद्र में न जाएं।",
+  "plain_en": [
+    "Significant wave height is 2.6 m exceeding normal 2.5 m threshold",
+    "Wind speed sustained at 16 kn with gusts reaching 24 kn",
+    "Sea surface temperature is 28.4°C — favorable thermal conditions",
+    "Current velocity is 1.4 kn towards South-Southwest"
+  ],
+  "plain_hi": [
+    "लहरों की ऊंचाई 2.6 मीटर है जो सामान्य 2.5 मीटर से अधिक है",
+    "हवा की गति 16 समुद्री मील है और झोंके 24 समुद्री मील तक जा रहे हैं",
+    "समुद्र का सतही तापमान 28.4°C है जो सामान्य है",
+    "समुद्री धारा की गति 1.4 समुद्री मील दक्षिण-दक्षिण-पश्चिम दिशा में है"
+  ],
+  "safe_window": {
+    "from": "06:00 IST",
+    "to": "15:30 IST",
+    "is_safe": true,
+    "hours_remaining": 9.5
+  },
+  "variables": {
+    "wave_height": {
+      "value": 2.6,
+      "unit": "m",
+      "threshold": 2.5,
+      "status": "caution",
+      "source": "Open-Meteo Marine (MFWAM)",
+      "time": "11:00 IST"
+    },
+    "wind_speed": {
+      "value": 16.2,
+      "unit": "kn",
+      "threshold": 20.0,
+      "status": "good",
+      "source": "Open-Meteo Forecast (ECMWF IFS)",
+      "time": "11:00 IST"
+    },
+    "wind_gusts": {
+      "value": 24.1,
+      "unit": "kn",
+      "threshold": 34.0,
+      "status": "good",
+      "source": "Open-Meteo Forecast (ECMWF IFS)",
+      "time": "11:00 IST"
+    },
+    "sea_surface_temp": {
+      "value": 28.4,
+      "unit": "°C",
+      "threshold": null,
+      "status": "good",
+      "source": "Open-Meteo Marine",
+      "time": "11:00 IST"
+    },
+    "ocean_current": {
+      "value": 1.4,
+      "unit": "kn",
+      "direction": "SSW",
+      "threshold": 3.0,
+      "status": "good",
+      "source": "Open-Meteo Marine",
+      "time": "11:00 IST"
+    },
+    "chlorophyll": {
+      "value": 0.82,
+      "unit": "mg/m³",
+      "threshold": null,
+      "status": "good",
+      "source": "NOAA CoastWatch ERDDAP",
+      "time": "08:30 IST"
+    }
+  },
+  "hourly_chart": [
+    {"hour": "06:00", "wave_m": 1.4, "wind_kn": 12.0, "state": "good"},
+    {"hour": "09:00", "wave_m": 1.8, "wind_kn": 14.5, "state": "good"},
+    {"hour": "12:00", "wave_m": 2.2, "wind_kn": 15.8, "state": "good"},
+    {"hour": "15:00", "wave_m": 2.6, "wind_kn": 17.2, "state": "caution"},
+    {"hour": "18:00", "wave_m": 2.9, "wind_kn": 19.5, "state": "caution"},
+    {"hour": "21:00", "wave_m": 3.2, "wind_kn": 22.0, "state": "caution"},
+    {"hour": "00:00", "wave_m": 3.0, "wind_kn": 20.5, "state": "caution"},
+    {"hour": "03:00", "wave_m": 2.7, "wind_kn": 18.0, "state": "caution"},
+    {"hour": "06:00", "wave_m": 2.4, "wind_kn": 15.0, "state": "good"},
+    {"hour": "09:00", "wave_m": 2.1, "wind_kn": 13.5, "state": "good"},
+    {"hour": "12:00", "wave_m": 1.9, "wind_kn": 12.0, "state": "good"},
+    {"hour": "15:00", "wave_m": 1.8, "wind_kn": 11.5, "state": "good"}
+  ],
+  "sources": [
+    "Open-Meteo Marine (MFWAM)",
+    "Open-Meteo Forecast (ECMWF IFS)",
+    "NOAA CoastWatch ERDDAP",
+    "INCOIS OSF"
+  ],
+  "data_coverage": {
+    "known": 4,
+    "total": 5,
+    "sources_failed": ["ESA OC-CCI (Cloud-masked)"]
+  },
+  "timestamp": "2026-09-12T08:30:00Z"
+}
