@@ -142,7 +142,7 @@ class HistoryScreen extends ConsumerWidget {
                 ),
               ),
               Text(
-                DateFormatter.formatIstTime(item.timestamp.millisecondsSinceEpoch ~/ 1000),
+                DateFormatter.formatIstTime(item.timestamp),
                 style: const TextStyle(color: OrcaTheme.textSecondary, fontSize: 12),
               ),
             ],

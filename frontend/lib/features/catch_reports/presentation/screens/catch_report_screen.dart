@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/sync/sync_manager.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
-import '../domain/catch_report.dart';
+import '../../domain/catch_report.dart';
 
 final catchReportsProvider = StateNotifierProvider<CatchReportsNotifier, List<CatchReport>>((ref) {
   final syncManager = ref.watch(syncManagerProvider.notifier);

@@ -182,7 +182,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
               // Get Started Button
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   ref.read(baseUrlProvider.notifier).state = _urlController.text.trim();
                   ref.read(selectedLocaleProvider.notifier).state = _selectedLang;
                   ref.read(demoModeProvider.notifier).state = _demoMode;

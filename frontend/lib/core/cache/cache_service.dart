@@ -85,6 +85,19 @@ class CacheService {
     }
   }
 
+  /// Stores data in cache (convenience alias for put).
+  Future<void> set(String key, Map<String, dynamic> data, {Duration ttl = const Duration(days: 3650)}) async {
+    await put(key, data, ttl: ttl);
+  }
+
+  /// Removes a single key from cache.
+  Future<void> remove(String key) async {
+    if (_box != null && _box!.isOpen) {
+      await _box!.delete(key);
+    }
+    _memoryFallback.remove(key);
+  }
+
   /// Clears all entries in the cache.
   Future<void> clearAll() async {
     if (_box != null && _box!.isOpen) {

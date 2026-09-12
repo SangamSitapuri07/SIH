@@ -74,6 +74,10 @@ class OllamaClient:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
+            # Qwen3 thinking mode exceeds the 25s CPU timeout on this hardware
+            # and caused every analytical agent to fall back. Disable thinking
+            # so bounded interpretations complete inside OLLAMA_TIMEOUT_S.
+            "think": False,
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
@@ -98,7 +102,7 @@ class OllamaClient:
 
             data = resp.json()
             response_text = data.get("response", "").strip()
-            logger.debug(f"[Ollama] {self.model} responded in {elapsed_ms} ms ({len(response_text)} chars)")
+            logger.info(f"[Ollama] {self.model} responded in {elapsed_ms} ms ({len(response_text)} chars)")
             return response_text if response_text else None
 
         except httpx.TimeoutException:

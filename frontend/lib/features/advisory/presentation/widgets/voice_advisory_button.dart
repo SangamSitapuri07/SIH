@@ -6,7 +6,7 @@ import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../domain/entities/advisory.dart';
 
 class VoiceAdvisoryButton extends ConsumerStatefulWidget {
-  final Advisory advisory;
+  final AdvisoryEntity advisory;
 
   const VoiceAdvisoryButton({
     super.key,
@@ -38,7 +38,7 @@ class _VoiceAdvisoryButtonState extends ConsumerState<VoiceAdvisoryButton> {
             await voice.speakAdvisory(
               verdict: widget.advisory.verdict,
               lang: lang,
-              plainLines: widget.advisory.plainLines,
+              plainLines: lang == 'hi' ? widget.advisory.plainHi : widget.advisory.plainEn,
             );
             if (mounted) setState(() => _speaking = false);
           }

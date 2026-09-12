@@ -61,12 +61,12 @@ class ProfileScreen extends ConsumerWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: VerdictColors.goodBg,
+                            color: VerdictColors.goBg,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
                             'AUTHENTICATED • CLOUD SYNC ACTIVE',
-                            style: TextStyle(color: VerdictColors.good, fontSize: 10, fontWeight: FontWeight.bold),
+                            style: TextStyle(color: VerdictColors.go, fontSize: 10, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ],

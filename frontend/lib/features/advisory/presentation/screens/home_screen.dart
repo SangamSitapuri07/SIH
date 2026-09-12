@@ -91,7 +91,7 @@ class HomeScreen extends ConsumerWidget {
                       context,
                       label: 'Catch Report',
                       icon: Icons.phishing,
-                      color: VerdictColors.good,
+                      color: VerdictColors.go,
                       onTap: () => context.push('/catch-report'),
                     ),
                     const SizedBox(width: 8),

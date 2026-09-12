@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 import '../../../../core/config/api_paths.dart';
-import '../dto/layer_dto.dart';
 import '../dto/zone_dto.dart';
 
 /// Remote datasource for Map endpoints (/api/v1/zone, /api/v1/layers).

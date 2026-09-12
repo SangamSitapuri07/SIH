@@ -1,7 +1,6 @@
 import '../../../../core/cache/staleness.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../domain/entities/zone_snapshot.dart';
-import '../../domain/entities/map_layer.dart';
 
 /// DTO for /api/v1/zone probe response.
 class ZoneDto {

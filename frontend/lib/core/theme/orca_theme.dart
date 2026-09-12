@@ -63,7 +63,7 @@ class OrcaTheme {
           return const IconThemeData(color: textSecondary, size: 22);
         }),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: surface,
         elevation: 2,
         margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),

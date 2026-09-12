@@ -1,6 +1,8 @@
 import time
 from typing import Dict, Any, List
 
+from ollama_client import ollama
+
 class MultiAgentEngine:
     """
     11 Collaborative Agents Architecture for ORCA Box backend.
@@ -24,6 +26,35 @@ class MultiAgentEngine:
 
     def list_agents(self) -> List[Dict[str, Any]]:
         return self.AGENT_REGISTRY
+
+    def _analytical_finding(self, agent_id: str, evidence: List[str], fallback: str) -> Dict[str, Any]:
+        """Run one bounded evidence-only LLM interpretation with an honest fallback."""
+        started = time.monotonic()
+        response = ollama.generate(
+            prompt=(
+                f"Agent: {agent_id}\n"
+                f"Evidence supplied by ORCA: {'; '.join(evidence)}\n"
+                "Give a short fisherman-friendly interpretation using only this evidence. "
+                "Do not invent measurements, sources, timestamps, observations, or confidence. "
+                "Do not make or change a safety verdict. If evidence is insufficient, say so."
+            ),
+            system=(
+                "You are an analytical component of ORCA. You are not the safety authority. "
+                "The deterministic Marine Risk agent owns the final verdict."
+            ),
+            temperature=0.1,
+            max_tokens=120,
+        )
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        return {
+            "findings": response or fallback,
+            "status": "completed" if response else "degraded",
+            "duration_ms": elapsed_ms,
+            "llm_attempted": True,
+            "llm_invoked": response is not None,
+            "llm_model": ollama.model,
+            "fallback_used": response is None,
+        }
 
     def run_collaborative_reasoning(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
         """Runs all 11 agents in sequence and produces structured trace & final verdict."""
@@ -65,26 +96,32 @@ class MultiAgentEngine:
 
         # Agent 3: Ocean Analysis
         ocean_verdict = "SAFE" if wave_h < 2.5 else ("CAUTION" if wave_h < 4.0 else "DANGER")
+        ocean_llm = self._analytical_finding(
+            "ocean_analysis",
+            [f"wave height {wave_h:.1f} m", f"wave period {vars.get('wave_period_s', 7.2)} s", f"current {current_kn:.1f} kn"],
+            f"Wave height is {wave_h:.1f} m with swell period {vars.get('wave_period_s', 7.2)} s. Surface currents at {current_kn:.1f} kn.",
+        )
         ocean_agent = {
             "agent_id": "ocean_analysis",
             "agent_name": "Ocean Analysis Agent",
             "type": "LLM/Analytical",
-            "status": "completed",
-            "duration_ms": 140,
-            "findings": f"Wave height is {wave_h:.1f} m with swell period {vars.get('wave_period_s', 7.2)} s. Surface currents at {current_kn:.1f} kn heading South.",
+            **ocean_llm,
             "confidence": 0.92,
             "evidence": [f"Wave height = {wave_h:.1f} m", f"Current speed = {current_kn:.1f} kn"],
             "warnings": [] if wave_h < 2.5 else [f"Moderate wave height ({wave_h:.1f} m) requires caution for small motor boats."]
         }
 
         # Agent 4: Satellite Analysis
+        satellite_llm = self._analytical_finding(
+            "satellite_analysis",
+            [f"chlorophyll-a {chl:.2f} mg/m³", f"SST {vars.get('sst_celsius')} °C", "sources: NOAA CoastWatch ERDDAP, ISRO OCM-3"],
+            f"Chlorophyll-a density measured at {chl:.2f} mg/m³. Satellite evidence is available from NOAA CoastWatch and ISRO OCM-3.",
+        )
         sat_agent = {
             "agent_id": "satellite_analysis",
             "agent_name": "Satellite Analysis Agent",
             "type": "LLM/Analytical",
-            "status": "completed",
-            "duration_ms": 185,
-            "findings": f"Chlorophyll-a density measured at {chl:.2f} mg/m³. High plankton bloom detected along coastal shelf boundary.",
+            **satellite_llm,
             "confidence": 0.89,
             "evidence": ["NOAA NESDIS DINEOF chlorophyll granule", "ISRO OCM-3 granule cross-validated"],
             "warnings": []
@@ -92,13 +129,16 @@ class MultiAgentEngine:
 
         # Agent 5: Weather Hazard
         weather_verdict = "SAFE" if gust_kn < 34 and wind_kn < 20 else ("CAUTION" if wind_kn < 34 else "DANGER")
+        weather_llm = self._analytical_finding(
+            "weather_hazard",
+            [f"sustained wind {wind_kn:.1f} kn", f"wind gust {gust_kn:.1f} kn", "source: Open-Meteo Forecast"],
+            f"Wind sustained at {wind_kn:.1f} kn with peak gusts reaching {gust_kn:.1f} kn.",
+        )
         weather_agent = {
             "agent_id": "weather_hazard",
             "agent_name": "Weather Hazard Agent",
             "type": "LLM/Analytical",
-            "status": "completed",
-            "duration_ms": 160,
-            "findings": f"Wind sustained at {wind_kn:.1f} kn with peak gusts reaching {gust_kn:.1f} kn. WMO gale warning threshold (34 kn): NOT EXCEEDED.",
+            **weather_llm,
             "confidence": 0.95,
             "evidence": [f"Wind speed = {wind_kn:.1f} kn", f"Peak gust = {gust_kn:.1f} kn"],
             "warnings": [] if gust_kn < 28 else [f"Brisk gusts up to {gust_kn:.1f} kn expected near afternoon."]
@@ -118,26 +158,32 @@ class MultiAgentEngine:
         }
 
         # Agent 7: Marine Ecology
+        ecology_llm = self._analytical_finding(
+            "marine_ecology",
+            [f"chlorophyll-a {chl:.2f} mg/m³", f"SST {vars.get('sst_celsius')} °C", "source: NOAA CoastWatch ERDDAP"],
+            "Ecological evidence is available, but a detailed interpretation is unavailable while the local LLM is offline.",
+        )
         ecology_agent = {
             "agent_id": "marine_ecology",
             "agent_name": "Marine Ecology Agent",
             "type": "LLM/Analytical",
-            "status": "completed",
-            "duration_ms": 170,
-            "findings": "Ecological productivity index: 84/100. Favorable thermal front detected near 50-meter depth contour.",
+            **ecology_llm,
             "confidence": 0.88,
             "evidence": ["SST thermal gradient = 0.8°C/km", "Plankton density high"],
             "warnings": []
         }
 
         # Agent 8: Fisheries / PFZ
+        pfz_llm = self._analytical_finding(
+            "fisheries_pfz",
+            [f"nearest PFZ {snapshot.get('pfz_nearest_km')} km", f"chlorophyll-a {chl:.2f} mg/m³", "source: INCOIS PFZ GeoServer"],
+            "PFZ evidence is available, but a detailed interpretation is unavailable while the local LLM is offline.",
+        )
         pfz_agent = {
             "agent_id": "fisheries_pfz",
             "agent_name": "Fisheries / PFZ Agent",
             "type": "LLM/Analytical",
-            "status": "completed",
-            "duration_ms": 190,
-            "findings": "Potential Fishing Zone (PFZ) active 4.2 km SW from selected position. High probability for mackerel & sardine catch.",
+            **pfz_llm,
             "confidence": 0.91,
             "evidence": ["INCOIS official PFZ line geometry", "SST & Chlorophyll overlap match"],
             "warnings": []
@@ -232,13 +278,17 @@ class MultiAgentEngine:
                 "मौसम की चेतावनी हटने तक बंदरगाह पर ही रहें।"
             ]
 
+        orchestrator_llm = self._analytical_finding(
+            "orchestrator",
+            [f"deterministic risk level {risk_level}", *reasons, f"wave height {wave_h:.1f} m", f"wind gust {gust_kn:.1f} kn"],
+            f"Deterministic Marine Risk result is {risk_level}. Follow the stated safety advice.",
+        )
+
         orchestrator_agent = {
             "agent_id": "orchestrator",
             "agent_name": "Orchestrator Agent",
             "type": "LLM/Analytical",
-            "status": "completed",
-            "duration_ms": 210,
-            "findings": f"Synthesized final bilingual verdict: {risk_level} — {headline_en}",
+            **orchestrator_llm,
             "confidence": 0.96,
             "evidence": ["Consensus across all 10 specialized agents"],
             "warnings": []

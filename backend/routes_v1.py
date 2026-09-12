@@ -161,7 +161,9 @@ def get_advisory(lat: float = Query(20.9), lon: float = Query(70.37)):
         "hourly_chart": hourly_chart,
         "sources": snap["sources_used"],
         "sources_failed": snap["sources_failed"],
-        "timestamp": int(time.time())
+        "timestamp": int(time.time()),
+        "agents": res["agents"],
+        "data_coverage": res["data_coverage"],
     }
 
     # Automatically archive to advisory history store
