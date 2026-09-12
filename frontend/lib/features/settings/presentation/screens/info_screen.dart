@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/cache/cache_service.dart';
 import '../../../../core/network/dio_provider.dart';
 import '../../../../core/theme/orca_theme.dart';
@@ -82,6 +83,54 @@ class InfoScreen extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                     ),
                     child: const Text('Change', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Official Dashboard Access Card for Judges & Fisheries Officials
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: OrcaTheme.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.blue.withAlpha(120), width: 1.2),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.admin_panel_settings, color: Colors.blue, size: 24),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'OFFICIAL / FISHERIES DASHBOARD',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Regional risk overview & aggregated fleet telemetry',
+                          style: TextStyle(fontSize: 11, color: OrcaTheme.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      context.push('/official-dashboard');
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(64, 36),
+                    ),
+                    child: const Text('Open', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),

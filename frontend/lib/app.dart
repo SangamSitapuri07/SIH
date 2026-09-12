@@ -14,6 +14,11 @@ import 'features/navigate/presentation/screens/navigate_screen.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'features/settings/presentation/providers/settings_provider.dart';
 import 'features/settings/presentation/screens/info_screen.dart';
+import 'features/auth/presentation/screens/profile_screen.dart';
+import 'features/locations/presentation/screens/saved_locations_screen.dart';
+import 'features/history/presentation/screens/history_screen.dart';
+import 'features/catch_reports/presentation/screens/catch_report_screen.dart';
+import 'features/official/presentation/screens/official_dashboard_screen.dart';
 import 'l10n/app_localizations.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -49,6 +54,26 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/info',
             builder: (context, state) => const InfoScreen(),
+          ),
+          GoRoute(
+            path: '/profile',
+            builder: (context, state) => const ProfileScreen(),
+          ),
+          GoRoute(
+            path: '/locations',
+            builder: (context, state) => const SavedLocationsScreen(),
+          ),
+          GoRoute(
+            path: '/history',
+            builder: (context, state) => const HistoryScreen(),
+          ),
+          GoRoute(
+            path: '/catch-report',
+            builder: (context, state) => const CatchReportScreen(),
+          ),
+          GoRoute(
+            path: '/official-dashboard',
+            builder: (context, state) => const OfficialDashboardScreen(),
           ),
         ],
       ),

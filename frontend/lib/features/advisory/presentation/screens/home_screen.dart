@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/offline/connectivity_watcher.dart';
+import '../../../../core/sync/sync_manager.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
 import '../../../../core/utils/date_formatter.dart';
@@ -11,8 +13,9 @@ import '../widgets/hourly_chart.dart';
 import '../widgets/safe_window_bar.dart';
 import '../widgets/variables_grid.dart';
 import '../widgets/verdict_card.dart';
+import '../widgets/voice_advisory_button.dart';
 
-/// Primary Fisher Safety Home Screen (§8, §26A).
+/// Primary Fisher Safety Home Screen (§8, §26A, Phase 2).
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -20,6 +23,7 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final advisoryState = ref.watch(advisoryProvider);
     final isOnline = ref.watch(isOnlineProvider);
+    final pendingSyncOps = ref.watch(syncManagerProvider).where((op) => op.status == SyncStatus.pending || op.status == SyncStatus.retrying).length;
 
     return Scaffold(
       appBar: const OrcaAppBar(
@@ -49,14 +53,16 @@ class HomeScreen extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: VerdictColors.caution, width: 1.0),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.wifi_off, color: VerdictColors.caution, size: 18),
-                      SizedBox(width: 8),
+                      const Icon(Icons.wifi_off, color: VerdictColors.caution, size: 18),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'You are offline. Showing last verified advisory from cache.',
-                          style: TextStyle(
+                          pendingSyncOps > 0
+                              ? 'Offline mode active. $pendingSyncOps changes queued for cloud sync.'
+                              : 'You are offline. Showing last verified advisory from cache.',
+                          style: const TextStyle(
                             fontSize: 12,
                             color: Colors.white,
                             fontWeight: FontWeight.w500,
@@ -68,12 +74,54 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ],
 
+              // Phase 2 Fisher Services Quick Access Grid
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                child: Row(
+                  children: [
+                    _buildQuickActionButton(
+                      context,
+                      label: 'My Places',
+                      icon: Icons.place,
+                      color: Colors.blue,
+                      onTap: () => context.push('/locations'),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildQuickActionButton(
+                      context,
+                      label: 'Catch Report',
+                      icon: Icons.phishing,
+                      color: VerdictColors.good,
+                      onTap: () => context.push('/catch-report'),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildQuickActionButton(
+                      context,
+                      label: 'History',
+                      icon: Icons.history,
+                      color: Colors.amber,
+                      onTap: () => context.push('/history'),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildQuickActionButton(
+                      context,
+                      label: 'Profile',
+                      icon: Icons.person,
+                      color: Colors.purpleAccent,
+                      onTap: () => context.push('/profile'),
+                    ),
+                  ],
+                ),
+              ),
+
               // Main advisory state handling
               advisoryState.when(
                 data: (advisory) => Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     VerdictCard(advisory: advisory),
+                    const SizedBox(height: 12),
+                    VoiceAdvisoryButton(advisory: advisory),
                     const SizedBox(height: 12),
                     SafeWindowBar(safeWindow: advisory.safeWindow),
                     const SizedBox(height: 14),
@@ -154,6 +202,46 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActionButton(
+    BuildContext context, {
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: Material(
+        color: OrcaTheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: color.withAlpha(80)),
+            ),
+            child: Column(
+              children: [
+                Icon(icon, color: color, size: 20),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
