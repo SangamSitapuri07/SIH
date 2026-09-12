@@ -7,7 +7,7 @@ eligible for planning, and Tier-A/B/C/D entries remain disabled by default.
 
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Dict, Iterable, List
+from typing import Any, Dict, Iterable, List
 
 
 @dataclass(frozen=True)
@@ -30,6 +30,8 @@ class DatasetSpec:
     feature_flag: str
     metadata_verified: bool = False
     activation_note: str = ""
+    implemented: bool = False
+    verification_status: str = "REGISTERED"
 
 
 TIER_S = (
@@ -39,15 +41,15 @@ TIER_S = (
         ("chlorophyll_a", "quality_flag", "latitude", "longitude"),
         "mosdac_netcdf_or_hdf5", "orca_chlorophyll", timedelta(hours=6),
         ("MOSDAC_USERNAME", "MOSDAC_PASSWORD", "official_catalogue_metadata"),
-        False, True, "ORCA_MOSDAC_TIER_S", activation_note="Requires official metadata and authenticated download API verification.",
+        False, True, "ORCA_MOSDAC_TIER_S", activation_note="Live search, authenticated download, parsing, normalization, and cache verified against a real product.", implemented=True, verification_status="VERIFIED",
     ),
     DatasetSpec(
-        "E06SCT_L4_AWW6HOURLY", "S", True, "MOSDAC", "6-hourly Analyzed Winds",
+        "E06SCT_L4_AWW6HOURLY", "S", False, "MOSDAC", "6-hourly Analyzed Winds",
         "Particle Filter Technique near-real-time wind product.", "6-hourly", "catalogue-defined",
         ("wind_speed", "wind_direction", "quality_flag", "latitude", "longitude"),
         "mosdac_netcdf_or_hdf5", "orca_wind", timedelta(hours=6),
         ("MOSDAC_USERNAME", "MOSDAC_PASSWORD", "official_catalogue_metadata"),
-        False, True, "ORCA_MOSDAC_TIER_S", activation_note="Requires official metadata and authenticated download API verification.",
+        False, False, "ORCA_MOSDAC_TIER_S", activation_note="Live API attempt failed before a verified product parse; kept disabled.", verification_status="LIVE_VERIFICATION_FAILED",
     ),
     DatasetSpec(
         "E06SCT_L4_UI", "S", True, "MOSDAC", "Upwelling Index",
@@ -55,23 +57,23 @@ TIER_S = (
         ("upwelling_index", "quality_flag", "latitude", "longitude"),
         "mosdac_netcdf_or_hdf5", "orca_upwelling", timedelta(hours=12),
         ("MOSDAC_USERNAME", "MOSDAC_PASSWORD", "official_catalogue_metadata"),
-        False, True, "ORCA_MOSDAC_TIER_S", activation_note="Requires official metadata and authenticated download API verification.",
+        False, True, "ORCA_MOSDAC_TIER_S", activation_note="Live search, authenticated download, parsing, normalization, and cache verified against a real product.", implemented=True, verification_status="VERIFIED",
     ),
     DatasetSpec(
-        "E06OCM_L3_LAC_CQ", "S", True, "MOSDAC", "Coastal Water Quality Composite",
+        "E06OCM_L3_LAC_CQ", "S", False, "MOSDAC", "Coastal Water Quality Composite",
         "Daily coastal/environmental context product.", "daily", "catalogue-defined",
         ("water_quality", "quality_flag", "latitude", "longitude"),
         "mosdac_netcdf_or_hdf5", "orca_water_quality", timedelta(days=1),
         ("MOSDAC_USERNAME", "MOSDAC_PASSWORD", "official_catalogue_metadata"),
-        False, True, "ORCA_MOSDAC_TIER_S", activation_note="Requires official metadata and authenticated download API verification.",
+        False, False, "ORCA_MOSDAC_TIER_S", activation_note="Live download was unavailable for the requested record; no sample file was supplied.", verification_status="LIVE_VERIFICATION_FAILED",
     ),
     DatasetSpec(
-        "E06SCT_L3_WV12", "S", True, "MOSDAC", "Global Flagged Wind Vectors",
+        "E06SCT_L3_WV12", "S", False, "MOSDAC", "Global Flagged Wind Vectors",
         "Supporting wind vector product at 12.5 km resolution.", "catalogue-defined", "12.5 km",
         ("wind_speed", "wind_direction", "quality_flag", "latitude", "longitude"),
         "mosdac_netcdf_or_hdf5", "orca_wind", timedelta(hours=12),
         ("MOSDAC_USERNAME", "MOSDAC_PASSWORD", "official_catalogue_metadata"),
-        False, True, "ORCA_MOSDAC_TIER_S", activation_note="Requires official metadata and authenticated download API verification.",
+        False, False, "ORCA_MOSDAC_TIER_S", activation_note="Live API attempt failed and the supplied HDF5 lacks geolocation, time, scaling, and product metadata.", verification_status="METADATA_VERIFICATION_BLOCKED",
     ),
 )
 
@@ -129,12 +131,31 @@ def plan_datasets(requirements: Iterable[str], registry: Dict[str, DatasetSpec] 
     ]
 
 
-def registry_status(registry: Dict[str, DatasetSpec] = DATASET_REGISTRY) -> Dict[str, int]:
+REQUIREMENT_PROFILES = {
+    "SAFETY": ("wind", "waves", "cyclone", "current", "land/route safety"),
+    "FISHING": ("chlorophyll_a", "upwelling_index", "wind_speed", "current", "marine conditions"),
+    "MARINE_ECOLOGY": ("chlorophyll_a", "water_quality", "phytoplankton", "POC", "PAR", "optical properties"),
+    "NAVIGATION": ("wind_speed", "waves", "current", "land/route safety"),
+}
+
+
+def plan_profile(profile: str, registry: Dict[str, DatasetSpec] = DATASET_REGISTRY) -> List[DatasetSpec]:
+    """Plan only enabled datasets satisfying the named ORCA profile."""
+    try:
+        requirements = REQUIREMENT_PROFILES[profile.upper()]
+    except KeyError as exc:
+        raise ValueError(f"Unknown ORCA requirement profile: {profile}") from exc
+    return plan_datasets(requirements, registry)
+
+
+def registry_status(registry: Dict[str, DatasetSpec] = DATASET_REGISTRY) -> Dict[str, Any]:
     return {
         "total": len(registry),
         "tier_s_enabled": sum(spec.tier == "S" and spec.enabled for spec in registry.values()),
+        "tier_s_verified": sum(spec.tier == "S" and spec.verification_status == "VERIFIED" for spec in registry.values()),
         "tier_a_disabled": sum(spec.tier == "A" and not spec.enabled for spec in registry.values()),
         "tier_b_disabled": sum(spec.tier == "B" and not spec.enabled for spec in registry.values()),
         "tier_c_disabled": sum(spec.tier == "C" and not spec.enabled for spec in registry.values()),
         "tier_d_disabled": sum(spec.tier == "D" and not spec.enabled for spec in registry.values()),
+        "tier_s_status": {spec.dataset_id: spec.verification_status for spec in registry.values() if spec.tier == "S"},
     }

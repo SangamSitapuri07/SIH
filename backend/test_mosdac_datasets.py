@@ -11,6 +11,7 @@ from mosdac_datasets import (
     TIER_D_IDS,
     enabled_datasets,
     plan_datasets,
+    plan_profile,
     registry_status,
 )
 from mosdac_provider import MosdacProvider
@@ -19,7 +20,8 @@ from mosdac_provider import MosdacProvider
 class MosdacActivationTests(unittest.TestCase):
     def test_activation_matrix(self):
         status = registry_status()
-        self.assertEqual(status["tier_s_enabled"], 5)
+        self.assertEqual(status["tier_s_enabled"], 2)
+        self.assertEqual(status["tier_s_verified"], 2)
         self.assertEqual(status["tier_a_disabled"], len(TIER_A_IDS))
         self.assertEqual(status["tier_b_disabled"], len(TIER_B_IDS))
         self.assertEqual(status["tier_c_disabled"], len(TIER_C_IDS))
@@ -31,6 +33,10 @@ class MosdacActivationTests(unittest.TestCase):
         self.assertTrue(selected)
         self.assertTrue(all(spec.enabled and spec.tier == "S" for spec in selected))
         self.assertFalse(any(spec.dataset_id in TIER_A_IDS for spec in selected))
+
+    def test_profiles_select_only_verified_enabled_products(self):
+        self.assertEqual({spec.dataset_id for spec in plan_profile("FISHING")}, {"E06OCM_L4_AC", "E06SCT_L4_UI"})
+        self.assertTrue(all(spec.enabled for spec in plan_profile("MARINE_ECOLOGY")))
 
     def test_no_credentials_fails_closed(self):
         old_username = os.environ.pop("MOSDAC_USERNAME", None)

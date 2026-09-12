@@ -1,7 +1,7 @@
 # ORCA Real Data Source Plan
 
-Date: 2026-09-12
-Scope: authoritative repository `C:\Users\Aryan Singh\OneDrive\Desktop\ORCA-SIH-2026`
+Date: 2026-09-13
+Scope: authoritative repository `C:\Users\sanga\Desktop\ORCA-SIH-2026`
 
 ## Purpose
 
@@ -13,18 +13,26 @@ This document is the data contract and acquisition plan for running ORCA without
 
 | Area | Current state | Required action |
 |---|---|---|
-| Wave height, wave period, swell, SST, currents | Backend requests Open-Meteo Marine | Keep raw response, timestamp, units, and provider metadata |
-| Sustained wind and gusts | Backend requests Open-Meteo Forecast | Keep raw response and forecast issue time |
-| Chlorophyll-a | Not currently fetched by the active zone implementation | Integrate NOAA ERDDAP first; add INCOIS/MOSDAC as cross-checks |
-| PFZ lines | Not currently fetched by the active zone implementation | Integrate official INCOIS GeoServer/WFS and retain feature timestamp |
-| Fishing effort/AIS | Not currently fetched by the active zone implementation | Integrate Global Fishing Watch only with a server-side token |
-| Cyclone alerts | Not currently fetched by the active zone implementation | Integrate JTWC/IMD official feeds and parse publication/expiry times |
+| Wave height, wave period, swell height, SST, currents | Active zone path requests Open-Meteo Marine; current speed is converted from km/h to knots | Add raw response, source timestamp, units, and provider metadata; map swell period |
+| Sustained wind, gusts, direction | Active zone path requests Open-Meteo Forecast in knots | Add raw response and forecast issue time; request remaining weather context |
+| Chlorophyll-a | NOAA ERDDAP is fetched by the active zone path | Add observation timestamp, quality/cloud handling, response provenance, and cache |
+| PFZ lines | Official INCOIS GeoServer/WFS is fetched by the active zone path | Parse advisory date/expiry and add last-known-good cache |
+| Fishing effort/AIS and fleet summary | Optional active GFW 4Wings effort/fleet paths when `include_gfw=true` | Keep the token backend-only; retain six-hour atomic cache, clamped date range, Polygon request, dataset, vessel IDs, flag/gear groups, and rate-limit status |
+| Cyclone alerts | `/api/v1/alerts` fetches IMD RSS, GDACS GeoJSON, and JTWC RSS | Complete CAP XML/polygon parsing, geographic relevance, expiry, and cache |
 | Land/water | Current code uses geographic rules, not a true raster | Add a versioned GLOBE/official raster and record its version |
 | Map overlay tiles | Current `/api/v1/tiles/*` requests return 404 | Implement server-rendered or provider-native tiles; otherwise hide the layer |
-| Agent reasoning | Requires a valid live zone snapshot | Do not run agents when required inputs are unavailable |
+| Agent reasoning | Runs after a valid live zone snapshot | Preserve source coverage and prevent explanations from overriding deterministic safety |
 | Cache | Hive stores real responses with `fetched_at` and TTL | Preserve provenance and display stale/fresh state |
 
-The existing `API-GUIDE.md` is a useful candidate inventory, but its source status must not be treated as proof that the current code fetches every source.
+The existing `API-GUIDE.md` and frontend source catalog contain candidate/source descriptions, not proof that every listed source is live in this backend.
+
+## Implemented Versus Pending
+
+Implemented active paths: Open-Meteo marine/forecast snapshot with real hourly chart data, NOAA chlorophyll, INCOIS PFZ WFS, optional GFW 4Wings effort and fleet summaries, IMD RSS alert ingestion, GDACS cyclone events, JTWC headline ingestion, deterministic safety verdicts, frontend Hive response caching, and the MOSDAC provider/registry/cache architecture.
+
+Implemented and live-verified MOSDAC products: `E06OCM_L4_AC` and `E06SCT_L4_UI`.
+
+Pending or incomplete: raw source provenance for the general providers, provider-side cache/stale fallback, real safe-window calculation, IMD CAP XML and polygon relevance, GDACS distance folding, versioned land/water raster, official restricted zones, NOAA/PFZ quality and timestamp persistence, overlay tile routes, ESA/INCOIS ERDDAP cross-checks, GFW historical fleet-detail enrichment beyond the regional report, station observations, and the three disabled MOSDAC Tier-S products.
 
 ## Required Data Contract
 
@@ -212,34 +220,35 @@ For each source, record:
 
 ## Immediate Next Work
 
-1. Verify the Open-Meteo Marine and Forecast responses from the ORCA Box machine, not only from PowerShell on the development machine.
-2. Remove remaining hardcoded provider health values and report health from actual provider probes.
-3. Add NOAA ERDDAP chlorophyll as the first non-weather source.
-4. Add official INCOIS PFZ geometry and timestamps.
-5. Replace the geographic land heuristic with a versioned raster.
-6. Implement or disable map overlay tile routes so the UI does not request guaranteed `404` endpoints.
-7. Add integration tests with recorded real responses and provenance assertions.
+1. Persist source timestamps, raw request metadata, quality, and provenance for Open-Meteo, NOAA, and PFZ responses.
+2. Add bounded server-side cache and stale fallback for general providers.
+3. Compute safe windows from the real hourly marine/forecast series.
+4. Complete IMD CAP XML/polygon parsing and GDACS 300/800 km relevance folding; retain JTWC as headline corroboration.
+5. Replace the geographic land heuristic with a versioned raster and keep detours unverified until pathfinding is validated.
+6. Implement or disable map overlay tile routes so the UI does not request unavailable endpoints.
+7. Add recorded-response integration tests with provenance and quality assertions.
 
 Until these steps are complete, ORCA should describe unavailable sources honestly and must not claim that all sources listed in the older API guide are actively live.
 
 ## MOSDAC Activation Status
 
-The backend now contains `backend/mosdac_datasets.py` and `backend/mosdac_provider.py`.
+The backend now contains `backend/mosdac_datasets.py`, `backend/mosdac_provider.py`, and `backend/mosdac_parsers.py`. See `backend/MOSDAC_INTEGRATION.md` for the evidence record.
 
-- All five Tier-S IDs are registered and enabled in the planner.
+- `E06OCM_L4_AC` and `E06SCT_L4_UI` are implemented, live verified, and enabled in the planner.
+- `E06SCT_L4_AWW6HOURLY` and `E06OCM_L3_LAC_CQ` remain registered but disabled after live verification failures.
+- `E06SCT_L3_WV12` remains registered but disabled because the supplied HDF5 lacks required geolocation/time/scaling/product metadata.
 - All Tier-A IDs are registered but disabled.
 - All Tier-B/C/D IDs are registered but disabled.
 - Disabled datasets cannot be selected by the planner, scheduled, or fetched.
-- The provider stores a common provenance shape and uses safe cache-key generation.
-- The provider currently fails closed because this repository does not contain a verified official MOSDAC catalogue/API contract or an authenticated sample file.
+- The provider follows the official configuration-driven search, token, and download flow, stores normalized provenance, and uses dataset/request-specific cache keys.
+- The supplied real samples were inspected directly; the similarly named AWW sample is identified as OSCAT3 sigma0 data and is not relabeled.
 
-Full Tier-S completion is blocked until the following are supplied/verified on the ORCA Box:
+The remaining three Tier-S completions are blocked until the following are supplied/verified on the ORCA Box:
 
-1. Official catalogue metadata for each requested ID.
-2. Official MOSDAC Download API authentication and request/response contract.
-3. Backend-only `MOSDAC_USERNAME` and `MOSDAC_PASSWORD`.
-4. At least one authenticated real file or download response per Tier-S dataset.
-5. Dataset-specific variable names, units, quality flags, time axis, and spatial layout.
+1. Official product metadata for `E06SCT_L4_AWW6HOURLY`, `E06OCM_L3_LAC_CQ`, and `E06SCT_L3_WV12`.
+2. An authenticated real product file or successful download for each remaining dataset.
+3. Dataset-specific variable names, units, quality flags, time axis, geolocation, and scaling semantics.
+4. Parser, normalization, provenance, and cache round-trip tests for each remaining dataset.
 
 No fabricated satellite values are produced while these requirements are missing.
 
@@ -398,7 +407,7 @@ The audit also reports a 24-hour OSM proxy cache. That cache must retain OSM att
 3. Extend INCOIS PFZ WFS with advisory-date parsing and a three-hour last-known-good cache.
 4. Complete IMD CAP XML parsing and geographic relevance filtering.
 5. Add GDACS distance-based 300/800 km severity folding; keep JTWC as corroboration until track parsing exists.
-6. Replace the simplified GIS land heuristic with a versioned raster and remove fabricated detours.
+6. Replace the simplified GIS land heuristic with a versioned raster; keep route detours unverified until pathfinding is validated.
 7. Add MOSDAC, GFW, data.gov.in, and INCOIS ERDDAP only after credentials or reachable real responses are available.
 8. Implement or disable the `/api/v1/tiles/waves`, `/api/v1/tiles/pfz`, and related overlay routes; repeated 404s must not remain in the UI.
 

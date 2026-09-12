@@ -70,9 +70,9 @@ def get_health():
     return health
 
 @router.get("/zone")
-def get_zone_snapshot(lat: float = Query(20.9), lon: float = Query(70.37)):
+def get_zone_snapshot(lat: float = Query(20.9), lon: float = Query(70.37), include_gfw: bool = Query(False)):
     """Spot data snapshot."""
-    snap = providers.fetch_zone_snapshot(lat, lon)
+    snap = providers.fetch_zone_snapshot(lat, lon, include_gfw=include_gfw)
     if snap.get("error"):
         return snap
     variables = snap.get("variables", {})
@@ -90,6 +90,13 @@ def get_zone_snapshot(lat: float = Query(20.9), lon: float = Query(70.37)):
         "current_speed_kn": variables.get("current_speed_kn"),
         "current_direction": variables.get("current_direction_deg"),
         "chlorophyll_mg_m3": variables.get("chlorophyll_mg_m3"),
+        "fishing_effort_hours": variables.get("fishing_effort_hours"),
+        "fishing_vessel_ids": variables.get("fishing_vessel_ids"),
+        "fleet_vessel_count": variables.get("fleet_vessel_count"),
+        "fleet_by_flag": variables.get("fleet_by_flag", {}),
+        "fleet_by_gear": variables.get("fleet_by_gear", {}),
+        "gfw_start_date": variables.get("gfw_start_date"),
+        "gfw_end_date": variables.get("gfw_end_date"),
         "sources": [source["name"] for source in snap.get("sources_used", [])],
         "sources_failed": [failure.get("source", "unknown") for failure in snap.get("sources_failed", [])],
         "source_details": snap.get("sources_used", []),
@@ -117,17 +124,17 @@ def get_grid(lat: float = Query(20.9), lon: float = Query(70.37), span: float = 
     return {"latitude": lat, "longitude": lon, "span": span, "points": points}
 
 @router.get("/reason")
-def get_reasoning(lat: float = Query(20.9), lon: float = Query(70.37)):
+def get_reasoning(lat: float = Query(20.9), lon: float = Query(70.37), include_gfw: bool = Query(False)):
     """Run 11-agent collaborative reasoning trace."""
-    snap = providers.fetch_zone_snapshot(lat, lon)
+    snap = providers.fetch_zone_snapshot(lat, lon, include_gfw=include_gfw)
     if snap.get("error"):
         raise HTTPException(status_code=400, detail=snap["reason"])
     return agents_engine.run_collaborative_reasoning(snap)
 
 @router.get("/advisory")
-def get_advisory(lat: float = Query(20.9), lon: float = Query(70.37)):
+def get_advisory(lat: float = Query(20.9), lon: float = Query(70.37), include_gfw: bool = Query(False)):
     """Primary Fisher Safety Advisory."""
-    snap = providers.fetch_zone_snapshot(lat, lon)
+    snap = providers.fetch_zone_snapshot(lat, lon, include_gfw=include_gfw)
     if snap.get("error"):
         raise HTTPException(status_code=400, detail=snap["reason"])
 
@@ -137,15 +144,19 @@ def get_advisory(lat: float = Query(20.9), lon: float = Query(70.37)):
 
     color_map = {"GOOD": "#2ECC71", "CAUTION": "#F39C12", "NO-GO": "#E74C3C"}
 
-    # Generate 24-hour hourly chart forecast
+    # Use the provider's real hourly forecast; never synthesize measurements.
     hourly_chart = []
-    base_wave = vars["wave_height_m"]
-    base_wind = vars["wind_speed_kn"]
-    for h in range(24):
-        wave = round(max(0.4, base_wave + (0.3 * math_sin(h * 0.25))), 2)
-        wind = round(max(5.0, base_wind + (2.5 * math_sin((h + 2) * 0.25))), 1)
+    hourly = snap.get("hourly_forecast", {})
+    hourly_times = hourly.get("time", [])[:24]
+    hourly_waves = hourly.get("wave_height_m", [])
+    hourly_winds = hourly.get("wind_speed_kn", [])
+    for index, timestamp in enumerate(hourly_times):
+        wave = hourly_waves[index] if index < len(hourly_waves) else None
+        wind = hourly_winds[index] if index < len(hourly_winds) else None
+        if wave is None or wind is None:
+            continue
         hourly_chart.append({
-            "hour": f"{h:02d}:00",
+            "hour": timestamp,
             "wave_m": wave,
             "wind_kn": wind,
             "state": "good" if wave < 2.5 else ("caution" if wave < 4.0 else "danger")
@@ -166,7 +177,7 @@ def get_advisory(lat: float = Query(20.9), lon: float = Query(70.37)):
         "variables": {
             key: {
                 "value": value,
-                "unit": {"wave_height_m": "m", "wave_period_s": "s", "wind_speed_kn": "kn", "wind_gust_kn": "kn", "sst_celsius": "C", "current_speed_kn": "kn", "chlorophyll_mg_m3": "mg/m3"}.get(key, ""),
+                "unit": {"wave_height_m": "m", "wave_period_s": "s", "wind_speed_kn": "kn", "wind_gust_kn": "kn", "sst_celsius": "C", "current_speed_kn": "kn", "chlorophyll_mg_m3": "mg/m3", "fishing_effort_hours": "hours"}.get(key, ""),
                 "source": "ORCA Box live provider",
                 "time": "Live",
                 "status": "available",
@@ -179,10 +190,17 @@ def get_advisory(lat: float = Query(20.9), lon: float = Query(70.37)):
                 "sst_celsius": vars.get("sst_celsius"),
                 "current_speed_kn": vars.get("current_speed_kn"),
                 "chlorophyll_mg_m3": vars.get("chlorophyll_mg_m3"),
+                "fishing_effort_hours": vars.get("fishing_effort_hours"),
             }.items() if value is not None
         },
         "safe_window": None,
         "hourly_chart": hourly_chart,
+        "fishing_vessel_ids": vars.get("fishing_vessel_ids"),
+        "fleet_vessel_count": vars.get("fleet_vessel_count"),
+        "fleet_by_flag": vars.get("fleet_by_flag", {}),
+        "fleet_by_gear": vars.get("fleet_by_gear", {}),
+        "gfw_start_date": vars.get("gfw_start_date"),
+        "gfw_end_date": vars.get("gfw_end_date"),
         "sources": snap["sources_used"],
         "sources_failed": snap["sources_failed"],
         "timestamp": int(time.time()),
@@ -213,12 +231,37 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
 
     points = []
     worst_level = "GOOD"
+    unknown_inputs = False
 
     for idx, pt in enumerate(legs):
         snap = providers.fetch_zone_snapshot(pt[0], pt[1])
+        if snap.get("error"):
+            unknown_inputs = True
+            points.append({
+                "point_index": idx,
+                "latitude": pt[0],
+                "longitude": pt[1],
+                "wave_m": None,
+                "wind_kn": None,
+                "state": "unverified",
+                "why": "Live marine inputs unavailable for this route point.",
+            })
+            continue
         vars = snap.get("variables", {})
-        wave = vars.get("wave_height_m", 1.5)
-        wind = vars.get("wind_speed_kn", 14.0)
+        wave = vars.get("wave_height_m")
+        wind = vars.get("wind_speed_kn")
+        if wave is None or wind is None:
+            unknown_inputs = True
+            points.append({
+                "point_index": idx,
+                "latitude": pt[0],
+                "longitude": pt[1],
+                "wave_m": wave,
+                "wind_kn": wind,
+                "state": "unverified",
+                "why": "Required live wave or wind input is unavailable.",
+            })
+            continue
 
         state = "good"
         if wave >= 4.0 or wind >= 34.0:
@@ -237,6 +280,9 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
             "state": state,
             "why": f"Leg {idx+1}: Wave {wave:.1f} m, Wind {wind:.1f} kn"
         })
+
+    if unknown_inputs and worst_level == "GOOD":
+        worst_level = "UNVERIFIED"
 
     return {
         "verdict": {

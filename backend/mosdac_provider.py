@@ -10,10 +10,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 import hashlib
+import json
 import os
 import tempfile
+import httpx
 
 from mosdac_datasets import DatasetSpec
+from mosdac_parsers import parse_product
 
 
 @dataclass(frozen=True)
@@ -47,16 +50,42 @@ class MosdacProvider:
 
     def cache_key(self, spec: DatasetSpec, request: Dict[str, Any]) -> str:
         digest = hashlib.sha256(repr(sorted(request.items())).encode()).hexdigest()[:16]
-        return f"{spec.dataset_id}_{digest}"
+        request_json = json.dumps(request, sort_keys=True, separators=(",", ":"), default=str)
+        digest = hashlib.sha256(request_json.encode()).hexdigest()[:16]
+        return f"MOSDAC_{spec.dataset_id}_{digest}"
+
+    def _cache_path(self, spec: DatasetSpec, request: Dict[str, Any]) -> Path:
+        return self.cache_root / f"{self.cache_key(spec, request)}.json"
+
+    def cache_result(self, spec: DatasetSpec, request: Dict[str, Any], result: Dict[str, Any]) -> Path:
+        """Persist only a successful parsed product; failures never become cache hits."""
+        if result.get("status") not in (None, "fresh", "live"):
+            raise ValueError("Only fresh MOSDAC results may be cached")
+        path = self._cache_path(spec, request)
+        path.write_text(json.dumps(result, ensure_ascii=True, sort_keys=True), encoding="utf-8")
+        return path
+
+    def read_cached(self, spec: DatasetSpec, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        path = self._cache_path(spec, request)
+        if not path.is_file():
+            return None
+        try:
+            result = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        fetched_at = result.get("fetched_at") or result.get("provenance", {}).get("fetched_at")
+        if not fetched_at:
+            return None
+        try:
+            fetched = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        age = datetime.now(timezone.utc) - fetched
+        result["status"] = "fresh" if age <= spec.cache_ttl else "stale"
+        return result
 
     def fetch(self, spec: DatasetSpec, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Fail closed until official MOSDAC API metadata is configured.
-
-        This is intentionally not a fake success. The repository has no verified
-        MOSDAC Download API URL, authentication flow, or authenticated sample
-        file, so pretending to download a Tier-S product would violate the data
-        policy.
-        """
+        """Search and download through the official configuration-driven API flow."""
         fetched_at = datetime.now(timezone.utc).isoformat()
         if not self.credentials_configured:
             return {
@@ -68,20 +97,65 @@ class MosdacProvider:
                     "missing", None,
                 ).to_dict(),
             }
-        return {
-            "status": "api_contract_required",
-            "dataset_id": spec.dataset_id,
-            "reason": "Official MOSDAC catalogue and Download API contract has not been verified in this repository.",
-            "provenance": Provenance(
-                "MOSDAC", spec.dataset_id, None, None, fetched_at, None,
-                "unavailable", None,
-            ).to_dict(),
-        }
+        timeout = float(os.getenv("ORCA_PROVIDER_TIMEOUT_SECONDS", "12"))
+        search_url = "https://mosdac.gov.in/apios/datasets.json"
+        token_url = "https://mosdac.gov.in/download_api/gettoken"
+        download_url = "https://mosdac.gov.in/download_api/download"
+        search_params = {key: request[key] for key in ("startTime", "endTime", "count", "boundingBox", "gId") if request.get(key)}
+        search_params["datasetId"] = spec.dataset_id
+        try:
+            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+                search_response = client.get(search_url, params=search_params)
+                search_response.raise_for_status()
+                search_payload = search_response.json()
+                entries = search_payload.get("entries", [])
+                if not entries:
+                    return {"status": "unavailable", "dataset_id": spec.dataset_id, "reason": "MOSDAC search returned no files."}
+                entry = entries[0]
+                token_response = client.post(token_url, json={"username": self.username, "password": self.password})
+                if token_response.status_code in (400, 401):
+                    return {"status": "authentication_failed", "dataset_id": spec.dataset_id, "reason": "MOSDAC authentication failed."}
+                token_response.raise_for_status()
+                access_token = token_response.json().get("access_token")
+                if not access_token:
+                    return {"status": "authentication_failed", "dataset_id": spec.dataset_id, "reason": "MOSDAC authentication returned no access token."}
+                raw_dir = self.cache_root / "raw"
+                raw_dir.mkdir(parents=True, exist_ok=True)
+                filename = Path(str(entry.get("identifier", entry.get("id", "mosdac_product")))).name
+                raw_file = raw_dir / filename
+                with client.stream("GET", download_url, params={"id": entry["id"]}, headers={"Authorization": f"Bearer {access_token}"}) as response:
+                    if response.status_code in (401, 404):
+                        return {"status": "download_failed", "dataset_id": spec.dataset_id, "reason": "MOSDAC download was not authorized or the product was unavailable."}
+                    response.raise_for_status()
+                    with raw_file.open("wb") as output:
+                        for chunk in response.iter_bytes():
+                            output.write(chunk)
+            result = parse_product(spec, raw_file)
+            result.update({
+                "status": "live",
+                "fetched_at": fetched_at,
+                "valid_until": (datetime.fromisoformat(fetched_at.replace("Z", "+00:00")) + spec.cache_ttl).isoformat().replace("+00:00", "Z"),
+                "raw_request_id": str(entry["id"]),
+                "source_url": download_url,
+            })
+            self.cache_result(spec, request, result)
+            return result
+        except (httpx.HTTPError, KeyError, ValueError, OSError) as exc:
+            return {
+                "status": "unavailable",
+                "dataset_id": spec.dataset_id,
+                "reason": f"MOSDAC request failed: {type(exc).__name__}",
+                "provenance": Provenance("MOSDAC", spec.dataset_id, search_url, None, fetched_at, None, "unavailable", None).to_dict(),
+            }
 
     def parse_file(self, spec: DatasetSpec, raw_file: Path) -> Dict[str, Any]:
-        """Dataset parser boundary; never returns fabricated normalized values."""
-        if not raw_file.exists() or raw_file.stat().st_size == 0:
-            raise ValueError(f"MOSDAC file is missing or empty: {raw_file}")
-        raise NotImplementedError(
-            f"No verified parser is registered for {spec.dataset_id}; obtain an authenticated sample file and official variable metadata first."
-        )
+        """Parse an actual downloaded product; never fabricate normalized values."""
+        result = parse_product(spec, raw_file)
+        fetched_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        result["status"] = "fresh"
+        result["fetched_at"] = fetched_at
+        result["valid_until"] = (
+            datetime.fromisoformat(fetched_at.replace("Z", "+00:00")) + spec.cache_ttl
+        ).isoformat().replace("+00:00", "Z")
+        result["raw_request_id"] = None
+        return result
