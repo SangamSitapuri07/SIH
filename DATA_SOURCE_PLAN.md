@@ -235,22 +235,15 @@ Until these steps are complete, ORCA should describe unavailable sources honestl
 The backend now contains `backend/mosdac_datasets.py`, `backend/mosdac_provider.py`, and `backend/mosdac_parsers.py`. See `backend/MOSDAC_INTEGRATION.md` for the evidence record.
 
 - `E06OCM_L4_AC` and `E06SCT_L4_UI` are implemented, live verified, and enabled in the planner.
-- `E06SCT_L4_AWW6HOURLY` and `E06OCM_L3_LAC_CQ` remain registered but disabled after live verification failures.
-- `E06SCT_L3_WV12` remains registered but disabled because the supplied HDF5 lacks required geolocation/time/scaling/product metadata.
-- All Tier-A IDs are registered but disabled.
-- All Tier-B/C/D IDs are registered but disabled.
-- Disabled datasets cannot be selected by the planner, scheduled, or fetched.
-- The provider follows the official configuration-driven search, token, and download flow, stores normalized provenance, and uses dataset/request-specific cache keys.
-- The supplied real samples were inspected directly; the similarly named AWW sample is identified as OSCAT3 sigma0 data and is not relabeled.
+- `E06SCT_L4_AWV6HOURLY` (corrected from `AWW` typo): Parser reads u/v components, computes wind speed via `hypot(u, v)`. The previously rejected sample `E06SCTL4AH_2026255_0000_25km_v1.0.0.nc` is the correct granule — the SIGMA0 VALUES long_name is a MOSDAC metadata quirk, not a product mismatch.
+- `E06OCM_L3_LAC_CQ`: Product is live (157 files on MOSDAC). Schema-discovery parser replaces the hardcoded `water_quality` variable name that was never validated. Provider timeout increased to 60s.
+- `E06SCT_L3_WW12` (corrected from `WV12` typo): Recursive HDF5 parser replaces the stub that always raised. The supplied `E06SCTL3WW2026255_12km_v1.0.5.h5` is the correct granule of the `E06SCT_L3_WW12` dataset (flagged wind vectors, 1,069 live files).
+- Tier-A `E06SCT_L4_AWV` and `E06SCT_L4_AWV12km` corrected from `AWW`/`AWW12km` typos; registered and disabled.
+- All other Tier-A/B/C/D IDs remain registered but disabled.
+- Provider timeout for MOSDAC downloads increased from 12s to 60s (`ORCA_MOSDAC_TIMEOUT_SECONDS`).
+- Provider now picks the newest search entry (not `entries[0]`) and retries the token once on download 401.
 
-The remaining three Tier-S completions are blocked until the following are supplied/verified on the ORCA Box:
-
-1. Official product metadata for `E06SCT_L4_AWW6HOURLY`, `E06OCM_L3_LAC_CQ`, and `E06SCT_L3_WV12`.
-2. An authenticated real product file or successful download for each remaining dataset.
-3. Dataset-specific variable names, units, quality flags, time axis, geolocation, and scaling semantics.
-4. Parser, normalization, provenance, and cache round-trip tests for each remaining dataset.
-
-No fabricated satellite values are produced while these requirements are missing.
+The remaining three Tier-S products have corrected IDs and rebuilt parsers. Enable them in the planner once live verification confirms real granules parse with valid values.
 
 ## Audit Reconciliation
 

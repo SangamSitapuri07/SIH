@@ -10,6 +10,7 @@ from data_providers import DataProvidersEngine
 from agents_engine import MultiAgentEngine
 from supabase_service import SupabaseService
 from mosdac_datasets import registry_status
+from safe_window import find_safe_departure_window
 
 router = APIRouter(prefix="/api/v1")
 providers = DataProvidersEngine()
@@ -193,7 +194,7 @@ def get_advisory(lat: float = Query(20.9), lon: float = Query(70.37), include_gf
                 "fishing_effort_hours": vars.get("fishing_effort_hours"),
             }.items() if value is not None
         },
-        "safe_window": None,
+        "safe_window": find_safe_departure_window(snap.get("hourly_forecast", {})),
         "hourly_chart": hourly_chart,
         "fishing_vessel_ids": vars.get("fishing_vessel_ids"),
         "fleet_vessel_count": vars.get("fleet_vessel_count"),

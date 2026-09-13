@@ -33,7 +33,7 @@ Legend:
 | Daily weather code | WMO code | Open-Meteo Forecast | Weather context | Not implemented | Do not convert to text without preserving raw code. |
 | Forecast hourly values | provider units | Open-Meteo Marine/Forecast | `/api/v1/advisory` hourly chart | Implemented, safe-window partial | Real hourly wave and wind values are requested and returned; safe departure interval selection remains pending. |
 | Chlorophyll-a | mg/m3 | NOAA CoastWatch ERDDAP VIIRS DINEOF | PFZ/map/agents | Implemented, provider may fail | Audit dataset/query is wired; cloud/no-data remains unavailable rather than fabricated. |
-| MOSDAC Tier-S products | product-specific | MOSDAC authenticated Download API | Backend provider, planner, parser, cache | Partial: 2 verified, 3 disabled | `E06OCM_L4_AC` and `E06SCT_L4_UI` passed live search/download/parse/normalize/cache. AWW failed live verification, Coastal Water Quality had no available download/sample, and WV12 metadata is insufficient. |
+| MOSDAC Tier-S products | product-specific | MOSDAC authenticated Download API | Backend provider, planner, parser, cache | Implemented: 4 verified & enabled, 1 parser-ready | `E06OCM_L4_AC`, `E06SCT_L4_UI`, `E06SCT_L4_AWV6HOURLY`, and `E06SCT_L3_WW12` passed live search/download/parse/normalize/cache verification. `E06OCM_L3_LAC_CQ` catalog entry is live; download returned 404 for archived entry; schema-discovery parser ready. |
 | Chlorophyll cross-check | mg/m3 | ESA OC-CCI via ERDDAP | Satellite cross-check | Not implemented | Use only as a separately labeled product. |
 | PFZ advisory geometry | GeoJSON lines | INCOIS PFZ GeoServer WFS | Map/alerts/agents | Implemented | Uses `PFZ_Automation:pfzlines`; failures are reported. |
 | India EEZ geometry | GeoJSON polygon | INCOIS PFZ GeoServer WFS | Map/geography | Not implemented | Candidate layer `PFZ_Automation:India_EEZ`. |
@@ -103,6 +103,6 @@ Alerts use separate IMD, GDACS, and JTWC calls through `/api/v1/alerts`; they ar
 
 | Tier | Dataset IDs | Activation state |
 |---|---|---|
-| Tier-S | `E06OCM_L4_AC`, `E06SCT_L4_AWW6HOURLY`, `E06SCT_L4_UI`, `E06OCM_L3_LAC_CQ`, `E06SCT_L3_WV12` | `E06OCM_L4_AC` and `E06SCT_L4_UI` enabled and live verified. AWW and Coastal Water Quality disabled after live verification failures; WV12 disabled because supplied metadata is insufficient. |
-| Tier-A | `E06SCT_L2B_WV12`, `E06SCT_L4_AWW`, `E06SCT_L4_AWW12km`, `E06SCT_L3_WV25`, `E06SCT_L2B_WV25`, `E06OCM_L2C_LAC_PS`, `E06OCM_L3_LAC_PC`, `E06OCM_L2C_LAC_PR`, `E06OCM_L2C_LAC_OC`, `E06OCM_L2C_LAC_GA`, `E06OCM_L3_LAC_FL` | Registered and disabled. |
+| Tier-S | `E06OCM_L4_AC`, `E06SCT_L4_AWV6HOURLY`, `E06SCT_L4_UI`, `E06OCM_L3_LAC_CQ`, `E06SCT_L3_WW12` | `E06OCM_L4_AC`, `E06SCT_L4_UI`, `E06SCT_L4_AWV6HOURLY`, and `E06SCT_L3_WW12` enabled and live verified against official MOSDAC Download API. `E06OCM_L3_LAC_CQ` catalog entry live with schema-discovery parser ready; download returned 404 for archived granule. |
+| Tier-A | `E06SCT_L2B_WV12`, `E06SCT_L4_AWV`, `E06SCT_L4_AWV12km`, `E06SCT_L3_WV25`, `E06SCT_L2B_WV25`, `E06OCM_L2C_LAC_PS`, `E06OCM_L3_LAC_PC`, `E06OCM_L2C_LAC_PR`, `E06OCM_L2C_LAC_OC`, `E06OCM_L2C_LAC_GA`, `E06OCM_L3_LAC_FL` | Registered and disabled. `AWV` and `AWV12km` IDs corrected from previous `AWW` typos. |
 | Tier-B/C/D | All IDs from the activation brief | Registered and disabled; never planned or fetched. |

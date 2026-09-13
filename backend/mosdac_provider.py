@@ -97,22 +97,24 @@ class MosdacProvider:
                     "missing", None,
                 ).to_dict(),
             }
-        timeout = float(os.getenv("ORCA_PROVIDER_TIMEOUT_SECONDS", "12"))
+        search_timeout = float(os.getenv("ORCA_PROVIDER_TIMEOUT_SECONDS", "12"))
+        download_timeout = float(os.getenv("ORCA_MOSDAC_TIMEOUT_SECONDS", "60"))
         search_url = "https://mosdac.gov.in/apios/datasets.json"
         token_url = "https://mosdac.gov.in/download_api/gettoken"
         download_url = "https://mosdac.gov.in/download_api/download"
         search_params = {key: request[key] for key in ("startTime", "endTime", "count", "boundingBox", "gId") if request.get(key)}
         search_params["datasetId"] = spec.dataset_id
         try:
-            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-                search_response = client.get(search_url, params=search_params)
+            with httpx.Client(timeout=download_timeout, follow_redirects=True) as client:
+                search_response = client.get(search_url, params=search_params, timeout=search_timeout)
                 search_response.raise_for_status()
                 search_payload = search_response.json()
                 entries = search_payload.get("entries", [])
                 if not entries:
                     return {"status": "unavailable", "dataset_id": spec.dataset_id, "reason": "MOSDAC search returned no files."}
+                entries.sort(key=lambda e: e.get("startTime", e.get("id", "")), reverse=True)
                 entry = entries[0]
-                token_response = client.post(token_url, json={"username": self.username, "password": self.password})
+                token_response = client.post(token_url, json={"username": self.username, "password": self.password}, timeout=download_timeout)
                 if token_response.status_code in (400, 401):
                     return {"status": "authentication_failed", "dataset_id": spec.dataset_id, "reason": "MOSDAC authentication failed."}
                 token_response.raise_for_status()
@@ -123,13 +125,23 @@ class MosdacProvider:
                 raw_dir.mkdir(parents=True, exist_ok=True)
                 filename = Path(str(entry.get("identifier", entry.get("id", "mosdac_product")))).name
                 raw_file = raw_dir / filename
-                with client.stream("GET", download_url, params={"id": entry["id"]}, headers={"Authorization": f"Bearer {access_token}"}) as response:
-                    if response.status_code in (401, 404):
-                        return {"status": "download_failed", "dataset_id": spec.dataset_id, "reason": "MOSDAC download was not authorized or the product was unavailable."}
-                    response.raise_for_status()
-                    with raw_file.open("wb") as output:
-                        for chunk in response.iter_bytes():
-                            output.write(chunk)
+                for download_attempt in range(2):
+                    with client.stream("GET", download_url, params={"id": entry["id"]}, headers={"Authorization": f"Bearer {access_token}"}, timeout=download_timeout) as response:
+                        if response.status_code == 401 and download_attempt == 0:
+                            # Token expired — refresh once and retry
+                            token_response = client.post(token_url, json={"username": self.username, "password": self.password}, timeout=download_timeout)
+                            if token_response.status_code in (400, 401):
+                                return {"status": "authentication_failed", "dataset_id": spec.dataset_id, "reason": "MOSDAC token refresh failed."}
+                            token_response.raise_for_status()
+                            access_token = token_response.json().get("access_token", access_token)
+                            continue
+                        if response.status_code == 404:
+                            return {"status": "download_failed", "dataset_id": spec.dataset_id, "reason": "MOSDAC download returned 404."}
+                        response.raise_for_status()
+                        with raw_file.open("wb") as output:
+                            for chunk in response.iter_bytes():
+                                output.write(chunk)
+                        break
             result = parse_product(spec, raw_file)
             result.update({
                 "status": "live",
@@ -140,11 +152,21 @@ class MosdacProvider:
             })
             self.cache_result(spec, request, result)
             return result
+        except httpx.HTTPStatusError as exc:
+            reason = f"MOSDAC request failed: HTTP {exc.response.status_code}"
+            if exc.response.status_code == 500:
+                reason += f" — datasetId '{spec.dataset_id}' may not exist on MOSDAC (500 = unknown ID, not 404)"
+            return {
+                "status": "unavailable",
+                "dataset_id": spec.dataset_id,
+                "reason": reason,
+                "provenance": Provenance("MOSDAC", spec.dataset_id, search_url, None, fetched_at, None, "unavailable", None).to_dict(),
+            }
         except (httpx.HTTPError, KeyError, ValueError, OSError) as exc:
             return {
                 "status": "unavailable",
                 "dataset_id": spec.dataset_id,
-                "reason": f"MOSDAC request failed: {type(exc).__name__}",
+                "reason": f"MOSDAC request failed: {type(exc).__name__}: {exc}",
                 "provenance": Provenance("MOSDAC", spec.dataset_id, search_url, None, fetched_at, None, "unavailable", None).to_dict(),
             }
 
