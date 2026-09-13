@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/cache/cache_service.dart';
@@ -7,7 +8,6 @@ import '../../../../core/cache/staleness.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/live/live_channel.dart';
 import '../../../../core/network/dio_provider.dart';
-import '../../../../core/result/result.dart';
 import '../../../../core/widgets/orca_app_bar.dart';
 import '../../data/datasources/advisory_remote.dart';
 import '../../data/dto/advisory_dto.dart';
@@ -44,17 +44,31 @@ final advisoryLocationProvider = StateProvider<Map<String, double>>((ref) {
 });
 
 /// StateNotifier providing live / cached advisory state.
+///
+/// Startup sequence (stale-while-revalidate):
+/// 1. Emit cached advisory immediately (any age) — no spinner if we have data.
+/// 2. If cache was stale/missing, refresh from network in the background.
+/// 3. On pull-to-refresh, keep current data on screen and swap in the new
+///    advisory only when the fetch succeeds (no destructive spinner).
 class AdvisoryNotifier extends StateNotifier<AsyncValue<AdvisoryEntity>> {
   final Ref _ref;
   final GetAdvisoryUseCase _useCase;
+  final AdvisoryRepository _repository;
 
-  AdvisoryNotifier(this._ref, this._useCase) : super(const AsyncValue.loading()) {
-    fetch();
+  /// Guards against overlapping refreshes and lost-update races.
+  int _generation = 0;
+
+  AdvisoryNotifier(
+    this._ref,
+    this._useCase,
+    this._repository,
+  ) : super(const AsyncValue.loading()) {
+    _bootstrap();
 
     // Proactively refresh when SSE pushes data.updated event (§4, §16)
     _ref.listen(dataUpdatedStreamProvider, (prev, next) {
       next.whenData((_) {
-        fetch(forceRefresh: true);
+        fetch();
       });
     });
 
@@ -64,10 +78,27 @@ class AdvisoryNotifier extends StateNotifier<AsyncValue<AdvisoryEntity>> {
     });
   }
 
+  Future<void> _bootstrap() async {
+    final coords = _ref.read(advisoryLocationProvider);
+    final lat = coords['lat'] ?? AppConfig.defaultLat;
+    final lon = coords['lon'] ?? AppConfig.defaultLon;
+
+    // 1. Instant paint from cache (any age).
+    final cached = await _repository.getAdvisoryCached(lat: lat, lon: lon);
+    if (!mounted) return;
+    if (cached != null) {
+      state = AsyncValue.data(cached);
+    }
+
+    // 2. Background network refresh.
+    await fetch();
+  }
+
   Future<void> fetch({bool forceRefresh = false}) async {
-    state = const AsyncValue.loading();
     final isDemo = _ref.read(demoModeProvider);
     final coords = _ref.read(advisoryLocationProvider);
+    final lat = coords['lat'] ?? AppConfig.defaultLat;
+    final lon = coords['lon'] ?? AppConfig.defaultLon;
 
     if (isDemo) {
       try {
@@ -76,25 +107,39 @@ class AdvisoryNotifier extends StateNotifier<AsyncValue<AdvisoryEntity>> {
         final dto = AdvisoryDto.fromJson(json);
         final staleness = StalenessInfo.fromDateTime(DateTime.now());
         state = AsyncValue.data(dto.toEntity(staleness));
-        return;
       } catch (e, st) {
         state = AsyncValue.error(e, st);
-        return;
       }
+      return;
     }
 
+    // Only show the blocking spinner when there is nothing on screen yet.
+    if (state.valueOrNull == null) {
+      state = const AsyncValue.loading();
+    }
+
+    final generation = ++_generation;
     final result = await _useCase.execute(
-      lat: coords['lat'] ?? AppConfig.defaultLat,
-      lon: coords['lon'] ?? AppConfig.defaultLon,
+      lat: lat,
+      lon: lon,
       forceRefresh: forceRefresh,
     );
+
+    // A newer request completed (or started) meanwhile — drop this result.
+    if (generation != _generation) return;
 
     result.when(
       ok: (advisory) {
         state = AsyncValue.data(advisory);
       },
       err: (failure) {
-        state = AsyncValue.error(failure.message, StackTrace.current);
+        // Keep the current data on screen; only surface the error when the
+        // screen would otherwise be empty.
+        if (state.valueOrNull == null) {
+          state = AsyncValue.error(failure.message, StackTrace.current);
+        } else {
+          debugPrint('Advisory refresh failed (${failure.message}) — keeping cached advisory.');
+        }
       },
     );
   }
@@ -103,5 +148,6 @@ class AdvisoryNotifier extends StateNotifier<AsyncValue<AdvisoryEntity>> {
 /// Provider managing Advisory state.
 final advisoryProvider = StateNotifierProvider<AdvisoryNotifier, AsyncValue<AdvisoryEntity>>((ref) {
   final useCase = ref.watch(getAdvisoryUseCaseProvider);
-  return AdvisoryNotifier(ref, useCase);
+  final repo = ref.watch(advisoryRepositoryProvider);
+  return AdvisoryNotifier(ref, useCase, repo);
 });

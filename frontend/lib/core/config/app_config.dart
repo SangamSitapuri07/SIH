@@ -16,8 +16,10 @@ class AppConfig {
   static const double defaultLat = 18.92;
   static const double defaultLon = 72.83;
 
-  /// General network timeout for lightweight requests.
-  static const Duration connectTimeout = Duration(seconds: 15);
+  /// Connection establishment timeout — kept short so an unreachable ORCA
+  /// Box fails fast (then falls back to cache) instead of hanging the UI.
+  /// Receive/send use longer windows below.
+  static const Duration connectTimeout = Duration(seconds: 5);
   static const Duration receiveTimeout = Duration(seconds: 15);
   static const Duration sendTimeout = Duration(seconds: 15);
 

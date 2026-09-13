@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/live/live_channel.dart';
 import '../../../../core/network/dio_provider.dart';
 import '../../../../core/cache/cache_service.dart';
-import '../../../../core/result/result.dart';
+import '../../../../core/notifications/notification_service.dart';
 import '../../../../core/widgets/orca_app_bar.dart';
 import '../../data/datasources/alerts_remote.dart';
 import '../../data/dto/alert_dto.dart';
@@ -39,14 +39,28 @@ class AlertsNotifier extends StateNotifier<AsyncValue<List<AlertItem>>> {
   AlertsNotifier(this._ref, this._useCase) : super(const AsyncValue.loading()) {
     fetch();
 
-    // Listen to live SSE alert.push events (§4, §16)
+    // Listen to live SSE alert.push events (§4, §16) — render in the feed
+    // AND surface as an OS notification (Phase B proactive alerting).
     _ref.listen(alertPushStreamProvider, (prev, next) {
       next.whenData((event) {
         final data = event.jsonData;
         if (data is Map<String, dynamic>) {
           final dto = AlertDto.fromJson(data);
+          final item = dto.toEntity();
+
+          // Dedupe: the SSE stream may redeliver the same alert id after a
+          // reconnect (the replay/keepalive path) — show it once.
           final current = state.valueOrNull ?? <AlertItem>[];
-          state = AsyncValue.data(<AlertItem>[dto.toEntity(), ...current]);
+          final alreadyKnown = current.any((a) => a.id == item.id);
+          if (!alreadyKnown) {
+            state = AsyncValue.data(<AlertItem>[item, ...current]);
+            NotificationService.instance.showAlertNotification(
+              id: item.id,
+              title: item.title,
+              body: item.message,
+              severity: item.severity,
+            );
+          }
         }
       });
     });

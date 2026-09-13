@@ -9,6 +9,11 @@ import '../datasources/advisory_remote.dart';
 import '../dto/advisory_dto.dart';
 
 /// Implementation of AdvisoryRepository with cache-first and staleness guarantees (§10, §13).
+///
+/// Read pattern is stale-while-revalidate: the freshest cached advisory is
+/// always available instantly via [getAdvisoryCached] (any age), while
+/// [getAdvisory] refreshes from the ORCA Box and falls back to cache on
+/// failure so the UI never shows a spinner when cached data exists.
 class AdvisoryRepositoryImpl implements AdvisoryRepository {
   final AdvisoryRemoteDataSource _remoteDataSource;
   final CacheService _cacheService;
@@ -25,44 +30,27 @@ class AdvisoryRepositoryImpl implements AdvisoryRepository {
     required double lon,
     bool forceRefresh = false,
   }) async {
-    final cacheKey = 'advisory_${lat.toStringAsFixed(2)}_${lon.toStringAsFixed(2)}';
+    final cacheKey = _cacheKey(lat, lon);
     final cached = _cacheService.get(cacheKey);
 
-    // 1. If not forcing refresh and cache is fresh, emit cached
+    // 1. If not forcing refresh and cache is fresh, emit cached instantly.
+    //    A refresh is scheduled in the background by the provider layer.
     if (!forceRefresh && cached != null && !cached.isExpired) {
       final dto = AdvisoryDto.fromJson(cached.data);
       return Result.ok(dto.toEntity(cached.staleness));
     }
 
-    // 2. Fetch live data
+    // 2. Fetch live data.
     try {
       final dto = await _remoteDataSource.getAdvisory(lat: lat, lon: lon);
 
-      // Write-through to cache
-      final jsonMap = <String, dynamic>{
-        'verdict': dto.verdict,
-        'color': dto.color,
-        'headline': dto.headline,
-        'headline_hi': dto.headlineHi,
-        'plain_en': dto.plainEn,
-        'plain_hi': dto.plainHi,
-        'safe_window': dto.safeWindowJson,
-        'variables': dto.variablesJson,
-        'hourly_chart': dto.hourlyChartJson,
-        'sources': dto.sources,
-        'data_coverage': {
-          'known': dto.knownSources,
-          'total': dto.totalSources,
-          'sources_failed': dto.sourcesFailed,
-        },
-        'timestamp': DateTime.now().toIso8601String(),
-      };
-      await _cacheService.put(cacheKey, jsonMap);
+      // Write-through to cache.
+      await _cacheService.put(cacheKey, _dtoToCacheMap(dto));
 
       final freshStaleness = StalenessInfo.fromDateTime(DateTime.now());
       return Result.ok(dto.toEntity(freshStaleness));
     } on DioException catch (dioErr) {
-      // 3. Network error -> Fall back to cache if present with honest staleness
+      // 3. Network error -> fall back to cache if present with honest staleness.
       if (cached != null) {
         final dto = AdvisoryDto.fromJson(cached.data);
         return Result.ok(dto.toEntity(cached.staleness));
@@ -84,4 +72,41 @@ class AdvisoryRepositoryImpl implements AdvisoryRepository {
       return Result.err(AppFailure.unknown(e.toString()));
     }
   }
+
+  @override
+  Future<AdvisoryEntity?> getAdvisoryCached({
+    required double lat,
+    required double lon,
+  }) async {
+    final cached = _cacheService.get(_cacheKey(lat, lon));
+    if (cached == null) return null;
+    try {
+      final dto = AdvisoryDto.fromJson(cached.data);
+      return dto.toEntity(cached.staleness);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _cacheKey(double lat, double lon) =>
+      'advisory_${lat.toStringAsFixed(2)}_${lon.toStringAsFixed(2)}';
+
+  Map<String, dynamic> _dtoToCacheMap(AdvisoryDto dto) => <String, dynamic>{
+        'verdict': dto.verdict,
+        'color': dto.color,
+        'headline': dto.headline,
+        'headline_hi': dto.headlineHi,
+        'plain_en': dto.plainEn,
+        'plain_hi': dto.plainHi,
+        'safe_window': dto.safeWindowJson,
+        'variables': dto.variablesJson,
+        'hourly_chart': dto.hourlyChartJson,
+        'sources': dto.sources,
+        'data_coverage': {
+          'known': dto.knownSources,
+          'total': dto.totalSources,
+          'sources_failed': dto.sourcesFailed,
+        },
+        'timestamp': DateTime.now().toIso8601String(),
+      };
 }

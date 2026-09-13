@@ -3,7 +3,9 @@ import time
 import math
 import csv
 import io
+import threading
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, List
 import httpx
 from gfw_provider import GfwProvider
@@ -18,6 +20,12 @@ class DataProvidersEngine:
 
     def __init__(self):
         self.gfw = GfwProvider()
+        # TTL cache for zone snapshots: identical coordinates within the TTL
+        # return instantly instead of re-hitting every upstream provider.
+        self._snapshot_cache: Dict[str, Dict[str, Any]] = {}
+        self._snapshot_cache_times: Dict[str, float] = {}
+        self._snapshot_cache_lock = threading.Lock()
+        self._snapshot_ttl_s = float(os.getenv("SNAPSHOT_CACHE_TTL_S", "600"))
         self.provider_status = {
             "open_meteo_marine": {"name": "Open-Meteo Marine (MFWAM/ECMWF)", "status": "OK", "latency_ms": 142},
             "open_meteo_forecast": {"name": "Open-Meteo Forecast (ECMWF IFS)", "status": "OK", "latency_ms": 115},
@@ -149,7 +157,12 @@ class DataProvidersEngine:
         return False
 
     def fetch_zone_snapshot(self, lat: float, lon: float, include_gfw: bool = False) -> Dict[str, Any]:
-        """Fetch live marine and forecast observations for a coordinate."""
+        """Fetch live marine and forecast observations for a coordinate.
+
+        Results are cached per (lat, lon) for SNAPSHOT_CACHE_TTL_S seconds
+        (default 10 min) — repeat requests within the window are served from
+        memory in microseconds instead of re-fetching all upstream sources.
+        """
         now_ts = int(time.time())
         on_land = self.is_land(lat, lon)
 
@@ -160,6 +173,12 @@ class DataProvidersEngine:
                 "latitude": lat,
                 "longitude": lon
             }
+
+        cache_key = f"{round(lat, 2)}_{round(lon, 2)}_{bool(include_gfw)}"
+        with self._snapshot_cache_lock:
+            cached_ts = self._snapshot_cache_times.get(cache_key)
+            if cached_ts is not None and (now_ts - cached_ts) < self._snapshot_ttl_s:
+                return dict(self._snapshot_cache[cache_key])
 
         marine_url = "https://marine-api.open-meteo.com/v1/marine"
         forecast_url = "https://api.open-meteo.com/v1/forecast"
@@ -211,10 +230,22 @@ class DataProvidersEngine:
                 "longitude": lon,
             }
 
-        chlorophyll = self.fetch_noaa_chlorophyll(lat, lon)
-        pfz = self.fetch_incois_pfz()
-        gfw_effort = self.gfw.fetch_effort(lat, lon) if include_gfw else {"status": "not_requested", "source": "Global Fishing Watch"}
-        gfw_fleet = self.gfw.fetch_fishing_vessels_in_region(lat, lon) if include_gfw else {"status": "not_requested", "source": "Global Fishing Watch"}
+        # Secondary sources (NOAA, INCOIS, GFW) each have their own bounded
+        # timeout — run them concurrently instead of serially (was up to ~30s
+        # worst case, now ~= the slowest single source).
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {
+                "chlorophyll": pool.submit(self.fetch_noaa_chlorophyll, lat, lon),
+                "pfz": pool.submit(self.fetch_incois_pfz),
+            }
+            if include_gfw:
+                futures["gfw_effort"] = pool.submit(self.gfw.fetch_effort, lat, lon)
+                futures["gfw_fleet"] = pool.submit(self.gfw.fetch_fishing_vessels_in_region, lat, lon)
+
+            chlorophyll = futures["chlorophyll"].result()
+            pfz = futures["pfz"].result()
+            gfw_effort = futures["gfw_effort"].result() if "gfw_effort" in futures else {"status": "not_requested", "source": "Global Fishing Watch"}
+            gfw_fleet = futures["gfw_fleet"].result() if "gfw_fleet" in futures else {"status": "not_requested", "source": "Global Fishing Watch"}
         sources_used = [
             {"name": "Open-Meteo Marine", "dataset": "Live marine current", "latency_ms": latency_ms, "status": "FRESH"},
             {"name": "Open-Meteo Forecast", "dataset": "Live ECMWF forecast current", "latency_ms": latency_ms, "status": "FRESH"},
@@ -234,7 +265,7 @@ class DataProvidersEngine:
             elif include_gfw:
                 sources_failed.append(gfw_result)
 
-        return {
+        result = {
             "latitude": lat,
             "longitude": lon,
             "timestamp": now_ts,
@@ -268,6 +299,11 @@ class DataProvidersEngine:
             "sources_used": sources_used,
             "sources_failed": sources_failed
         }
+
+        with self._snapshot_cache_lock:
+            self._snapshot_cache[cache_key] = result
+            self._snapshot_cache_times[cache_key] = now_ts
+        return result
 
     def verify_route(self, from_lat: float, from_lon: float, to_lat: float, to_lon: float) -> Dict[str, Any]:
         """Verify route course against GLOBE 1km land mask every 2km."""

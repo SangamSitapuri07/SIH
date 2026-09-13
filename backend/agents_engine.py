@@ -1,4 +1,5 @@
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, List
 
 from ollama_client import ollama
@@ -57,7 +58,11 @@ class MultiAgentEngine:
         }
 
     def run_collaborative_reasoning(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
-        """Runs all 11 agents in sequence and produces structured trace & final verdict."""
+        """Runs all 11 agents and produces structured trace & final verdict.
+
+        LLM/Analytical agents run concurrently through a thread pool: total
+        latency ~= slowest single LLM call instead of the sum of five.
+        """
         lat = snapshot.get("latitude", 20.9)
         lon = snapshot.get("longitude", 70.37)
         vars = snapshot.get("variables", {})
@@ -74,6 +79,75 @@ class MultiAgentEngine:
         source_names = [source.get("name", "unknown") for source in snapshot.get("sources_used", [])]
         current_text = f"{current_kn:.1f} kn" if current_kn is not None else "unavailable"
         pfz_text = "Official PFZ geometry is available." if snapshot.get("pfz") else "Official PFZ geometry unavailable."
+
+        # Deterministic Marine Risk verdict (Agent 10 logic) — pure arithmetic,
+        # computed up front so the Orchestrator LLM can run in parallel with
+        # the other analytical agents using the real verdict as evidence.
+        # Thresholds:
+        # Wave: < 2.5 Good, >= 2.5 Caution, >= 4.0 Danger
+        # Gust: >= 34 Danger
+        # Sustained Wind: >= 20 Caution
+        risk_level = "GOOD"
+        reasons = []
+
+        if wave_h >= 4.0 or gust_kn >= 34.0:
+            risk_level = "NO-GO"
+            if wave_h >= 4.0: reasons.append(f"High waves ({wave_h:.1f} m >= 4.0 m threshold)")
+            if gust_kn >= 34.0: reasons.append(f"Dangerous wind gusts ({gust_kn:.1f} kn >= 34 kn gale threshold)")
+        elif wave_h >= 2.5 or wind_kn >= 20.0:
+            risk_level = "CAUTION"
+            if wave_h >= 2.5: reasons.append(f"Moderate waves ({wave_h:.1f} m >= 2.5 m threshold)")
+            if wind_kn >= 20.0: reasons.append(f"Brisk wind ({wind_kn:.1f} kn >= 20 kn threshold)")
+        else:
+            risk_level = "GOOD"
+            reasons.append("Waves and wind are within safe small-craft limits.")
+
+        # Kick off all six LLM/Analytical agents in parallel. Every call is
+        # individually timeout-bounded with a deterministic fallback, so a slow
+        # or offline Ollama degrades gracefully instead of stacking 6x.
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            ocean_future = pool.submit(
+                self._analytical_finding,
+                "ocean_analysis",
+                [f"wave height {wave_h:.1f} m", f"wave period {vars.get('wave_period_s', 'unavailable')} s", f"current {current_text}"],
+                f"Wave height is {wave_h:.1f} m with swell period {vars.get('wave_period_s', 'unavailable')} s. Surface currents at {current_text}.",
+            )
+            satellite_future = pool.submit(
+                self._analytical_finding,
+                "satellite_analysis",
+                [f"chlorophyll-a {chl} mg/m³", f"SST {vars.get('sst_celsius')} °C"],
+                f"Chlorophyll-a density measured at {chl} mg/m³." if chl is not None else "Chlorophyll measurement unavailable.",
+            )
+            weather_future = pool.submit(
+                self._analytical_finding,
+                "weather_hazard",
+                [f"sustained wind {wind_kn:.1f} kn", f"wind gust {gust_kn:.1f} kn", "source: Open-Meteo Forecast"],
+                f"Wind sustained at {wind_kn:.1f} kn with peak gusts reaching {gust_kn:.1f} kn.",
+            )
+            ecology_future = pool.submit(
+                self._analytical_finding,
+                "marine_ecology",
+                [f"chlorophyll-a {chl} mg/m³", f"SST {vars.get('sst_celsius')} °C"],
+                "Ecological interpretation is unavailable without a validated chlorophyll measurement.",
+            )
+            pfz_future = pool.submit(
+                self._analytical_finding,
+                "fisheries_pfz",
+                [f"PFZ features returned: {len(snapshot.get('pfz', []))}", f"chlorophyll-a {chl} mg/m³"],
+                "PFZ interpretation is unavailable without validated official PFZ geometry and measurements.",
+            )
+            orchestrator_future = pool.submit(
+                self._analytical_finding,
+                "orchestrator",
+                [f"deterministic risk level {risk_level}", *reasons, f"wave height {wave_h:.1f} m", f"wind gust {gust_kn:.1f} kn"],
+                f"Deterministic Marine Risk result is {risk_level}. Follow the stated safety advice.",
+            )
+            ocean_llm = ocean_future.result()
+            satellite_llm = satellite_future.result()
+            weather_llm = weather_future.result()
+            ecology_llm = ecology_future.result()
+            pfz_llm = pfz_future.result()
+            orchestrator_llm = orchestrator_future.result()
 
         # Agent 1: Data Validation
         val_agent = {
@@ -103,11 +177,6 @@ class MultiAgentEngine:
 
         # Agent 3: Ocean Analysis
         ocean_verdict = "SAFE" if wave_h < 2.5 else ("CAUTION" if wave_h < 4.0 else "DANGER")
-        ocean_llm = self._analytical_finding(
-            "ocean_analysis",
-            [f"wave height {wave_h:.1f} m", f"wave period {vars.get('wave_period_s', 'unavailable')} s", f"current {current_text}"],
-            f"Wave height is {wave_h:.1f} m with swell period {vars.get('wave_period_s', 'unavailable')} s. Surface currents at {current_text}.",
-        )
         ocean_agent = {
             "agent_id": "ocean_analysis",
             "agent_name": "Ocean Analysis Agent",
@@ -119,11 +188,6 @@ class MultiAgentEngine:
         }
 
         # Agent 4: Satellite Analysis
-        satellite_llm = self._analytical_finding(
-            "satellite_analysis",
-            [f"chlorophyll-a {chl} mg/m³", f"SST {vars.get('sst_celsius')} °C"],
-            f"Chlorophyll-a density measured at {chl} mg/m³." if chl is not None else "Chlorophyll measurement unavailable.",
-        )
         sat_agent = {
             "agent_id": "satellite_analysis",
             "agent_name": "Satellite Analysis Agent",
@@ -136,11 +200,6 @@ class MultiAgentEngine:
 
         # Agent 5: Weather Hazard
         weather_verdict = "SAFE" if gust_kn < 34 and wind_kn < 20 else ("CAUTION" if wind_kn < 34 else "DANGER")
-        weather_llm = self._analytical_finding(
-            "weather_hazard",
-            [f"sustained wind {wind_kn:.1f} kn", f"wind gust {gust_kn:.1f} kn", "source: Open-Meteo Forecast"],
-            f"Wind sustained at {wind_kn:.1f} kn with peak gusts reaching {gust_kn:.1f} kn.",
-        )
         weather_agent = {
             "agent_id": "weather_hazard",
             "agent_name": "Weather Hazard Agent",
@@ -165,11 +224,6 @@ class MultiAgentEngine:
         }
 
         # Agent 7: Marine Ecology
-        ecology_llm = self._analytical_finding(
-            "marine_ecology",
-            [f"chlorophyll-a {chl} mg/m³", f"SST {vars.get('sst_celsius')} °C"],
-            "Ecological interpretation is unavailable without a validated chlorophyll measurement.",
-        )
         ecology_agent = {
             "agent_id": "marine_ecology",
             "agent_name": "Marine Ecology Agent",
@@ -181,11 +235,6 @@ class MultiAgentEngine:
         }
 
         # Agent 8: Fisheries / PFZ
-        pfz_llm = self._analytical_finding(
-            "fisheries_pfz",
-            [f"PFZ features returned: {len(snapshot.get('pfz', []))}", f"chlorophyll-a {chl} mg/m³"],
-            "PFZ interpretation is unavailable without validated official PFZ geometry and measurements.",
-        )
         pfz_agent = {
             "agent_id": "fisheries_pfz",
             "agent_name": "Fisheries / PFZ Agent",
@@ -209,26 +258,7 @@ class MultiAgentEngine:
             "warnings": []
         }
 
-        # Agent 10: Marine Risk (Worst-Case Fold Rules)
-        # Thresholds:
-        # Wave: < 2.5 Good, >= 2.5 Caution, >= 4.0 Danger
-        # Gust: >= 34 Danger
-        # Sustained Wind: >= 20 Caution
-        risk_level = "GOOD"
-        reasons = []
-
-        if wave_h >= 4.0 or gust_kn >= 34.0:
-            risk_level = "NO-GO"
-            if wave_h >= 4.0: reasons.append(f"High waves ({wave_h:.1f} m >= 4.0 m threshold)")
-            if gust_kn >= 34.0: reasons.append(f"Dangerous wind gusts ({gust_kn:.1f} kn >= 34 kn gale threshold)")
-        elif wave_h >= 2.5 or wind_kn >= 20.0:
-            risk_level = "CAUTION"
-            if wave_h >= 2.5: reasons.append(f"Moderate waves ({wave_h:.1f} m >= 2.5 m threshold)")
-            if wind_kn >= 20.0: reasons.append(f"Brisk wind ({wind_kn:.1f} kn >= 20 kn threshold)")
-        else:
-            risk_level = "GOOD"
-            reasons.append("Waves and wind are within safe small-craft limits.")
-
+        # Agent 10: Marine Risk (Worst-Case Fold Rules) — computed up front.
         risk_agent = {
             "agent_id": "marine_risk",
             "agent_name": "Marine Risk Agent",
@@ -284,12 +314,6 @@ class MultiAgentEngine:
                 f"तेज हवा के झोंके {gust_kn:.1f} समुद्री मील तक हैं जो सुरक्षा सीमा से अधिक हैं।",
                 "मौसम की चेतावनी हटने तक बंदरगाह पर ही रहें।"
             ]
-
-        orchestrator_llm = self._analytical_finding(
-            "orchestrator",
-            [f"deterministic risk level {risk_level}", *reasons, f"wave height {wave_h:.1f} m", f"wind gust {gust_kn:.1f} kn"],
-            f"Deterministic Marine Risk result is {risk_level}. Follow the stated safety advice.",
-        )
 
         orchestrator_agent = {
             "agent_id": "orchestrator",

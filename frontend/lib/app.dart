@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'main.dart' show appAlertTapHandler;
 import 'core/theme/orca_theme.dart';
 import 'core/theme/verdict_colors.dart';
 import 'core/cache/cache_service.dart';
@@ -23,7 +24,7 @@ import 'l10n/app_localizations.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final onboarding = ref.watch(cacheServiceProvider).get('app.onboarding')?.data['complete'] == true;
-  return GoRouter(
+  final router = GoRouter(
     initialLocation: onboarding ? '/home' : '/onboarding',
     routes: [
       ShellRoute(
@@ -85,6 +86,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+
+  // Tapping a marine alert notification deep-links to the alerts feed.
+  appAlertTapHandler = (payload) => router.go('/alerts');
+
+  return router;
 });
 
 /// Main App widget configuring GoRouter, Dark Theme, and Localization (§10).
