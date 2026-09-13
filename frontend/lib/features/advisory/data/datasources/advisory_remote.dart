@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import '../../../../core/config/api_paths.dart';
+import '../../../../core/config/app_config.dart';
 import '../dto/advisory_dto.dart';
 
 /// Remote datasource communicating with /api/v1/advisory (§4).
@@ -20,9 +21,12 @@ class AdvisoryRemoteDataSource {
         'lon': lon,
       },
       options: Options(
-        connectTimeout: const Duration(seconds: 180),
-        receiveTimeout: const Duration(seconds: 180),
-        sendTimeout: const Duration(seconds: 180),
+        // Connecting to a reachable ORCA Box should fail fast; only the
+        // response window is long because advisory generation can take up to
+        // ~2 minutes when all upstream marine sources respond slowly.
+        connectTimeout: AppConfig.connectTimeout,
+        receiveTimeout: AppConfig.advisoryRequestTimeout,
+        sendTimeout: AppConfig.advisoryRequestTimeout,
       ),
     );
 

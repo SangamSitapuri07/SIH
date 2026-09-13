@@ -2,7 +2,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from fastapi import APIRouter, Query, HTTPException, Body
 from pydantic import BaseModel, Field
 
@@ -132,9 +132,38 @@ def get_reasoning(lat: float = Query(20.9), lon: float = Query(70.37), include_g
         raise HTTPException(status_code=400, detail=snap["reason"])
     return agents_engine.run_collaborative_reasoning(snap)
 
+# Advisory response cache: identical requests within the TTL are served
+# instantly (snapshot caching + parallel agents already make a fresh
+# computation fast; this removes even that cost for repeat app refreshes).
+# Hook set by main.py after the ingestion daemon starts: lets any client
+# request auto-register its coordinates into the proactive watchlist without
+# creating a circular import (routes_v1 must not import main).
+_WATCH_HOOK = None
+
+def set_watch_hook(fn) -> None:
+    global _WATCH_HOOK
+    _WATCH_HOOK = fn
+
+def _auto_watch(lat: float, lon: float) -> None:
+    if _WATCH_HOOK is not None:
+        try:
+            _WATCH_HOOK(lat, lon)
+        except Exception:  # never break the request path
+            pass
+
+_ADVISORY_CACHE: Dict[Tuple[float, float, bool], Dict[str, Any]] = {}
+_ADVISORY_CACHE_TIMES: Dict[Tuple[float, float, bool], float] = {}
+_ADVISORY_CACHE_TTL_S = 120.0
+
 @router.get("/advisory")
 def get_advisory(lat: float = Query(20.9), lon: float = Query(70.37), include_gfw: bool = Query(False)):
     """Primary Fisher Safety Advisory."""
+    cache_key = (round(lat, 2), round(lon, 2), bool(include_gfw))
+    _auto_watch(lat, lon)
+    cached_ts = _ADVISORY_CACHE_TIMES.get(cache_key)
+    if cached_ts is not None and (time.time() - cached_ts) < _ADVISORY_CACHE_TTL_S:
+        return _ADVISORY_CACHE[cache_key]
+
     snap = providers.fetch_zone_snapshot(lat, lon, include_gfw=include_gfw)
     if snap.get("error"):
         raise HTTPException(status_code=400, detail=snap["reason"])
@@ -212,6 +241,9 @@ def get_advisory(lat: float = Query(20.9), lon: float = Query(70.37), include_gf
     # Automatically archive to advisory history store
     STORE_HISTORY.insert(0, advisory_obj)
     if len(STORE_HISTORY) > 50: STORE_HISTORY.pop()
+
+    _ADVISORY_CACHE[cache_key] = advisory_obj
+    _ADVISORY_CACHE_TIMES[cache_key] = time.time()
 
     return advisory_obj
 
@@ -297,6 +329,46 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
         "points": points,
         "sources": snap.get("sources_used", [])
     }
+
+@router.post("/ingestion/test-alert")
+async def push_test_alert():
+    """Demo hook: broadcast a NO-GO verdict-change alert on the live stream.
+
+    Lets anyone verify the proactive alert path end-to-end without waiting
+    for real weather to deteriorate.
+    """
+    if _WATCH_HOOK is None:
+        raise HTTPException(status_code=503, detail="Ingestion daemon not running")
+
+    from event_hub import event_hub
+
+    now = int(time.time())
+    await event_hub.publish(
+        "alert.push",
+        {
+            # AlertDto-compatible fields (app renders these directly)
+            "id": f"alert-{now}-test",
+            "severity": "critical",
+            "title": "DANGER — do not go to sea (TEST)",
+            "title_hi": "खतरा — समुद्र में न जाएं (परीक्षण)",
+            "message": (
+                "TEST ALERT: Simulated worst-case flip to NO-GO. Waves 4.5 m, "
+                "gusts 36 kn. Return to harbour immediately."
+            ),
+            "message_hi": (
+                "परीक्षण चेतावनी: अनुकरित अत्यंत खराब स्थिति। लहरें 4.5 मीटर, "
+                "झोंके 36 समुद्री मील। तुरंत बंदरगाह लौटें।"
+            ),
+            "source": "ORCA Ingestion (Test)",
+            "issued_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+            "affected_area": "Test sector",
+            "is_active": True,
+            "category": "verdict_change",
+            "from_verdict": "CAUTION",
+            "to_verdict": "NO-GO",
+        },
+    )
+    return {"ok": True, "published": "alert.push", "alert_id": f"alert-{now}-test"}
 
 @router.get("/alerts")
 def get_alerts():

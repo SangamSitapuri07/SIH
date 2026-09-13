@@ -9,4 +9,13 @@ abstract class AdvisoryRepository {
     required double lon,
     bool forceRefresh = false,
   });
+
+  /// Returns the freshest cached advisory of any age, or null.
+  ///
+  /// Used by the presentation layer to render instantly (stale-while-
+  /// revalidate) while a network refresh runs in the background.
+  Future<AdvisoryEntity?> getAdvisoryCached({
+    required double lat,
+    required double lon,
+  });
 }
