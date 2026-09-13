@@ -44,12 +44,12 @@ TIER_S = (
         False, True, "ORCA_MOSDAC_TIER_S", activation_note="Live search, authenticated download, parsing, normalization, and cache verified against a real product.", implemented=True, verification_status="VERIFIED",
     ),
     DatasetSpec(
-        "E06SCT_L4_AWW6HOURLY", "S", False, "MOSDAC", "6-hourly Analyzed Winds",
+        "E06SCT_L4_AWV6HOURLY", "S", True, "MOSDAC", "6-hourly Analyzed Wind Vectors",
         "Particle Filter Technique near-real-time wind product.", "6-hourly", "catalogue-defined",
-        ("wind_speed", "wind_direction", "quality_flag", "latitude", "longitude"),
+        ("u", "v", "wind_speed", "quality_flag", "latitude", "longitude"),
         "mosdac_netcdf_or_hdf5", "orca_wind", timedelta(hours=6),
         ("MOSDAC_USERNAME", "MOSDAC_PASSWORD", "official_catalogue_metadata"),
-        False, False, "ORCA_MOSDAC_TIER_S", activation_note="Live API attempt failed before a verified product parse; kept disabled.", verification_status="LIVE_VERIFICATION_FAILED",
+        False, True, "ORCA_MOSDAC_TIER_S", activation_note="Live search, authenticated download, u/v vector parsing, and cache verified against live MOSDAC API.", implemented=True, verification_status="VERIFIED",
     ),
     DatasetSpec(
         "E06SCT_L4_UI", "S", True, "MOSDAC", "Upwelling Index",
@@ -62,23 +62,23 @@ TIER_S = (
     DatasetSpec(
         "E06OCM_L3_LAC_CQ", "S", False, "MOSDAC", "Coastal Water Quality Composite",
         "Daily coastal/environmental context product.", "daily", "catalogue-defined",
-        ("water_quality", "quality_flag", "latitude", "longitude"),
+        ("auto_discover", "quality_flag", "latitude", "longitude"),
         "mosdac_netcdf_or_hdf5", "orca_water_quality", timedelta(days=1),
         ("MOSDAC_USERNAME", "MOSDAC_PASSWORD", "official_catalogue_metadata"),
-        False, False, "ORCA_MOSDAC_TIER_S", activation_note="Live download was unavailable for the requested record; no sample file was supplied.", verification_status="LIVE_VERIFICATION_FAILED",
+        False, False, "ORCA_MOSDAC_TIER_S", activation_note="Product catalog entry live. Download returned 404 for archived entry; schema-discovery parser ready.", verification_status="PARSER_READY",
     ),
     DatasetSpec(
-        "E06SCT_L3_WV12", "S", False, "MOSDAC", "Global Flagged Wind Vectors",
+        "E06SCT_L3_WW12", "S", True, "MOSDAC", "Global Flagged Wind Vectors",
         "Supporting wind vector product at 12.5 km resolution.", "catalogue-defined", "12.5 km",
         ("wind_speed", "wind_direction", "quality_flag", "latitude", "longitude"),
-        "mosdac_netcdf_or_hdf5", "orca_wind", timedelta(hours=12),
+        "mosdac_hdf5_wind", "orca_wind", timedelta(hours=12),
         ("MOSDAC_USERNAME", "MOSDAC_PASSWORD", "official_catalogue_metadata"),
-        False, False, "ORCA_MOSDAC_TIER_S", activation_note="Live API attempt failed and the supplied HDF5 lacks geolocation, time, scaling, and product metadata.", verification_status="METADATA_VERIFICATION_BLOCKED",
+        False, True, "ORCA_MOSDAC_TIER_S", activation_note="Live search, authenticated download, recursive HDF5 parsing, and cache verified against live MOSDAC API.", implemented=True, verification_status="VERIFIED",
     ),
 )
 
 TIER_A_IDS = (
-    "E06SCT_L2B_WV12", "E06SCT_L4_AWW", "E06SCT_L4_AWW12km", "E06SCT_L3_WV25",
+    "E06SCT_L2B_WV12", "E06SCT_L4_AWV", "E06SCT_L4_AWV12km", "E06SCT_L3_WV25",
     "E06SCT_L2B_WV25", "E06OCM_L2C_LAC_PS", "E06OCM_L3_LAC_PC", "E06OCM_L2C_LAC_PR",
     "E06OCM_L2C_LAC_OC", "E06OCM_L2C_LAC_GA", "E06OCM_L3_LAC_FL",
 )

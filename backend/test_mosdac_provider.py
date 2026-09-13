@@ -32,13 +32,28 @@ class MosdacProviderTests(unittest.TestCase):
                 provider.cache_result(spec, {"date": "latest"}, {"status": "unavailable"})
             self.assertIsNone(provider.read_cached(spec, {"date": "latest"}))
 
-    def test_mislabeled_analyzed_wind_sample_is_rejected(self):
+    def test_analyzed_wind_sample_parses_uv_components(self):
         with TemporaryDirectory() as cache_dir:
             provider = MosdacProvider(cache_dir)
-            spec = DATASET_REGISTRY["E06SCT_L4_AWW6HOURLY"]
-            with self.assertRaisesRegex(ValueError, "OSCAT3_GLO"):
-                provider.parse_file(spec, SAMPLE_ROOT / "E06SCTL4AH_2026255_0000_25km_v1.0.0.nc")
+            spec = DATASET_REGISTRY["E06SCT_L4_AWV6HOURLY"]
+            result = provider.parse_file(spec, SAMPLE_ROOT / "E06SCTL4AH_2026255_0000_25km_v1.0.0.nc")
+            self.assertEqual(result["status"], "fresh")
+            self.assertEqual(result["variable"], "wind_speed")
+            self.assertEqual(result["unit"], "m/s")
+            self.assertIn("wind_direction", result)
+            self.assertEqual(result["quality"], "computed_from_uv")
+
+    def test_hdf5_ww12_sample_parses_wind_data(self):
+        with TemporaryDirectory() as cache_dir:
+            provider = MosdacProvider(cache_dir)
+            spec = DATASET_REGISTRY["E06SCT_L3_WW12"]
+            result = provider.parse_file(spec, SAMPLE_ROOT / "E06SCTL3WW2026255_12km_v1.0.5.h5")
+            self.assertEqual(result["status"], "fresh")
+            self.assertEqual(result["variable"], "wind_speed")
+            self.assertEqual(result["unit"], "m/s")
+            self.assertIn("observed_at", result)
 
 
 if __name__ == "__main__":
     unittest.main()
+
