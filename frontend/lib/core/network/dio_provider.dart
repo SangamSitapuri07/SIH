@@ -1,10 +1,24 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/app_config.dart';
 import '../config/api_paths.dart';
 import '../cache/cache_service.dart';
+
+/// Returns the correct default ORCA Box URL for the current platform.
+///
+/// On the Android emulator, `127.0.0.1` refers to the emulator itself, not the
+/// host laptop. The emulator reaches the host through the special alias
+/// `10.0.2.2`, so Android defaults to that. Web/desktop keep `127.0.0.1`.
+String defaultOrcaBoxUrl() {
+  if (!kIsWeb && Platform.isAndroid) {
+    return AppConfig.androidEmulatorUrl;
+  }
+  return AppConfig.defaultBaseUrl;
+}
+
 
 /// Converts the value entered by a user into an HTTP(S) ORCA Box base URL.
 ///
@@ -37,8 +51,9 @@ String? normalizeOrcaBoxUrl(String value) {
 /// State provider storing user-configured ORCA box base URL.
 final baseUrlProvider = StateProvider<String>((ref) {
   final savedUrl = ref.watch(cacheServiceProvider).get('settings.base_url')?.data['value'] as String?;
-  return normalizeOrcaBoxUrl(savedUrl ?? '') ?? AppConfig.defaultBaseUrl;
+  return normalizeOrcaBoxUrl(savedUrl ?? '') ?? defaultOrcaBoxUrl();
 });
+
 
 /// Shared Dio client provider configured with 15s timeout & retry-once interceptor.
 final dioProvider = Provider<Dio>((ref) {

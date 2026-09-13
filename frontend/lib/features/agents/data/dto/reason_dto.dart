@@ -20,14 +20,29 @@ class ReasonDto {
   });
 
   factory ReasonDto.fromJson(Map<String, dynamic> json) {
+    // The backend returns `verdict` (GOOD/CAUTION/DANGER) and top-level
+    // `headline_en` / `plain_en` rather than a nested `orchestrator_synthesis`
+    // object. Build a synthesis map from those fields when the nested form is
+    // absent so the Orchestrator card is populated.
+    final synthesis = json['orchestrator_synthesis'] as Map<String, dynamic>? ??
+        <String, dynamic>{
+          if (json['headline_en'] != null) 'headline': json['headline_en'],
+          if (json['plain_en'] is List && (json['plain_en'] as List).isNotEmpty)
+            'recommendation': (json['plain_en'] as List).join(' '),
+          if (json['timestamp'] != null) 'timestamp': json['timestamp'],
+        };
+
     return ReasonDto(
-      overallRisk: json['overall_risk'] as String? ?? 'MODERATE',
+      overallRisk: json['overall_risk'] as String? ??
+          json['verdict'] as String? ??
+          'MODERATE',
       verdict: json['verdict'] as String? ?? 'caution',
       dataCoverage: json['data_coverage'] as Map<String, dynamic>?,
       agentsList: json['agents'] as List<dynamic>?,
-      synthesisJson: json['orchestrator_synthesis'] as Map<String, dynamic>?,
+      synthesisJson: synthesis,
     );
   }
+
 
   AgentReasoningResult toEntity(StalenessInfo staleness) {
     final known = dataCoverage?['known'] as int? ?? 7;
@@ -53,20 +68,38 @@ class ReasonDto {
                   .toList() ??
               <String>[];
 
+          // The backend emits `agent_name`, `type`, `findings` and
+          // `confidence`; older fixtures used `name`, `class`, `summary`.
+          // Fall back through both so the trace is populated either way.
+          final rawStatus = a['status'] as String? ?? 'completed';
+          final rawClass =
+              (a['class'] ?? a['type'] ?? descriptor.classLabel).toString();
+          // Normalize class label to the DETERMINISTIC / LLM tags the UI shows.
+          final agentClass = rawClass.toUpperCase().contains('LLM')
+              ? 'LLM'
+              : 'DETERMINISTIC';
+          final rawVerdict = a['verdict'] as String?;
+          final verdict = rawVerdict ??
+              (rawStatus == 'completed' ? 'good' : 'caution');
+
           parsedAgents.add(
             AgentTraceFinding(
               agentId: id,
-              name: a['name'] as String? ?? descriptor.name,
-              emoji: a['emoji'] as String? ?? descriptor.emoji,
-              agentClass: a['class'] as String? ?? descriptor.classLabel,
-              status: a['status'] as String? ?? 'completed',
-              durationMs: a['duration_ms'] as int? ?? 50,
-              verdict: a['verdict'] as String? ?? 'good',
-              summary: a['summary'] as String? ?? 'Agent completed analysis.',
+              name: (a['name'] ?? a['agent_name'] ?? descriptor.name).toString(),
+              emoji: (a['emoji'] ?? descriptor.emoji).toString(),
+              agentClass: agentClass,
+              status: rawStatus,
+              durationMs: (a['duration_ms'] as num?)?.toInt() ?? 50,
+              verdict: verdict,
+              summary: (a['summary'] ??
+                      a['findings'] ??
+                      'Agent completed analysis.')
+                  .toString(),
               evidence: evidenceList,
               warnings: warningsList,
             ),
           );
+
         }
       }
     }

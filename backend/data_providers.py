@@ -1,3 +1,4 @@
+import os
 import time
 import math
 import csv
@@ -6,6 +7,7 @@ import xml.etree.ElementTree as ET
 from typing import Dict, Any, List
 import httpx
 from gfw_provider import GfwProvider
+
 
 class DataProvidersEngine:
     """
@@ -20,7 +22,12 @@ class DataProvidersEngine:
             "open_meteo_marine": {"name": "Open-Meteo Marine (MFWAM/ECMWF)", "status": "OK", "latency_ms": 142},
             "open_meteo_forecast": {"name": "Open-Meteo Forecast (ECMWF IFS)", "status": "OK", "latency_ms": 115},
             "noaa_erddap": {"name": "NOAA CoastWatch ERDDAP (Chlorophyll-a)", "status": "CONFIGURED", "latency_ms": None},
-            "isro_mosdac": {"name": "ISRO MOSDAC OCM-3 (Oceansat-3)", "status": "CREDENTIAL_REQUIRED", "latency_ms": None},
+            "isro_mosdac": {
+                "name": "ISRO MOSDAC OCM-3 (Oceansat-3)",
+                "status": "CONFIGURED" if (os.getenv("MOSDAC_USERNAME") and os.getenv("MOSDAC_PASSWORD")) else "CREDENTIAL_REQUIRED",
+                "latency_ms": None,
+            },
+
             "incois_pfz": {"name": "INCOIS PFZ (GeoServer WFS)", "status": "CONFIGURED", "latency_ms": None},
             "incois_las": {"name": "INCOIS Live Access Server", "status": "UNREACHABLE", "latency_ms": None, "reason": "GOI server connection timeout (>30s)"},
             "gfw_ais": {"name": "Global Fishing Watch (AIS Effort)", "status": "CONFIGURED" if self.gfw.configured else "TOKEN_REQUIRED", "latency_ms": None},

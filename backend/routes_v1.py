@@ -344,15 +344,17 @@ def get_alerts():
             "issued_at": props.get("fromdate"),
             "is_active": True,
         })
-    for item in cyclone.get("jtwc", [])[:10]:
+    for idx, item in enumerate(cyclone.get("jtwc", [])[:10]):
+        seed = item.get("title") or item.get("link") or "jtwc"
         alerts.append({
-            "id": f"jtwc-{abs(hash(item.get('link') or item.get('title')))}",
+            "id": f"jtwc-{abs(hash(seed))}-{idx}",
             "severity": "caution",
             "title": item.get("title") or "JTWC tropical weather headline",
             "message": "JTWC corroborating headline; full track details remain at the source.",
             "source": "JTWC",
             "is_active": True,
         })
+
     return {"alerts": alerts}
 
 @router.get("/agents")
