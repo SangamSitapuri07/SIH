@@ -31,6 +31,15 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   mocktail: ^1.0.4
 
+# Pin path_provider_foundation to a version that does not depend on the
+# `objective_c` package. objective_c uses Dart native-assets build hooks that
+# fail when the project path contains a space (e.g. "C:\Users\Aryan Singh\...").
+# path_provider_foundation is only used on iOS/macOS, so this does not affect
+# Android builds.
+dependency_overrides:
+  path_provider_foundation: 2.4.1
+
+
 flutter:
   uses-material-design: true
   generate: true

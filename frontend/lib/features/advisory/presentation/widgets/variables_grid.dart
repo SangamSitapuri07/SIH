@@ -13,14 +13,29 @@ class VariablesGrid extends StatelessWidget {
     required this.variables,
   });
 
+  /// Looks up a variable by trying each candidate key in order.
+  ///
+  /// The backend emits keys such as `wave_height_m`, `wind_speed_kn`,
+  /// `wind_gust_kn`, `sst_celsius`, `current_speed_kn`, `chlorophyll_mg_m3`,
+  /// while older fixtures used short names. Trying both keeps the grid
+  /// populated regardless of which shape the server returns.
+  VariableItem? _pick(Map<String, VariableItem> vars, List<String> keys) {
+    for (final k in keys) {
+      final v = vars[k];
+      if (v != null) return v;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final wave = variables['wave_height'];
-    final wind = variables['wind_speed'];
-    final gusts = variables['wind_gusts'];
-    final sst = variables['sea_surface_temp'];
-    final current = variables['ocean_current'];
-    final chl = variables['chlorophyll'];
+    final wave = _pick(variables, ['wave_height_m', 'wave_height', 'swell_height_m']);
+    final wind = _pick(variables, ['wind_speed_kn', 'wind_speed']);
+    final gusts = _pick(variables, ['wind_gust_kn', 'wind_gusts', 'wind_gust']);
+    final sst = _pick(variables, ['sst_celsius', 'sea_surface_temp', 'sea_temp_c']);
+    final current = _pick(variables, ['current_speed_kn', 'ocean_current', 'current_speed']);
+    final chl = _pick(variables, ['chlorophyll_mg_m3', 'chlorophyll']);
+
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

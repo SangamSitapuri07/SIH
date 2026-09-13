@@ -56,6 +56,19 @@ class ZoneDto {
     return DateFormatter.parseIso(value);
   }
 
+  /// Coerces a backend value that may be a String, num, or null into a String.
+  ///
+  /// The backend returns some direction fields as numeric degrees (e.g. `72`)
+  /// and others as compass strings (e.g. `"NE"`). Casting directly with
+  /// `as String?` throws `type 'int' is not a subtype of type 'String?'`.
+  static String? _asString(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return value;
+    if (value is num) return value.toString();
+    return value.toString();
+  }
+
+
   factory ZoneDto.fromJson(Map<String, dynamic> json) {
     final sourcesList = (json['sources'] as List<dynamic>?)
             ?.map((e) => e.toString())
@@ -75,10 +88,11 @@ class ZoneDto {
       waveHeightM: (json['wave_height_m'] as num?)?.toDouble() ?? 1.5,
       swellPeriodS: (json['swell_period_s'] as num?)?.toDouble(),
       windSpeedKn: (json['wind_speed_kn'] as num?)?.toDouble() ?? 12.0,
-      windDirection: json['wind_direction'] as String?,
+      windDirection: _asString(json['wind_direction']),
       seaTempC: (json['sea_temp_c'] as num?)?.toDouble() ?? 28.0,
       currentSpeedKn: (json['current_speed_kn'] as num?)?.toDouble() ?? 1.0,
-      currentDirection: json['current_direction'] as String?,
+      currentDirection: _asString(json['current_direction']),
+
       chlorophyllMgM3: (json['chlorophyll_mg_m3'] as num?)?.toDouble(),
       fishingEffortHours: (json['fishing_effort_hours'] as num?)?.toDouble(),
       nearestHarbour: json['nearest_harbour'] as String?,
