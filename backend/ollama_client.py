@@ -20,6 +20,7 @@ import os
 import json
 import logging
 import time
+import threading
 from typing import Optional
 
 import httpx
@@ -30,6 +31,7 @@ _DEFAULT_HOST = "http://localhost:11434"
 _DEFAULT_MODEL = "qwen3:8b"
 _DEFAULT_TIMEOUT = 120.0  # includes first-run model loading on CPU-only devices
 _MIN_TIMEOUT = 120.0
+_INTEGRATION_VERSION = "batched-v2"
 
 class OllamaClient:
     """
@@ -41,12 +43,28 @@ class OllamaClient:
     def __init__(self):
         self.host = os.getenv("OLLAMA_HOST", _DEFAULT_HOST).rstrip("/")
         self.model = os.getenv("OLLAMA_MODEL", _DEFAULT_MODEL).strip()
-        configured_timeout = float(os.getenv("OLLAMA_TIMEOUT_S", str(_DEFAULT_TIMEOUT)))
+        try:
+            configured_timeout = float(os.getenv("OLLAMA_TIMEOUT_S", str(_DEFAULT_TIMEOUT)))
+        except (TypeError, ValueError):
+            configured_timeout = _DEFAULT_TIMEOUT
         # Older ORCA .env files used 25s. That is shorter than a Qwen3:8b cold
         # start on CPU and caused a false "not connected" result.
+        self.configured_timeout = configured_timeout
         self.timeout = max(_MIN_TIMEOUT, configured_timeout)
         self._available: Optional[bool] = None  # lazily determined
         self._installed_models: list[str] = []
+        # Ollama generally executes one heavyweight local model efficiently at
+        # a time. Serialize generation even when advisory, reasoning and the
+        # ingestion daemon arrive together.
+        self._generation_lock = threading.Lock()
+        self._cooldown_until = 0.0
+        self._last_generation: dict = {"status": "not_attempted"}
+        if configured_timeout < _MIN_TIMEOUT:
+            logger.warning(
+                "[Ollama] Ignoring legacy OLLAMA_TIMEOUT_S=%.1f; effective timeout is %.1fs.",
+                configured_timeout,
+                self.timeout,
+            )
 
     def is_available(self) -> bool:
         """Check whether Ollama is reachable. Cached after first successful probe."""
@@ -113,37 +131,90 @@ class OllamaClient:
         if system:
             payload["system"] = system
 
-        try:
-            t0 = time.monotonic()
-            resp = httpx.post(
-                f"{self.host}/api/generate",
-                json=payload,
-                timeout=self.timeout,
+        now = time.monotonic()
+        if now < self._cooldown_until:
+            remaining = int(self._cooldown_until - now)
+            logger.info(
+                "[Ollama] Generation cooldown active for %ss — using deterministic fallback.",
+                remaining,
             )
-            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            return None
 
-            if resp.status_code != 200:
-                logger.error(f"[Ollama] HTTP {resp.status_code}: {resp.text[:200]}")
+        # Re-check cooldown after acquiring the lock: another request may have
+        # timed out while this request was waiting.
+        with self._generation_lock:
+            now = time.monotonic()
+            if now < self._cooldown_until:
+                return None
+            try:
+                t0 = time.monotonic()
+                resp = httpx.post(
+                    f"{self.host}/api/generate",
+                    json=payload,
+                    timeout=self.timeout,
+                )
+                elapsed_ms = int((time.monotonic() - t0) * 1000)
+
+                if resp.status_code != 200:
+                    self._last_generation = {
+                        "status": "http_error",
+                        "http_status": resp.status_code,
+                        "duration_ms": elapsed_ms,
+                    }
+                    logger.error("[Ollama] HTTP %s: %s", resp.status_code, resp.text[:200])
+                    return None
+
+                data = resp.json()
+                response_text = data.get("response", "").strip()
+                self._last_generation = {
+                    "status": "success" if response_text else "empty_response",
+                    "duration_ms": elapsed_ms,
+                    "response_chars": len(response_text),
+                }
+                logger.info(
+                    "[Ollama] %s responded in %s ms (%s chars)",
+                    self.model,
+                    elapsed_ms,
+                    len(response_text),
+                )
+                return response_text if response_text else None
+
+            except httpx.TimeoutException:
+                # Do not let several queued requests each consume a full cold-
+                # start timeout. One timeout opens a short circuit-breaker;
+                # deterministic safety output remains immediately available.
+                self._cooldown_until = time.monotonic() + 60.0
+                self._last_generation = {
+                    "status": "timeout",
+                    "timeout_s": self.timeout,
+                    "cooldown_s": 60,
+                }
+                logger.warning(
+                    "[Ollama] Generation timed out after %.1fs at %s. The server is reachable; "
+                    "use a smaller OLLAMA_MODEL or raise OLLAMA_TIMEOUT_S. A 60s cooldown is active.",
+                    self.timeout,
+                    self.host,
+                )
+                # A generation timeout does not mean the server disconnected.
+                return None
+            except Exception as e:
+                self._last_generation = {"status": "error", "detail": str(e)}
+                logger.exception("[Ollama] Unexpected generation error")
                 return None
 
-            data = resp.json()
-            response_text = data.get("response", "").strip()
-            logger.info(f"[Ollama] {self.model} responded in {elapsed_ms} ms ({len(response_text)} chars)")
-            return response_text if response_text else None
-
-        except httpx.TimeoutException:
-            logger.warning(
-                "[Ollama] Generation timed out after %.1fs at %s. The server is reachable; "
-                "use a smaller OLLAMA_MODEL or raise OLLAMA_TIMEOUT_S.",
-                self.timeout,
-                self.host,
-            )
-            # A generation timeout does not mean the Ollama server disconnected.
-            # Keep reachability true so a later warm-model request can succeed.
-            return None
-        except Exception as e:
-            logger.error(f"[Ollama] Unexpected error: {e}")
-            return None
+    def log_configuration(self) -> None:
+        """Emit an unmistakable startup signature for stale-server diagnosis."""
+        available = self.is_available()
+        logger.warning(
+            "[Ollama] ORCA integration %s | mode=single-batched | host=%s | "
+            "model=%s | timeout=%.1fs | reachable=%s | installed=%s",
+            _INTEGRATION_VERSION,
+            self.host,
+            self.model,
+            self.timeout,
+            available,
+            ", ".join(self._installed_models) or "none",
+        )
 
     def health(self) -> dict:
         """Return Ollama health info for the /api/v1/health endpoint."""
@@ -152,7 +223,13 @@ class OllamaClient:
             "available": available,
             "host": self.host,
             "model": self.model,
-            "timeout_s": self.timeout,
+            "integration_version": _INTEGRATION_VERSION,
+            "inference_mode": "single_batched_request",
+            "configured_timeout_s": self.configured_timeout,
+            "effective_timeout_s": self.timeout,
+            "generation_serialized": True,
+            "cooldown_remaining_s": max(0, int(self._cooldown_until - time.monotonic())),
+            "last_generation": dict(self._last_generation),
         }
         if available:
             try:

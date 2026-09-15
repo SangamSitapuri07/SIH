@@ -14,6 +14,7 @@ load_dotenv(Path(__file__).with_name(".env"))
 from event_hub import event_hub
 import routes_v1
 from routes_v1 import router as v1_router, providers, agents_engine
+from ollama_client import ollama
 from routes_v1 import _ADVISORY_CACHE, _ADVISORY_CACHE_TIMES
 from ingestion import IngestionDaemon
 
@@ -25,6 +26,10 @@ ingestion_daemon: IngestionDaemon | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global ingestion_daemon
+    # This signature must appear once after every real server restart. If logs
+    # still mention six 25-second requests, an older checkout/process is being
+    # run rather than this integration.
+    ollama.log_configuration()
     ingestion_daemon = IngestionDaemon(
         providers_engine=providers,
         agents_engine=agents_engine,
