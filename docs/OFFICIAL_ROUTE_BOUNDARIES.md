@@ -1,6 +1,8 @@
-# Official route-boundary contract
+# Route-boundary contract
 
-ORCA routing is fail-closed. Set `ORCA_BOUNDARY_GEOJSON` to an authority-issued WGS84 GeoJSON FeatureCollection. A missing, invalid, or expired file produces `BOUNDARY_UNVERIFIED`; it never falls back to OpenStreetMap or hand-written coast boxes.
+With no `ORCA_BOUNDARY_GEOJSON`, the first route request automatically downloads and caches the public Marine Regions v12 mainland/Lakshadweep and Andaman/Nicobar India EEZ polygons at `~/.orca/india_eez_v12.geojson`. This enables EEZ/coast geometry routing but remains `REFERENCE_AVAILABLE`: it is not Indian NHO ENC or restricted-area clearance. `POST /api/v1/route-boundaries/refresh` retries the download.
+
+For authority-issued navigation data, set `ORCA_BOUNDARY_GEOJSON` to a WGS84 GeoJSON FeatureCollection. An invalid or expired operator file fails closed; it never falls back to OpenStreetMap or hand-written coast boxes.
 
 ```json
 {

@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 
 REQUIRED_METADATA = ("authority", "dataset", "version", "published_at")
@@ -50,6 +52,35 @@ def _inside_ring(lat: float, lon: float, ring: list[list[float]]) -> bool:
     return inside
 
 
+def _simplify_ring(ring: list[list[float]], tolerance: float = 0.0025) -> list[list[float]]:
+    """Douglas-Peucker simplification (~250 m) for tractable reference routing."""
+    if len(ring) <= 4: return ring
+    def distance(point: list[float], start: list[float], end: list[float]) -> float:
+        dx, dy = end[0]-start[0], end[1]-start[1]
+        if dx == dy == 0: return math.hypot(point[0]-start[0], point[1]-start[1])
+        t = max(0.0, min(1.0, ((point[0]-start[0])*dx+(point[1]-start[1])*dy)/(dx*dx+dy*dy)))
+        return math.hypot(point[0]-(start[0]+t*dx), point[1]-(start[1]+t*dy))
+    def rdp(points: list[list[float]]) -> list[list[float]]:
+        index, maximum = 0, 0.0
+        for i in range(1, len(points)-1):
+            value = distance(points[i], points[0], points[-1])
+            if value > maximum: index, maximum = i, value
+        if maximum > tolerance:
+            left, right = rdp(points[:index+1]), rdp(points[index:])
+            return left[:-1] + right
+        return [points[0], points[-1]]
+    closed = ring[0] == ring[-1]
+    simplified = rdp(ring[:-1] if closed else ring)
+    if closed and simplified[0] != simplified[-1]: simplified.append(simplified[0])
+    return simplified if len(simplified) >= 4 else ring
+
+
+def _simplify_geometry(geometry: dict[str, Any]) -> None:
+    kind, coords = geometry.get("type"), geometry.get("coordinates", [])
+    if kind == "Polygon": geometry["coordinates"] = [_simplify_ring(ring) for ring in coords]
+    elif kind == "MultiPolygon": geometry["coordinates"] = [[_simplify_ring(ring) for ring in polygon] for polygon in coords]
+
+
 def _inside_geometry(lat: float, lon: float, geometry: dict[str, Any]) -> bool:
     kind, coords = geometry.get("type"), geometry.get("coordinates", [])
     polygons = [coords] if kind == "Polygon" else coords if kind == "MultiPolygon" else []
@@ -69,47 +100,118 @@ class BoundaryState:
 
 
 class OfficialBoundaryStore:
+    """Load an operator GeoJSON, or lazily cache Marine Regions India EEZ.
+
+    Marine Regions is a public reference boundary, not an Indian NHO ENC and
+    not evidence of regulatory/no-entry clearance.  That distinction is kept
+    in metadata and every route response.
+    """
+    _WFS = "https://geo.vliz.be/geoserver/MarineRegions/wfs"
+    _NAMES = (
+        "Indian Exclusive Economic Zone",
+        "Indian Exclusive Economic Zone (Andaman and Nicobar Islands)",
+    )
+
     def __init__(self, path: str | None = None):
         self.path = path or os.getenv("ORCA_BOUNDARY_GEOJSON")
+        self.cache_path = Path(os.getenv("ORCA_EEZ_CACHE_PATH", str(Path.home() / ".orca" / "india_eez_v12.geojson")))
         self.features: list[dict[str, Any]] = []
         self.state = self._load()
 
+    def _validate(self, raw: bytes, *, reference: bool = False) -> BoundaryState:
+        payload = json.loads(raw)
+        metadata = payload.get("metadata") or {}
+        missing = [key for key in REQUIRED_METADATA if not metadata.get(key)]
+        if payload.get("type") != "FeatureCollection" or missing:
+            raise ValueError("invalid FeatureCollection metadata; missing: " + ", ".join(missing))
+        expires = metadata.get("expires_at")
+        if expires and datetime.fromisoformat(str(expires).replace("Z", "+00:00")) <= datetime.now(timezone.utc):
+            raise ValueError("boundary dataset has expired")
+        features = payload.get("features") or []
+        roles = {str((f.get("properties") or {}).get("orca_role", "")).lower() for f in features}
+        if "navigable" not in roles:
+            raise ValueError("at least one feature with orca_role=navigable is required")
+        for feature in features:
+            if (feature.get("geometry") or {}).get("type") not in {"Polygon", "MultiPolygon"}:
+                raise ValueError("only Polygon and MultiPolygon boundary features are accepted")
+        self.features = features
+        status = "REFERENCE_AVAILABLE" if reference else "AVAILABLE"
+        reason = ("Marine Regions EEZ v12 reference loaded; coastline/EEZ geometry can be routed, "
+                  "but restricted-area and regulatory clearance remain unverified.") if reference else "Authority boundary loaded and validated."
+        return BoundaryState(True, status, reason, metadata, hashlib.sha256(raw).hexdigest())
+
     def _load(self) -> BoundaryState:
-        if not self.path:
-            return BoundaryState(False, "OFFICIAL_BOUNDARY_REQUIRED", "Set ORCA_BOUNDARY_GEOJSON to an authority-issued GeoJSON file.", {})
         try:
-            raw = Path(self.path).read_bytes(); payload = json.loads(raw)
-            metadata = payload.get("metadata") or {}
-            missing = [key for key in REQUIRED_METADATA if not metadata.get(key)]
-            if payload.get("type") != "FeatureCollection" or missing:
-                raise ValueError("invalid FeatureCollection metadata; missing: " + ", ".join(missing))
-            expires = metadata.get("expires_at")
-            if expires and datetime.fromisoformat(str(expires).replace("Z", "+00:00")) <= datetime.now(timezone.utc):
-                raise ValueError("official boundary dataset has expired")
-            features = payload.get("features") or []
-            roles = {str((f.get("properties") or {}).get("orca_role", "")).lower() for f in features}
-            if "navigable" not in roles:
-                raise ValueError("at least one feature with orca_role=navigable is required")
-            for feature in features:
-                if (feature.get("geometry") or {}).get("type") not in {"Polygon", "MultiPolygon"}:
-                    raise ValueError("only Polygon and MultiPolygon boundary features are accepted")
-            self.features = features
-            return BoundaryState(True, "AVAILABLE", "Authority boundary loaded and validated.", metadata, hashlib.sha256(raw).hexdigest())
+            if self.path:
+                return self._validate(Path(self.path).read_bytes())
+            if self.cache_path.exists():
+                return self._validate(self.cache_path.read_bytes(), reference=True)
+            return BoundaryState(False, "REFERENCE_DOWNLOAD_REQUIRED", "India EEZ reference will download automatically on the first route request.", {})
         except Exception as exc:
             return BoundaryState(False, "BOUNDARY_INVALID", str(exc), {})
+
+    def ensure_ready(self) -> None:
+        if self.state.ready or self.path:
+            return
+        try:
+            features: list[dict[str, Any]] = []
+            for name in self._NAMES:
+                params = {
+                    "service": "WFS", "version": "1.0.0", "request": "GetFeature",
+                    "typeName": "MarineRegions:eez", "outputFormat": "application/json",
+                    "CQL_FILTER": f"geoname='{name}'",
+                }
+                request = Request(self._WFS + "?" + urlencode(params), headers={"User-Agent": "ORCA-Box/3.0", "Accept": "application/json"})
+                last_error: Exception | None = None
+                payload = None
+                for _attempt in range(3):
+                    try:
+                        with urlopen(request, timeout=60) as response:
+                            payload = json.load(response)
+                        break
+                    except Exception as exc:
+                        last_error = exc
+                if payload is None:
+                    raise last_error or RuntimeError("empty WFS response")
+                for feature in payload.get("features", []):
+                    props = dict(feature.get("properties") or {})
+                    props.update(orca_role="navigable", boundary_tier="reference")
+                    feature["properties"] = props
+                    _simplify_geometry(feature.get("geometry") or {})
+                    features.append(feature)
+            if not features:
+                raise ValueError("Marine Regions returned no India EEZ features")
+            wrapped = {
+                "type": "FeatureCollection",
+                "metadata": {
+                    "authority": "Flanders Marine Institute (VLIZ) / Marine Regions",
+                    "dataset": "Indian EEZ, Maritime Boundaries Geodatabase v12",
+                    "version": "12", "published_at": "2023-01-01T00:00:00Z",
+                    "crs": "EPSG:4326", "verification_tier": "reference_only",
+                    "geometry_simplification_degrees": 0.0025,
+                    "source_url": self._WFS,
+                },
+                "features": features,
+            }
+            raw = json.dumps(wrapped, separators=(",", ":")).encode()
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            self.cache_path.write_bytes(raw)
+            self.state = self._validate(raw, reference=True)
+        except Exception as exc:
+            self.state = BoundaryState(False, "REFERENCE_UNREACHABLE", f"Marine Regions EEZ download failed: {exc}", {})
 
     def classify(self, lat: float, lon: float) -> tuple[bool | None, str]:
         if not self.state.ready: return None, self.state.reason
         navigable = any(_inside_geometry(lat, lon, f["geometry"]) for f in self.features if str((f.get("properties") or {}).get("orca_role", "")).lower()=="navigable")
         prohibited = any(_inside_geometry(lat, lon, f["geometry"]) for f in self.features if str((f.get("properties") or {}).get("orca_role", "")).lower()=="prohibited")
-        return navigable and not prohibited, "inside verified navigable waters" if navigable and not prohibited else "outside allowed waters or inside a prohibited zone"
-
+        return navigable and not prohibited, "inside the configured marine polygon" if navigable and not prohibited else "outside the India EEZ reference or inside a configured prohibited zone"
 
 class MarineRoutePlanner:
     """A* over a local WGS84 grid; all expanded nodes are boundary-verified."""
     def __init__(self, boundaries: OfficialBoundaryStore): self.boundaries = boundaries
 
     def plan(self, start: tuple[float,float], end: tuple[float,float], grid_km: float = 5.0) -> dict[str, Any]:
+        self.boundaries.ensure_ready()
         if not self.boundaries.state.ready:
             return {"status":"BOUNDARY_UNVERIFIED", "verified":False, "reason":self.boundaries.state.reason, "routes":[]}
         for label, point in (("departure", start), ("destination", end)):
@@ -144,4 +246,8 @@ class MarineRoutePlanner:
             return {"status":"NO_SAFE_ROUTE", "verified":True, "reason":"Endpoint connector crosses a prohibited or non-navigable area.", "routes":[]}
         distance=sum(haversine(a,b) for a,b in zip(path,path[1:]))
         coords=[[round(lat,5),round(lon,5)] for lat,lon in path]
-        return {"status":"ROUTE_GEOMETRY_VERIFIED", "verified":True, "reason":"Every route node is inside authority-declared navigable waters and outside prohibited polygons.", "routes":[{"id":"balanced","label":"Balanced verified geometry","coordinates":coords,"distance_km":round(distance,1),"distance_nm":round(distance*.539957,1)}], "boundary":{"metadata":self.boundaries.state.metadata,"sha256":self.boundaries.state.checksum}}
+        reference = self.boundaries.state.status == "REFERENCE_AVAILABLE"
+        status = "REFERENCE_ROUTE_GEOMETRY" if reference else "ROUTE_GEOMETRY_VERIFIED"
+        reason = ("Path stays inside the Marine Regions India EEZ reference geometry. Regulatory/restricted-area clearance is not verified."
+                  if reference else "Every route edge is inside authority-declared navigable waters and outside prohibited polygons.")
+        return {"status":status, "verified":True, "regulatory_verified":not reference, "reason":reason, "routes":[{"id":"balanced","label":"Balanced EEZ geometry" if reference else "Balanced verified geometry","coordinates":coords,"distance_km":round(distance,1),"distance_nm":round(distance*.539957,1)}], "boundary":{"metadata":self.boundaries.state.metadata,"sha256":self.boundaries.state.checksum}}

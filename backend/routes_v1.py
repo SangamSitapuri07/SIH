@@ -329,6 +329,23 @@ def math_sin(val: float) -> float:
     import math
     return math.sin(val)
 
+@router.post("/route-boundaries/refresh")
+def refresh_route_boundaries():
+    """Download/retry the public Marine Regions India EEZ reference cache."""
+    providers.boundaries.ensure_ready()
+    state = providers.boundaries.state
+    providers.provider_status["official_navigation_boundaries"].update(
+        status=state.status, reason=state.reason, checked_at=int(time.time())
+    )
+    return {
+        "status": state.status,
+        "ready": state.ready,
+        "reason": state.reason,
+        "metadata": state.metadata,
+        "sha256": state.checksum,
+        "cache_path": str(providers.boundaries.cache_path),
+    }
+
 @router.get("/route-check")
 def check_route(from_lat: float = Query(20.9), from_lon: float = Query(70.37), to_lat: float = Query(20.75), to_lon: float = Query(70.2)):
     """Fail-closed A* planner over configured official navigation boundaries."""
@@ -418,14 +435,17 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
 
     if unknown_inputs and worst_level == "GOOD":
         worst_level = "UNVERIFIED"
+    reference_only = route_info.get("regulatory_verified") is not True
+    if reference_only and worst_level == "GOOD":
+        worst_level = "CAUTION"
 
     return {
         "verdict": {
             "level": worst_level,
             "points_known": sum(1 for point in points if point["state"] != "unverified"),
             "total": len(points),
-            "land_verified": route_info["ok"],
-            "headline": "Route conditions verified." if worst_level == "GOOD" else ("Route has dangerous conditions." if worst_level == "NO-GO" else "Route requires caution or has unavailable inputs."),
+            "land_verified": route_info["ok"] and not reference_only,
+            "headline": route_info["reason"] if reference_only else ("Route conditions verified." if worst_level == "GOOD" else ("Route has dangerous conditions." if worst_level == "NO-GO" else "Route requires caution or has unavailable inputs.")),
         },
         "distance_km": route_info["distance_km"],
         "distance_nm": route_info["distance_nm"],

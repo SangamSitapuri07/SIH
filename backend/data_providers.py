@@ -530,6 +530,12 @@ class DataProvidersEngine:
         start = (from_lat, from_lon)
         end = (to_lat, to_lon)
         plan = self.route_planner.plan(start, end)
+        boundary_state = self.boundaries.state
+        self.provider_status["official_navigation_boundaries"].update(
+            status=boundary_state.status,
+            reason=boundary_state.reason,
+            checked_at=int(time.time()),
+        )
         route = plan.get("routes", [None])[0] if plan.get("routes") else None
         legs = route["coordinates"] if route else [[from_lat, from_lon], [to_lat, to_lon]]
         distance_km = route.get("distance_km") if route else round(haversine(start, end), 1)
@@ -543,6 +549,7 @@ class DataProvidersEngine:
             "detour": bool(route and len(legs) > 2),
             "reason": plan["reason"],
             "status": plan["status"],
+            "regulatory_verified": plan.get("regulatory_verified", False),
             "alternatives": plan.get("routes", []),
             "boundary": plan.get("boundary"),
             "sources": [self.boundaries.state.metadata.get("authority")] if self.boundaries.state.ready else [],

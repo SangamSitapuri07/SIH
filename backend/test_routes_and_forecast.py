@@ -6,15 +6,15 @@ from data_providers import DataProvidersEngine
 
 
 class RouteAndForecastTests(unittest.TestCase):
-    def test_missing_official_boundary_fails_closed(self):
-        with patch.dict("os.environ", {}, clear=True):
+    def test_invalid_operator_boundary_fails_closed(self):
+        with patch.dict("os.environ", {"ORCA_BOUNDARY_GEOJSON": "/missing/boundary.geojson"}, clear=True):
             provider = DataProvidersEngine()
         result = provider.verify_route(22.1, 71.0, 22.2, 71.1)
         self.assertIsNone(result["ok"])
         self.assertIsNone(result["land_hit"])
         self.assertFalse(result["detour"])
         self.assertEqual(result["status"], "BOUNDARY_UNVERIFIED")
-        self.assertIn("ORCA_BOUNDARY_GEOJSON", result["reason"])
+        self.assertIn("No such file", result["reason"])
 
     def test_route_advisory_marks_missing_live_point_unverified(self):
         class Provider:
