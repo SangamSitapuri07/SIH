@@ -13,9 +13,11 @@ from supabase_service import SupabaseService
 from mosdac_datasets import registry_status
 from safe_window import find_safe_departure_window
 from ollama_client import ollama
+from trip_planner import TripPlanningEngine
 
 router = APIRouter(prefix="/api/v1")
 providers = DataProvidersEngine()
+trip_planner = TripPlanningEngine(providers)
 agents_engine = MultiAgentEngine()
 supabase_svc = SupabaseService()
 
@@ -56,6 +58,24 @@ class FeedbackCreate(BaseModel):
 
 class SyncPayload(BaseModel):
     operations: List[Dict[str, Any]]
+
+class TripPlanRequest(BaseModel):
+    departure_at: Optional[str] = None
+    duration_days: int = Field(default=3, ge=1, le=3)
+    area_lat: float = Field(ge=-90, le=90)
+    area_lon: float = Field(ge=-180, le=180)
+    area_radius_km: float = Field(default=75, ge=5, le=200)
+    target_fish: List[str] = Field(default_factory=list, max_length=10)
+    boat_capacity_kg: float = Field(default=500, gt=0, le=100000)
+    crew_size: int = Field(default=4, ge=1, le=100)
+    fuel_liters: float = Field(default=200, ge=0, le=100000)
+    fuel_burn_lph: float = Field(default=0, ge=0, le=10000)
+    fuel_reserve_percent: float = Field(default=30, ge=10, le=80)
+    cruise_speed_kn: float = Field(default=8, gt=0, le=80)
+    max_wave_m: float = Field(default=2.5, gt=0, le=20)
+    max_wind_kn: float = Field(default=20, gt=0, le=150)
+    max_gust_kn: float = Field(default=34, gt=0, le=200)
+    experience_level: str = Field(default="unspecified", max_length=50)
 
 # In-memory store for backend demo
 STORE_PROFILES = {}
@@ -330,6 +350,16 @@ def get_advisory(lat: float = Query(20.9), lon: float = Query(70.37), include_gf
 def math_sin(val: float) -> float:
     import math
     return math.sin(val)
+
+@router.post("/trip-plan")
+def create_trip_plan(request: TripPlanRequest):
+    """Build a self-contained 1-3 day area forecast package for offline use."""
+    try:
+        return trip_planner.generate(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Trip forecast package unavailable: {exc}") from exc
 
 @router.post("/route-boundaries/refresh")
 def refresh_route_boundaries():

@@ -13,6 +13,7 @@ import '../../../advisory/presentation/providers/advisory_provider.dart';
 import '../../../locations/domain/saved_location.dart';
 import '../../../locations/presentation/providers/locations_provider.dart';
 import '../providers/navigate_provider.dart';
+import '../providers/trip_plan_provider.dart';
 import '../widgets/route_verdict_card.dart';
 import '../widgets/transit_points_strip.dart';
 
@@ -104,6 +105,10 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
                 onUseWorkingLocation: _useWorkingLocation,
                 onPickSaved: _pickSavedLocation,
                 onCheck: _checkRoute,
+              ),
+              const SizedBox(height: 14),
+              _OfflineTripPlanner(
+                area: _coordinate(_toLat, _toLon) ?? _coordinate(_fromLat, _fromLon),
               ),
               const SizedBox(height: 14),
               const _TimeContractNote(),
@@ -464,6 +469,144 @@ class _CoordinateRow extends StatelessWidget {
   }
 }
 
+class _OfflineTripPlanner extends ConsumerStatefulWidget {
+  final LatLng? area;
+  const _OfflineTripPlanner({required this.area});
+
+  @override
+  ConsumerState<_OfflineTripPlanner> createState() => _OfflineTripPlannerState();
+}
+
+class _OfflineTripPlannerState extends ConsumerState<_OfflineTripPlanner> {
+  int _days = 3;
+  int _departureOffsetHours = 0;
+  final _radius = TextEditingController(text: '75');
+  final _fish = TextEditingController();
+  final _fuel = TextEditingController(text: '200');
+  final _burn = TextEditingController();
+
+  @override
+  void dispose() {
+    _radius.dispose(); _fish.dispose(); _fuel.dispose(); _burn.dispose();
+    super.dispose();
+  }
+
+  double? _value(TextEditingController controller) =>
+      double.tryParse(controller.text.trim());
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(tripPlanProvider);
+    final plan = state.valueOrNull;
+    return OrcaCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        const OrcaEyebrow('OFFLINE TRIP PACKAGE', color: OrcaTheme.accentDark),
+        const SizedBox(height: 6),
+        const Text('Pre-analyse the full fishing area', style: OrcaType.cardTitle),
+        const SizedBox(height: 5),
+        Text('Downloads an hour-by-hour area forecast before departure and saves it on this device.', style: OrcaType.caption),
+        const SizedBox(height: 12),
+        Row(children: <Widget>[
+          Expanded(child: DropdownButtonFormField<int>(
+            value: _days,
+            decoration: const InputDecoration(labelText: 'Trip duration'),
+            items: const <DropdownMenuItem<int>>[
+              DropdownMenuItem(value: 1, child: Text('1 day')),
+              DropdownMenuItem(value: 2, child: Text('2 days')),
+              DropdownMenuItem(value: 3, child: Text('3 days')),
+            ],
+            onChanged: (value) => setState(() => _days = value ?? 3),
+          )),
+          const SizedBox(width: 10),
+          Expanded(child: TextField(controller: _radius, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Area radius (km)'))),
+        ]),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<int>(
+          value: _departureOffsetHours,
+          decoration: const InputDecoration(labelText: 'Planned departure'),
+          items: const <DropdownMenuItem<int>>[
+            DropdownMenuItem(value: 0, child: Text('Now')),
+            DropdownMenuItem(value: 2, child: Text('In 2 hours')),
+            DropdownMenuItem(value: 6, child: Text('In 6 hours')),
+            DropdownMenuItem(value: 12, child: Text('In 12 hours')),
+            DropdownMenuItem(value: 24, child: Text('Tomorrow')),
+          ],
+          onChanged: (value) => setState(() => _departureOffsetHours = value ?? 0),
+        ),
+        const SizedBox(height: 10),
+        TextField(controller: _fish, decoration: const InputDecoration(labelText: 'Target fish (comma separated)')),
+        const SizedBox(height: 10),
+        Row(children: <Widget>[
+          Expanded(child: TextField(controller: _fuel, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Fuel available (L)'))),
+          const SizedBox(width: 10),
+          Expanded(child: TextField(controller: _burn, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Fuel burn (L/hour)'))),
+        ]),
+        const SizedBox(height: 12),
+        ElevatedButton.icon(
+          onPressed: state.isLoading || widget.area == null ? null : () {
+            final radius = _value(_radius), fuel = _value(_fuel), burn = _value(_burn);
+            if (radius == null || fuel == null || radius < 5 || radius > 200) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter valid radius (5–200 km) and fuel.')));
+              return;
+            }
+            ref.read(tripPlanProvider.notifier).generate(TripPlanInput(
+              areaLat: widget.area!.latitude, areaLon: widget.area!.longitude,
+              departureAt: DateTime.now().toUtc().add(Duration(hours: _departureOffsetHours)),
+              durationDays: _days, radiusKm: radius, fuelLiters: fuel,
+              fuelBurnLph: burn ?? 0,
+              targetFish: _fish.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList(),
+            ));
+          },
+          icon: state.isLoading
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.offline_pin_outlined),
+          label: Text(state.isLoading ? 'Analysing 7-day data…' : 'Build offline trip package'),
+        ),
+        if (widget.area == null) ...<Widget>[
+          const SizedBox(height: 8),
+          Text('Select a planned area on the map first.', style: OrcaType.caption),
+        ],
+        if (plan != null) ...<Widget>[
+          const SizedBox(height: 14),
+          _TripPlanSummary(plan: plan),
+        ],
+      ]),
+    );
+  }
+}
+
+class _TripPlanSummary extends StatelessWidget {
+  final Map<String, dynamic> plan;
+  const _TripPlanSummary({required this.plan});
+
+  @override
+  Widget build(BuildContext context) {
+    final verdict = plan['verdict']?.toString() ?? 'UNVERIFIED';
+    final timeline = plan['timeline'] as List<dynamic>? ?? const <dynamic>[];
+    final alerts = plan['alerts'] as List<dynamic>? ?? const <dynamic>[];
+    final coverage = plan['coverage'] as Map? ?? const <dynamic, dynamic>{};
+    final target = plan['targets'] as Map? ?? const <dynamic, dynamic>{};
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: OrcaTheme.surfaceElevated, borderRadius: BorderRadius.circular(12)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        Row(children: <Widget>[
+          Expanded(child: Text('Saved offline · $verdict', style: OrcaType.metricLabel.copyWith(fontWeight: FontWeight.w800))),
+          OrcaInfoPill(icon: Icons.schedule, label: '${timeline.length} hours'),
+        ]),
+        const SizedBox(height: 7),
+        Text('Coverage ${(100 * ((coverage['ratio'] as num?)?.toDouble() ?? 0)).toStringAsFixed(0)}% · ${alerts.length} safety alert${alerts.length == 1 ? '' : 's'}', style: OrcaType.body.copyWith(fontSize: 12)),
+        const SizedBox(height: 5),
+        Text(plan['return_decision'] is Map ? ((plan['return_decision'] as Map)['reason']?.toString() ?? '') : '', style: OrcaType.caption),
+        const SizedBox(height: 5),
+        Text(target['reason']?.toString() ?? '', style: OrcaType.caption),
+        const SizedBox(height: 7),
+        Text('Package ID ${plan['trip_id'] ?? 'unknown'} · SHA-256 ${plan['package_sha256']?.toString().substring(0, 12) ?? 'unavailable'}…', style: OrcaType.caption.copyWith(fontSize: 9.5)),
+      ]),
+    );
+  }
+}
+
 class _TimeContractNote extends StatelessWidget {
   const _TimeContractNote();
 
@@ -481,7 +624,7 @@ class _TimeContractNote extends StatelessWidget {
             SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Departure-time routing is unavailable: the current backend contract evaluates present route conditions only. ORCA will expose a time selector when a verified route forecast contract exists.',
+                'Offline trip packages use downloaded 7-day Open-Meteo model timelines. They are forecast decision support—not live conditions, an official GRIB/ENC carriage product, or a promise of fish catch. Re-check immediately before departure.',
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 11.5,

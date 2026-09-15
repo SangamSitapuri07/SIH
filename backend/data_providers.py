@@ -381,7 +381,7 @@ class DataProvidersEngine:
             "longitude": lon,
             "current": "wave_height,wave_period,wind_wave_height,wind_wave_direction,swell_wave_height,swell_wave_period,ocean_current_velocity,ocean_current_direction,sea_surface_temperature",
             "hourly": "wave_height,wave_period,swell_wave_height,swell_wave_period",
-            "forecast_days": 3,
+            "forecast_days": 7,
             "timezone": "UTC",
         }
         forecast_params = {
@@ -389,7 +389,7 @@ class DataProvidersEngine:
             "longitude": lon,
             "current": "wind_speed_10m,wind_gusts_10m",
             "hourly": "wind_speed_10m,wind_gusts_10m",
-            "forecast_days": 3,
+            "forecast_days": 7,
             "wind_speed_unit": "kn",
             "timezone": "UTC",
         }
