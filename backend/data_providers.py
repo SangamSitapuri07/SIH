@@ -1,9 +1,12 @@
 import os
 import time
 import math
+import html
+import re
 import threading
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
+from email.utils import parsedate_to_datetime
 from typing import Dict, Any, List
 import httpx
 from gfw_provider import GfwProvider
@@ -136,6 +139,38 @@ class DataProvidersEngine:
             response.raise_for_status()
             return response
 
+    @staticmethod
+    def _rss_items(text: str) -> List[Dict[str, Any]]:
+        """Parse RSS items, tolerating JTWC's occasionally malformed CDATA."""
+        try:
+            root = ET.fromstring(text)
+            return [
+                {
+                    "title": item.findtext("title"),
+                    "link": item.findtext("link"),
+                    "issued_at": item.findtext("pubDate"),
+                }
+                for item in root.findall(".//item")
+            ]
+        except ET.ParseError:
+            # JTWC occasionally publishes HTML/CDATA that is not strict XML.
+            # Recover only explicit RSS item fields; never synthesize alerts.
+            items: List[Dict[str, Any]] = []
+            for block in re.findall(r"<item\b[^>]*>(.*?)</item>", text, flags=re.I | re.S):
+                def field(name: str) -> str | None:
+                    match = re.search(
+                        rf"<{name}\b[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</{name}>",
+                        block,
+                        flags=re.I | re.S,
+                    )
+                    if not match:
+                        return None
+                    return html.unescape(re.sub(r"<[^>]+>", " ", match.group(1))).strip()
+                items.append({"title": field("title"), "link": field("link"), "issued_at": field("pubDate")})
+            if not items and "<rss" not in text.lower():
+                raise
+            return items
+
     def fetch_noaa_chlorophyll(self, lat: float, lon: float) -> Dict[str, Any]:
         """Read the nearest real VIIRS chlorophyll value from NOAA ERDDAP.
 
@@ -265,14 +300,22 @@ class DataProvidersEngine:
             result["sources_failed"].append({"source": "GDACS", "reason": str(exc)})
         jtwc_started = time.perf_counter()
         try:
-            root = ET.fromstring(self._get(jtwc_url).text)
+            response = self._get(jtwc_url, timeout_s=15.0)
+            parsed_items = self._rss_items(response.text)
             result["jtwc"] = [
-                {"title": item.findtext("title"), "link": item.findtext("link"), "source": "JTWC"}
-                for item in root.findall(".//item")
+                {**item, "source": "JTWC"}
+                for item in parsed_items
             ]
+            latest_time = next((item.get("issued_at") for item in parsed_items if item.get("issued_at")), None)
+            if latest_time:
+                try:
+                    latest_time = parsedate_to_datetime(latest_time).isoformat()
+                except (TypeError, ValueError):
+                    latest_time = None
             self._record_provider(
                 "jtwc_cyclone", "AVAILABLE",
                 latency_ms=round((time.perf_counter() - jtwc_started) * 1000),
+                observed_at=latest_time,
             )
         except (httpx.HTTPError, ET.ParseError) as exc:
             self._record_provider(
