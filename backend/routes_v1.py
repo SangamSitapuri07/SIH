@@ -1,5 +1,6 @@
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Dict, Any, List, Optional, Tuple
@@ -107,22 +108,96 @@ def get_zone_snapshot(lat: float = Query(20.9), lon: float = Query(70.37), inclu
 @router.get("/grid")
 def get_grid(lat: float = Query(20.9), lon: float = Query(70.37), span: float = Query(0.5)):
     """Grid snapshot for map rendering."""
-    points = []
     step = span / 3.0
-    for r in range(4):
-        for c in range(4):
-            plat = round(lat - (span / 2.0) + (r * step), 4)
-            plon = round(lon - (span / 2.0) + (c * step), 4)
-            snap = providers.fetch_zone_snapshot(plat, plon)
-            if not snap.get("error"):
-                points.append({
-                    "lat": plat,
-                    "lon": plon,
-                    "wave_h": snap["variables"]["wave_height_m"],
-                    "wind_kn": snap["variables"]["wind_speed_kn"],
-                    "chl": snap["variables"].get("chlorophyll_mg_m3")
-                })
-    return {"latitude": lat, "longitude": lon, "span": span, "points": points}
+    coords = [
+        (round(lat - (span / 2.0) + (r * step), 4), round(lon - (span / 2.0) + (c * step), 4))
+        for r in range(4)
+        for c in range(4)
+    ]
+
+    # Each point is an independent, fully self-contained snapshot fetch — run
+    # them concurrently instead of one-after-the-other. Sequentially this
+    # endpoint could take minutes (one slow upstream provider dominates each
+    # single fetch); concurrently it takes about as long as one fetch. Each
+    # point itself opens several connections (marine + forecast + secondary
+    # sources), so cap outer concurrency well below 16 to avoid bursting past
+    # what upstream providers / local connection limits tolerate at once.
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        snapshots = list(pool.map(lambda coord: providers.fetch_zone_snapshot(*coord), coords))
+
+    points = []
+    for (plat, plon), snap in zip(coords, snapshots):
+        if not snap.get("error"):
+            variables = snap["variables"]
+            points.append({
+                "lat": plat,
+                "lon": plon,
+                "status": "fresh",
+                "wave_h": variables["wave_height_m"],
+                "wind_kn": variables["wind_speed_kn"],
+                "wind_gust_kn": variables.get("wind_gust_kn"),
+                "wind_direction_deg": variables.get("wind_direction_deg"),
+                "sst_c": variables.get("sst_celsius"),
+                "chl": variables.get("chlorophyll_mg_m3"),
+            })
+    return {
+        "state": "LIVE" if points else "UNAVAILABLE",
+        "valid_time": None,
+        "resolution": f"{round(step, 3)} deg",
+        "fetched_at": int(time.time()),
+        "sources": ["Open-Meteo Marine", "Open-Meteo Forecast"],
+        "latitude": lat,
+        "longitude": lon,
+        "span": span,
+        "points": points,
+    }
+
+@router.get("/pfz")
+def get_pfz():
+    """Potential fishing zone lines from the official INCOIS WFS."""
+    result = providers.fetch_incois_pfz()
+    return {
+        "status": result.get("status", "unavailable"),
+        "source": result.get("source"),
+        "fetched_at": int(time.time()),
+        "features": result.get("features", []),
+    }
+
+@router.get("/layers")
+def get_layers():
+    """Catalog of map-renderable data layers backed by real ORCA sources."""
+    return [
+        {
+            "id": "wave_height",
+            "name": "Wave height",
+            "unit": "m",
+            "source": "Open-Meteo Marine",
+            "visualization": "scalar_grid",
+            "endpoint": "/api/v1/grid",
+            "state": "ACTIVE",
+            "available": True,
+        },
+        {
+            "id": "wind_speed",
+            "name": "Wind speed",
+            "unit": "kn",
+            "source": "Open-Meteo Forecast",
+            "visualization": "scalar_grid",
+            "endpoint": "/api/v1/grid",
+            "state": "ACTIVE",
+            "available": True,
+        },
+        {
+            "id": "pfz",
+            "name": "Potential fishing zones",
+            "unit": None,
+            "source": "INCOIS PFZ GeoServer",
+            "visualization": "vector_grid",
+            "endpoint": "/api/v1/pfz",
+            "state": "ACTIVE",
+            "available": True,
+        },
+    ]
 
 @router.get("/reason")
 def get_reasoning(lat: float = Query(20.9), lon: float = Query(70.37), include_gfw: bool = Query(False)):

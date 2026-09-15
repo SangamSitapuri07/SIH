@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/auth/supabase_auth_service.dart';
 import '../../../../core/cache/cache_service.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/widgets/orca_navigation.dart';

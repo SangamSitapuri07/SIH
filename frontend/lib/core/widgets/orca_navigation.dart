@@ -375,7 +375,9 @@ class OrcaMobileNavBar extends ConsumerWidget {
     required this.onMore,
   });
 
-  static const List<OrcaDestination> _tabs = <OrcaDestination>[
+  // Indexing into a const list isn't itself a const expression, so this
+  // can't be `const` — it's still only ever evaluated once.
+  static final List<OrcaDestination> _tabs = <OrcaDestination>[
     orcaPrimaryDestinations[0], // Overview
     orcaPrimaryDestinations[1], // Ask ORCA
     orcaPrimaryDestinations[2], // Ocean map

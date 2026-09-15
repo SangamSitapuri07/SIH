@@ -654,7 +654,7 @@ class CommandCenterSourceHealthCard extends StatelessWidget {
               const Expanded(child: OrcaEyebrow('DATA TRUST', color: OrcaTheme.textMuted)),
               if (health != null && health!.timestamp != null)
                 Text(
-                  'Checked ${_formatStamp(health!.timestamp!)}',
+                  'Checked ${DateFormatter.formatIstTime(health!.timestamp!)}',
                   style: OrcaType.caption,
                 ),
             ],
@@ -704,15 +704,6 @@ class CommandCenterSourceHealthCard extends StatelessWidget {
     return cut > 0 ? name.substring(0, cut) : name;
   }
 
-  static String _formatStamp(String raw) {
-    final DateTime? parsed = DateFormatter.parseIso(raw);
-    if (parsed != null) return DateFormatter.formatIstTime(parsed);
-    final int? epoch = int.tryParse(raw);
-    if (epoch != null) {
-      return DateFormatter.formatIstTime(DateTime.fromMillisecondsSinceEpoch(epoch * 1000, isUtc: true));
-    }
-    return raw;
-  }
 }
 
 /// Agent/service status card backed by the real `/api/v1/agents` registry.
