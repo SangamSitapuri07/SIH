@@ -24,34 +24,55 @@ class DataProvidersEngine:
         self._snapshot_cache_times: Dict[str, float] = {}
         self._snapshot_cache_lock = threading.Lock()
         self._snapshot_ttl_s = float(os.getenv("SNAPSHOT_CACHE_TTL_S", "600"))
+        now = int(time.time())
         self.provider_status = {
-            "open_meteo_marine": {"name": "Open-Meteo Marine (MFWAM/ECMWF)", "status": "OK", "latency_ms": 142},
-            "open_meteo_forecast": {"name": "Open-Meteo Forecast (ECMWF IFS)", "status": "OK", "latency_ms": 115},
-            "noaa_erddap": {"name": "NOAA CoastWatch ERDDAP (Chlorophyll-a)", "status": "CONFIGURED", "latency_ms": None},
+            "open_meteo_marine": {"name": "Open-Meteo Marine (MFWAM/ECMWF)", "status": "UNVERIFIED", "latency_ms": None},
+            "open_meteo_forecast": {"name": "Open-Meteo Forecast (ECMWF IFS)", "status": "UNVERIFIED", "latency_ms": None},
+            "noaa_erddap": {"name": "NOAA CoastWatch ERDDAP (Chlorophyll-a)", "status": "UNVERIFIED", "latency_ms": None},
             "isro_mosdac": {
                 "name": "ISRO MOSDAC OCM-3 (Oceansat-3)",
                 "status": "CONFIGURED" if (os.getenv("MOSDAC_USERNAME") and os.getenv("MOSDAC_PASSWORD")) else "CREDENTIAL_REQUIRED",
                 "latency_ms": None,
+                "reason": "Credentials configured; no dataset request has run yet." if (os.getenv("MOSDAC_USERNAME") and os.getenv("MOSDAC_PASSWORD")) else "Set MOSDAC_USERNAME and MOSDAC_PASSWORD to enable authenticated products.",
             },
-
-            "incois_pfz": {"name": "INCOIS PFZ (GeoServer WFS)", "status": "CONFIGURED", "latency_ms": None},
-            "incois_las": {"name": "INCOIS Live Access Server", "status": "UNREACHABLE", "latency_ms": None, "reason": "GOI server connection timeout (>30s)"},
-            "gfw_ais": {"name": "Global Fishing Watch (AIS Effort)", "status": "CONFIGURED" if self.gfw.configured else "TOKEN_REQUIRED", "latency_ms": None},
-            "jtwc_cyclone": {"name": "JTWC US Navy Cyclone Warnings", "status": "CONFIGURED", "latency_ms": None},
-            "globe_land_mask": {"name": "GLOBE 1km Land Mask (Offline)", "status": "OK", "latency_ms": 2, "offline": True}
+            "incois_pfz": {"name": "INCOIS PFZ (GeoServer WFS)", "status": "UNVERIFIED", "latency_ms": None},
+            "incois_las": {"name": "INCOIS Live Access Server", "status": "NOT_INTEGRATED", "latency_ms": None, "reason": "No verified LAS dataset contract is used by this build."},
+            "gfw_ais": {
+                "name": "Global Fishing Watch (AIS Effort)",
+                "status": "CONFIGURED" if self.gfw.configured else "TOKEN_REQUIRED",
+                "latency_ms": None,
+                "reason": "Token configured; no GFW request has run yet." if self.gfw.configured else "Set GFW_API_TOKEN to enable AIS effort and fleet queries.",
+            },
+            "jtwc_cyclone": {"name": "JTWC US Navy Cyclone Warnings", "status": "UNVERIFIED", "latency_ms": None},
+            "globe_land_mask": {"name": "GLOBE 1km Land Mask (Offline)", "status": "AVAILABLE", "latency_ms": 2, "checked_at": now, "offline": True},
         }
 
+    def _record_provider(self, key: str, status: str, *, latency_ms: int | None = None,
+                         reason: str | None = None, observed_at: str | None = None) -> None:
+        item = self.provider_status[key]
+        item.update(status=status, latency_ms=latency_ms, checked_at=int(time.time()))
+        if reason:
+            item["reason"] = reason
+        else:
+            item.pop("reason", None)
+        if observed_at:
+            item["observed_at"] = observed_at
+
     def check_health(self) -> Dict[str, Any]:
+        usable = {"FRESH", "AVAILABLE", "CACHED", "CONNECTED"}
+        core_ok = all(
+            self.provider_status[key]["status"] in usable
+            for key in ("open_meteo_marine", "open_meteo_forecast")
+        )
         return {
-            "status": "HEALTHY",
-            "version": "2.0.0",
-            "build_commit": "phase-2-prod-ready",
-            "data_sources": self.provider_status,
+            "status": "HEALTHY" if core_ok else "DEGRADED",
+            "timestamp": int(time.time()),
+            "version": "2.2.0",
+            "data_sources": {key: dict(value) for key, value in self.provider_status.items()},
             "cache": {
-                "active_entries": 42,
-                "hit_rate": 0.94,
-                "memory_mb": 12.4
-            }
+                "active_entries": len(self._snapshot_cache),
+                "ttl_seconds": self._snapshot_ttl_s,
+            },
         }
 
     def _get(self, url: str, **kwargs: Any) -> httpx.Response:
@@ -78,6 +99,7 @@ class DataProvidersEngine:
         dataset = "noaacwNPPN20VIIRSDINEOFDaily"
         url = f"https://coastwatch.noaa.gov/erddap/griddap/{dataset}.json"
         query = f"?chlor_a[(last)][(0.0)][({lat:.5f})][({lon:.5f})]"
+        started = time.perf_counter()
         try:
             response = self._get(url + query, timeout_s=15.0)
             payload = response.json()
@@ -96,17 +118,21 @@ class DataProvidersEngine:
                 if math.isfinite(value) and value >= 0:
                     values.append(value)
             if not values:
-                self.provider_status["noaa_erddap"].update(
-                    status="CLOUD_MASKED", latency_ms=None,
-                    reason="Latest grid cell has no valid chlorophyll value",
+                self._record_provider(
+                    "noaa_erddap", "UNAVAILABLE",
+                    latency_ms=round((time.perf_counter() - started) * 1000),
+                    reason="Latest grid cell has no valid chlorophyll value (cloud/quality mask).",
                 )
                 return {
                     "status": "cloud_masked",
                     "source": "NOAA CoastWatch ERDDAP",
                     "reason": "Latest grid cell has no valid chlorophyll value",
                 }
-            self.provider_status["noaa_erddap"].update(
-                status="OK", latency_ms=None, reason=None,
+            observed_at = str(rows[0][0]) if rows and rows[0] else None
+            self._record_provider(
+                "noaa_erddap", "FRESH",
+                latency_ms=round((time.perf_counter() - started) * 1000),
+                observed_at=observed_at,
             )
             return {
                 "status": "fresh",
@@ -117,8 +143,10 @@ class DataProvidersEngine:
                 "source_url": url,
             }
         except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
-            self.provider_status["noaa_erddap"].update(
-                status="UNREACHABLE", latency_ms=None, reason=str(exc),
+            self._record_provider(
+                "noaa_erddap", "UNREACHABLE",
+                latency_ms=round((time.perf_counter() - started) * 1000),
+                reason=str(exc),
             )
             return {
                 "status": "unreachable",
@@ -136,9 +164,14 @@ class DataProvidersEngine:
             "typeName": "PFZ_Automation:pfzlines",
             "outputFormat": "application/json",
         }
+        started = time.perf_counter()
         try:
             response = self._get(url, params=params)
             payload = response.json()
+            self._record_provider(
+                "incois_pfz", "FRESH",
+                latency_ms=round((time.perf_counter() - started) * 1000),
+            )
             return {
                 "status": "fresh",
                 "source": "INCOIS PFZ GeoServer",
@@ -147,6 +180,11 @@ class DataProvidersEngine:
                 "features": payload.get("features", []),
             }
         except (httpx.HTTPError, ValueError, KeyError) as exc:
+            self._record_provider(
+                "incois_pfz", "UNREACHABLE",
+                latency_ms=round((time.perf_counter() - started) * 1000),
+                reason=str(exc),
+            )
             return {"status": "unreachable", "source": "INCOIS PFZ GeoServer", "reason": str(exc)}
 
     def fetch_imd_cap_alerts(self) -> Dict[str, Any]:
@@ -175,13 +213,23 @@ class DataProvidersEngine:
             result["gdacs"] = self._get(gdacs_url).json().get("features", [])
         except (httpx.HTTPError, ValueError) as exc:
             result["sources_failed"].append({"source": "GDACS", "reason": str(exc)})
+        jtwc_started = time.perf_counter()
         try:
             root = ET.fromstring(self._get(jtwc_url).text)
             result["jtwc"] = [
                 {"title": item.findtext("title"), "link": item.findtext("link"), "source": "JTWC"}
                 for item in root.findall(".//item")
             ]
+            self._record_provider(
+                "jtwc_cyclone", "AVAILABLE",
+                latency_ms=round((time.perf_counter() - jtwc_started) * 1000),
+            )
         except (httpx.HTTPError, ET.ParseError) as exc:
+            self._record_provider(
+                "jtwc_cyclone", "UNREACHABLE",
+                latency_ms=round((time.perf_counter() - jtwc_started) * 1000),
+                reason=str(exc),
+            )
             result["sources_failed"].append({"source": "JTWC", "reason": str(exc)})
         return result
 
@@ -268,7 +316,18 @@ class DataProvidersEngine:
             if any(value is None for value in (wave_height, wind_speed_kn, wind_gust_kn)):
                 raise ValueError("Open-Meteo returned incomplete live marine data")
             latency_ms = round((time.perf_counter() - started) * 1000)
+            self._record_provider(
+                "open_meteo_marine", "FRESH", latency_ms=latency_ms,
+                observed_at=marine.get("time"),
+            )
+            self._record_provider(
+                "open_meteo_forecast", "FRESH", latency_ms=latency_ms,
+                observed_at=forecast.get("time"),
+            )
         except (httpx.HTTPError, ValueError, KeyError) as exc:
+            failed_latency = round((time.perf_counter() - started) * 1000)
+            self._record_provider("open_meteo_marine", "UNREACHABLE", latency_ms=failed_latency, reason=str(exc))
+            self._record_provider("open_meteo_forecast", "UNREACHABLE", latency_ms=failed_latency, reason=str(exc))
             return {
                 "error": True,
                 "reason": f"Live marine data unavailable: {exc}",
@@ -292,6 +351,14 @@ class DataProvidersEngine:
             pfz = futures["pfz"].result()
             gfw_effort = futures["gfw_effort"].result() if "gfw_effort" in futures else {"status": "not_requested", "source": "Global Fishing Watch"}
             gfw_fleet = futures["gfw_fleet"].result() if "gfw_fleet" in futures else {"status": "not_requested", "source": "Global Fishing Watch"}
+        if include_gfw:
+            gfw_statuses = {str(gfw_effort.get("status")), str(gfw_fleet.get("status"))}
+            if gfw_statuses.intersection({"fresh", "cached"}):
+                self._record_provider("gfw_ais", "FRESH" if "fresh" in gfw_statuses else "CACHED")
+            else:
+                reason = str(gfw_effort.get("error") or gfw_fleet.get("error") or "GFW returned no usable result")
+                status = "TOKEN_REQUIRED" if "token_required" in gfw_statuses else "UNAVAILABLE"
+                self._record_provider("gfw_ais", status, reason=reason)
         sources_used = [
             {"name": "Open-Meteo Marine", "dataset": "Live marine current", "latency_ms": latency_ms, "status": "FRESH"},
             {"name": "Open-Meteo Forecast", "dataset": "Live ECMWF forecast current", "latency_ms": latency_ms, "status": "FRESH"},

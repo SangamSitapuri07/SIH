@@ -10,6 +10,7 @@ class SourceHealthItem {
   final int? latencyMs;
   final String? note;
   final int? checkedAt;
+  final String? observedAt;
 
   const SourceHealthItem({
     required this.key,
@@ -18,6 +19,7 @@ class SourceHealthItem {
     this.latencyMs,
     this.note,
     this.checkedAt,
+    this.observedAt,
   });
 }
 
@@ -66,6 +68,7 @@ class HealthNotifier extends StateNotifier<AsyncValue<SystemHealthSnapshot>> {
             latencyMs: (raw['latency_ms'] as num?)?.toInt(),
             note: raw['reason']?.toString(),
             checkedAt: (raw['checked_at'] as num?)?.toInt(),
+            observedAt: raw['observed_at']?.toString(),
           );
         }
       });

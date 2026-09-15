@@ -79,7 +79,8 @@ class SourceCatalogHealthView extends StatelessWidget {
     }
     if (status == 'CREDENTIAL_REQUIRED' ||
         status == 'TOKEN_REQUIRED' ||
-        status == 'CONFIGURED') {
+        status == 'CONFIGURED' ||
+        status == 'NOT_INTEGRATED') {
       return _Group.blocked;
     }
     return _Group.unverified;
@@ -89,7 +90,7 @@ class SourceCatalogHealthView extends StatelessWidget {
 enum _Group {
   usable('WORKING', 'Answering with data ORCA can use'),
   down('NOT REACHABLE', 'The provider did not answer — its fields are unavailable'),
-  blocked('NEEDS CREDENTIALS', 'Configured but not authorised in this deployment'),
+  blocked('NEEDS SETUP', 'Credentials, activation, or a verified integration are still required'),
   unverified('UNVERIFIED', 'ORCA has not confirmed this provider this session');
 
   final String title;

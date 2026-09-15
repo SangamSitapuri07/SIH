@@ -201,7 +201,11 @@ class InfoScreen extends ConsumerWidget {
 
   static bool _isUsable(String status) {
     final String normal = status.toUpperCase();
-    return normal == 'FRESH' || normal == 'CACHED' || normal == 'CONFIGURED' || normal == 'AVAILABLE';
+    return normal == 'FRESH' ||
+        normal == 'CACHED' ||
+        normal == 'CONNECTED' ||
+        normal == 'AVAILABLE' ||
+        normal == 'OK';
   }
 }
 
@@ -213,17 +217,18 @@ class _SourceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String status = item.status.toUpperCase();
+    final DateTime? observedAt = DateFormatter.parseIso(item.observedAt);
     final Color color = switch (status) {
-      'FRESH' || 'CACHED' || 'AVAILABLE' => VerdictColors.go,
-      'CONFIGURED' || 'UNVERIFIED' => VerdictColors.caution,
+      'FRESH' || 'CACHED' || 'CONNECTED' || 'AVAILABLE' || 'OK' => VerdictColors.go,
+      'CONFIGURED' || 'UNVERIFIED' || 'NOT_INTEGRATED' => VerdictColors.caution,
       'UNAVAILABLE' || 'UNREACHABLE' || 'FAILED' => VerdictColors.critical,
       'CREDENTIAL_REQUIRED' || 'TOKEN_REQUIRED' => VerdictColors.stale,
       _ => VerdictColors.stale,
     };
     final OrcaDataState state = switch (status) {
-      'FRESH' => OrcaDataState.current,
+      'FRESH' || 'CONNECTED' || 'AVAILABLE' || 'OK' => OrcaDataState.current,
       'CACHED' => OrcaDataState.cached,
-      'CONFIGURED' => OrcaDataState.forecast,
+      'CONFIGURED' || 'NOT_INTEGRATED' => OrcaDataState.forecast,
       'UNVERIFIED' => OrcaDataState.loading,
       _ => OrcaDataState.unavailable,
     };
@@ -268,13 +273,18 @@ class _SourceTile extends StatelessWidget {
                     Text('key ${item.key}', style: OrcaType.caption.copyWith(fontSize: 10.5)),
                     if (item.latencyMs != null)
                       Text('${item.latencyMs} ms', style: OrcaType.caption.copyWith(fontSize: 10.5)),
-                    if (item.checkedAt != null)
+                    if (observedAt != null)
                       Text(
-                        'observed ${DateFormatter.formatIstTime(DateTime.fromMillisecondsSinceEpoch(item.checkedAt! * 1000, isUtc: true))}',
+                        'data time ${DateFormatter.formatIstTime(observedAt)}',
                         style: OrcaType.caption.copyWith(fontSize: 10.5),
                       )
                     else
-                      Text('no observation time reported', style: OrcaType.caption.copyWith(fontSize: 10.5)),
+                      Text('data time not supplied', style: OrcaType.caption.copyWith(fontSize: 10.5)),
+                    if (item.checkedAt != null)
+                      Text(
+                        'checked ${DateFormatter.formatIstTime(DateTime.fromMillisecondsSinceEpoch(item.checkedAt! * 1000, isUtc: true))}',
+                        style: OrcaType.caption.copyWith(fontSize: 10.5),
+                      ),
                   ],
                 ),
               ],
