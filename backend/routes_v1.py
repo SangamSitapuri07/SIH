@@ -104,7 +104,9 @@ def get_zone_snapshot(lat: float = Query(20.9), lon: float = Query(70.37), inclu
         "sources": [source["name"] for source in snap.get("sources_used", [])],
         "sources_failed": [failure.get("source", "unknown") for failure in snap.get("sources_failed", [])],
         "source_details": snap.get("sources_used", []),
-        "pfz": snap.get("pfz", []),
+        # Full PFZ GeoJSON is served by /api/v1/pfz. Returning it from every
+        # point snapshot made /zone responses several megabytes long.
+        "pfz_count": len(snap.get("pfz", [])),
     }
 
 @router.get("/grid")
