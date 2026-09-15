@@ -373,7 +373,7 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
         }
     # Bound upstream calls while preserving the full planned geometry in
     # route-check. Route weather samples are distributed across the path.
-    stride = max(1, (len(full_legs) - 1) // 10)
+    stride = max(1, ((len(full_legs) - 1) + 9) // 10)
     legs = full_legs[::stride]
     if legs[-1] != full_legs[-1]:
         legs.append(full_legs[-1])
@@ -386,7 +386,10 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
     # route take several minutes when NOAA/INCOIS were slow; bounded parallel
     # sampling keeps the request within the app's network timeout.
     with ThreadPoolExecutor(max_workers=min(6, len(legs))) as pool:
-        snapshots = list(pool.map(lambda pt: providers.fetch_zone_snapshot(pt[0], pt[1]), legs))
+        snapshots = list(pool.map(
+            lambda pt: providers.fetch_zone_snapshot(pt[0], pt[1], include_secondary=False),
+            legs,
+        ))
 
     for idx, (pt, snap) in enumerate(zip(legs, snapshots)):
         if snap.get("error"):
@@ -398,6 +401,7 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
                 "sail_km": round(route_info["distance_km"] * idx / max(1, len(legs) - 1), 1),
                 "wave_m": None,
                 "wind_kn": None,
+                "gust_kn": None,
                 "state": "unverified",
                 "why": "Live marine inputs unavailable for this route point.",
             })
@@ -405,7 +409,8 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
         vars = snap.get("variables", {})
         wave = vars.get("wave_height_m")
         wind = vars.get("wind_speed_kn")
-        if wave is None or wind is None:
+        gust = vars.get("wind_gust_kn")
+        if wave is None or wind is None or gust is None:
             unknown_inputs = True
             points.append({
                 "point_index": idx,
@@ -414,16 +419,17 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
                 "sail_km": round(route_info["distance_km"] * idx / max(1, len(legs) - 1), 1),
                 "wave_m": wave,
                 "wind_kn": wind,
+                "gust_kn": gust,
                 "state": "unverified",
-                "why": "Required live wave or wind input is unavailable.",
+                "why": "Required live wave, wind or gust input is unavailable.",
             })
             continue
 
         state = "good"
-        if wave >= 4.0 or wind >= 34.0:
+        if wave >= 4.0 or wind >= 34.0 or gust >= 34.0:
             state = "danger"
             worst_level = "NO-GO"
-        elif wave >= 2.5 or wind >= 20.0:
+        elif wave >= 2.5 or wind >= 20.0 or gust >= 25.0:
             state = "caution"
             if worst_level != "NO-GO": worst_level = "CAUTION"
 
@@ -434,8 +440,9 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
             "sail_km": round(route_info["distance_km"] * idx / max(1, len(legs) - 1), 1),
             "wave_m": wave,
             "wind_kn": wind,
+            "gust_kn": gust,
             "state": state,
-            "why": f"Leg {idx+1}: Wave {wave:.1f} m, Wind {wind:.1f} kn"
+            "why": f"Leg {idx+1}: Wave {wave:.1f} m, Wind {wind:.1f} kn, Gust {gust:.1f} kn"
         })
 
     if unknown_inputs and worst_level == "GOOD":

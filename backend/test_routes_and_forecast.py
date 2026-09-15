@@ -29,7 +29,7 @@ class RouteAndForecastTests(unittest.TestCase):
                     "detour": None,
                 }
 
-            def fetch_zone_snapshot(self, lat, lon, include_gfw=False):
+            def fetch_zone_snapshot(self, lat, lon, include_gfw=False, include_secondary=True):
                 return {"error": True, "reason": "upstream unavailable"}
 
         with patch.object(routes_v1, "providers", Provider()):

@@ -346,7 +346,8 @@ class DataProvidersEngine:
         allowed, _ = self.boundaries.classify(lat, lon)
         return None if allowed is None else not allowed
 
-    def fetch_zone_snapshot(self, lat: float, lon: float, include_gfw: bool = False) -> Dict[str, Any]:
+    def fetch_zone_snapshot(self, lat: float, lon: float, include_gfw: bool = False,
+                            include_secondary: bool = True) -> Dict[str, Any]:
         """Fetch live marine and forecast observations for a coordinate.
 
         Results are cached per (lat, lon) for SNAPSHOT_CACHE_TTL_S seconds
@@ -364,7 +365,7 @@ class DataProvidersEngine:
                 "longitude": lon
             }
 
-        cache_key = f"{round(lat, 2)}_{round(lon, 2)}_{bool(include_gfw)}"
+        cache_key = f"{round(lat, 2)}_{round(lon, 2)}_{bool(include_gfw)}_{bool(include_secondary)}"
         with self._snapshot_cache_lock:
             cached_ts = self._snapshot_cache_times.get(cache_key)
             if cached_ts is not None and (now_ts - cached_ts) < self._snapshot_ttl_s:
@@ -435,6 +436,46 @@ class DataProvidersEngine:
                 "latitude": lat,
                 "longitude": lon,
             }
+
+        if not include_secondary:
+            # Route scoring needs only time-matched physical conditions. Do not
+            # fan every route point out to NOAA, INCOIS and GFW; those products
+            # do not influence the current transit thresholds and high fan-out
+            # can starve the Home snapshot of upstream connections.
+            result = {
+                "latitude": lat,
+                "longitude": lon,
+                "timestamp": now_ts,
+                "on_land": on_land,
+                "variables": {
+                    "wave_height_m": wave_height,
+                    "wave_period_s": wave_period,
+                    "swell_height_m": marine.get("swell_wave_height"),
+                    "swell_period_s": marine.get("swell_wave_period"),
+                    "wind_speed_kn": wind_speed_kn,
+                    "wind_gust_kn": wind_gust_kn,
+                    "wind_direction_deg": forecast.get("wind_direction_10m"),
+                    "sst_celsius": sst_celsius,
+                    "current_speed_kn": current_kn,
+                    "current_direction_deg": marine.get("ocean_current_direction"),
+                },
+                "hourly_forecast": {
+                    "time": hourly.get("time", []),
+                    "wave_height_m": marine_response.json().get("hourly", {}).get("wave_height", []),
+                    "wind_speed_kn": hourly.get("wind_speed_10m", []),
+                    "wind_gust_kn": hourly.get("wind_gusts_10m", []),
+                },
+                "sources_used": [
+                    {"name": "Open-Meteo Marine", "dataset": "Route marine conditions", "status": "FRESH"},
+                    {"name": "Open-Meteo Forecast", "dataset": "Route wind conditions", "status": "FRESH"},
+                ],
+                "sources_failed": [],
+                "pfz": [],
+            }
+            with self._snapshot_cache_lock:
+                self._snapshot_cache[cache_key] = result
+                self._snapshot_cache_times[cache_key] = now_ts
+            return result
 
         # Secondary sources (NOAA, INCOIS, GFW) each have their own bounded
         # timeout — run them concurrently instead of serially (was up to ~30s
