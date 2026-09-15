@@ -18,6 +18,7 @@ class AdvisoryDto {
   final int knownSources;
   final int totalSources;
   final DateTime? timestamp;
+  final bool isCached;
 
   AdvisoryDto({
     required this.verdict,
@@ -34,6 +35,7 @@ class AdvisoryDto {
     required this.knownSources,
     required this.totalSources,
     this.timestamp,
+    this.isCached = false,
   });
 
   static DateTime? _parseTimestamp(dynamic value) {
@@ -46,6 +48,15 @@ class AdvisoryDto {
     return DateFormatter.parseIso(value);
   }
 
+  static List<String> _sourceNames(dynamic raw) {
+    if (raw is! List) return const <String>[];
+    return raw.map((entry) {
+      if (entry is Map) return entry['name'] ?? entry['source'];
+      return entry;
+    }).whereType<Object>().map((entry) => entry.toString().trim())
+        .where((entry) => entry.isNotEmpty).toList();
+  }
+
   factory AdvisoryDto.fromJson(Map<String, dynamic> json) {
     final plainEnList = (json['plain_en'] as List<dynamic>?)
             ?.map((e) => e.toString())
@@ -55,21 +66,15 @@ class AdvisoryDto {
             ?.map((e) => e.toString())
             .toList() ??
         <String>[];
-    final sourcesList = (json['sources'] as List<dynamic>?)
-            ?.map((e) => e.toString())
-            .toList() ??
-        <String>[];
+    final sourcesList = _sourceNames(json['sources']);
 
     final coverage = json['data_coverage'] as Map<String, dynamic>?;
-    final failedList = (coverage?['sources_failed'] as List<dynamic>?)
-            ?.map((e) => e.toString())
-            .toList() ??
-        <String>[];
+    final failedList = _sourceNames(coverage?['sources_failed']);
 
     return AdvisoryDto(
       verdict: json['verdict'] as String? ?? 'unknown',
       color: json['color'] as String?,
-      headline: json['headline'] as String? ?? 'Advisory data loaded.',
+      headline: json['headline'] as String? ?? 'Advisory verdict unavailable.',
       headlineHi: json['headline_hi'] as String?,
       plainEn: plainEnList,
       plainHi: plainHiList,
@@ -81,6 +86,7 @@ class AdvisoryDto {
       knownSources: coverage?['known'] as int? ?? sourcesList.length,
       totalSources: coverage?['total'] as int? ?? (sourcesList.length + failedList.length),
       timestamp: _parseTimestamp(json['timestamp']),
+      isCached: json['cached'] == true,
     );
   }
 
@@ -95,27 +101,11 @@ class AdvisoryDto {
             value: (val['value'] as num?)?.toDouble(),
             unit: val['unit'] as String? ?? '',
             threshold: (val['threshold'] as num?)?.toDouble(),
-            status: val['status'] as String? ?? 'good',
-            source: val['source'] as String? ?? 'External Model',
-            time: val['time'] as String? ?? 'Now',
+            status: val['status'] as String? ?? 'UNAVAILABLE',
+            source: val['source'] as String? ?? 'Source unavailable',
+            time: val['time']?.toString() ?? 'Time unavailable',
+            timeLabel: val['time_label']?.toString(),
             direction: val['direction'] as String?,
-          );
-        } else if (val is num) {
-          final unit = switch (key) {
-            'wave_height_m' || 'swell_height_m' => 'm',
-            'wave_period_s' => 's',
-            'wind_speed_kn' || 'wind_gust_kn' || 'current_speed_kn' => 'kn',
-            'sst_celsius' => 'C',
-            'chlorophyll_mg_m3' => 'mg/m3',
-            _ => '',
-          };
-          parsedVariables[key] = VariableItem(
-            key: key,
-            value: val.toDouble(),
-            unit: unit,
-            status: 'good',
-            source: 'ORCA Box',
-            time: 'Live',
           );
         }
       });
@@ -125,29 +115,44 @@ class AdvisoryDto {
     if (hourlyChartJson != null) {
       for (final item in hourlyChartJson!) {
         if (item is Map<String, dynamic>) {
-          parsedHourly.add(
-            HourlyPoint(
-              hour: item['hour'] as String? ?? '--',
-              waveM: (item['wave_m'] as num?)?.toDouble() ?? 0.0,
-              windKn: (item['wind_kn'] as num?)?.toDouble() ?? 0.0,
-              state: item['state'] as String? ?? 'good',
-            ),
-          );
+          final wave = (item['wave_m'] as num?)?.toDouble();
+          final wind = (item['wind_kn'] as num?)?.toDouble();
+          final hour = item['hour']?.toString();
+          if (wave != null && wind != null && hour != null) {
+            parsedHourly.add(HourlyPoint(
+              hour: hour,
+              waveM: wave,
+              windKn: wind,
+              state: item['state']?.toString() ?? 'UNAVAILABLE',
+            ));
+          }
         }
       }
     }
 
     SafeWindow? parsedSafeWindow;
     if (safeWindowJson != null) {
+      final Map<String, dynamic> window = safeWindowJson!;
       parsedSafeWindow = SafeWindow(
-        from: safeWindowJson!['from'] as String? ?? safeWindowJson!['start'] as String? ?? '',
-        to: safeWindowJson!['to'] as String? ?? safeWindowJson!['end'] as String? ?? '',
-        isSafe: safeWindowJson!['is_safe'] as bool? ?? true,
-        hoursRemaining: (safeWindowJson!['hours_remaining'] as num?)?.toDouble(),
+        from: (window['from'] ?? window['start'] ?? window['start_time'])?.toString() ?? '',
+        to: (window['to'] ?? window['end'] ?? window['end_time'])?.toString() ?? '',
+        isSafe: (window['is_safe'] ?? window['currently_safe']) as bool?,
+        status: window['status']?.toString(),
+        hoursRemaining: ((window['hours_remaining'] ?? window['duration_hours']) as num?)?.toDouble(),
+        quality: window['window_quality']?.toString(),
+        maxWaveM: (window['max_wave_m'] as num?)?.toDouble(),
+        maxWindKn: (window['max_wind_kn'] as num?)?.toDouble(),
+        maxGustKn: (window['max_gust_kn'] as num?)?.toDouble(),
+        note: window['note']?.toString(),
+        recommendationEn: window['recommendation_en']?.toString(),
+        recommendationHi: window['recommendation_hi']?.toString(),
       );
     }
 
-    final ts = timestamp ?? DateTime.now();
+    final ts = timestamp;
+    if (ts == null) {
+      throw const FormatException('Advisory response is missing its source timestamp.');
+    }
 
     return AdvisoryEntity(
       verdict: verdict,

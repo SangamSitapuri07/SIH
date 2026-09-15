@@ -1,18 +1,22 @@
 import '../../../../core/cache/staleness.dart';
 
-/// Single ocean spot snapshot probed by the skipper (§4, §8).
+/// Single ocean spot snapshot returned by the ORCA backend.
+///
+/// Measurements are nullable by design. A missing upstream measurement is not
+/// converted into a plausible looking fallback number: consumers must display
+/// “Unavailable” and retain the provided provenance instead.
 class ZoneSnapshot {
   final double lat;
   final double lon;
   final String zoneName;
-  final double offshoreDistKm;
+  final double? offshoreDistKm;
   final double? depthM;
-  final double waveHeightM;
+  final double? waveHeightM;
   final double? swellPeriodS;
-  final double windSpeedKn;
+  final double? windSpeedKn;
   final String? windDirection;
-  final double seaTempC;
-  final double currentSpeedKn;
+  final double? seaTempC;
+  final double? currentSpeedKn;
   final String? currentDirection;
   final double? chlorophyllMgM3;
   final double? fishingEffortHours;
@@ -27,14 +31,14 @@ class ZoneSnapshot {
     required this.lat,
     required this.lon,
     required this.zoneName,
-    required this.offshoreDistKm,
+    this.offshoreDistKm,
     this.depthM,
-    required this.waveHeightM,
+    this.waveHeightM,
     this.swellPeriodS,
-    required this.windSpeedKn,
+    this.windSpeedKn,
     this.windDirection,
-    required this.seaTempC,
-    required this.currentSpeedKn,
+    this.seaTempC,
+    this.currentSpeedKn,
     this.currentDirection,
     this.chlorophyllMgM3,
     this.fishingEffortHours,
@@ -47,32 +51,33 @@ class ZoneSnapshot {
   });
 }
 
-/// Metadata describing a map layer toggle.
+/// Backend-advertised map capability. Only an available layer with a supported
+/// visualization can be activated in the map UI.
 class MapLayerEntity {
   final String id;
   final String name;
   final String unit;
   final String source;
-  final String tileUrl;
-  final bool isEnabled;
+  final String visualization;
+  final String? endpoint;
+  final String state;
+  final String? resolution;
+  final String? reason;
+  final bool available;
 
   const MapLayerEntity({
     required this.id,
     required this.name,
     required this.unit,
     required this.source,
-    required this.tileUrl,
-    this.isEnabled = false,
+    required this.visualization,
+    this.endpoint,
+    required this.state,
+    this.resolution,
+    this.reason,
+    required this.available,
   });
 
-  MapLayerEntity copyWith({bool? isEnabled}) {
-    return MapLayerEntity(
-      id: id,
-      name: name,
-      unit: unit,
-      source: source,
-      tileUrl: tileUrl,
-      isEnabled: isEnabled ?? this.isEnabled,
-    );
-  }
+  bool get isMapRenderable => available &&
+      (visualization == 'vector_grid' || visualization == 'scalar_grid' || visualization == 'geojson');
 }

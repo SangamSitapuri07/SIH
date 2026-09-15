@@ -1,162 +1,146 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/verdict_colors.dart';
-import '../../../../core/widgets/staleness_badge.dart';
-import '../../domain/entities/advisory.dart';
-import '../../../../core/theme/orca_theme.dart';
 
-/// Primary skipper safety verdict card (§6, §7, §26A).
+import '../../../../core/cache/staleness.dart';
+import '../../../../core/theme/orca_theme.dart';
+import '../../../../core/theme/verdict_colors.dart';
+import '../../../../core/utils/date_formatter.dart';
+import '../../../../core/widgets/orca_ui.dart';
+import '../../domain/entities/advisory.dart';
+
+/// Primary skipper safety verdict card.
+///
+/// The deterministic backend verdict is rendered first and at display size,
+/// followed by the backend's own plain-language lines. Nothing here is written
+/// by the client.
 class VerdictCard extends StatelessWidget {
   final AdvisoryEntity advisory;
 
-  const VerdictCard({
-    super.key,
-    required this.advisory,
-  });
+  const VerdictCard({super.key, required this.advisory});
 
   @override
   Widget build(BuildContext context) {
-    final verdictColor = VerdictColors.fromVerdict(advisory.verdict);
-    final verdictBg = VerdictColors.backgroundFromVerdict(advisory.verdict);
-    final verdictIcon = VerdictColors.iconForVerdict(advisory.verdict);
+    final String verdictText = _verdictText(advisory.verdict);
+    final IconData shape = VerdictColors.iconForVerdict(advisory.verdict);
+    final OrcaDataState state = resolveDataState(
+      hasValue: true,
+      isCached: advisory.staleness.isCached,
+      isStale: advisory.staleness.state == StalenessState.stale,
+    );
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: verdictBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: verdictColor, width: 2.0),
-        boxShadow: [
-          BoxShadow(
-            color: verdictColor.withValues(alpha: 0.2),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+    return OrcaHeroPanel(
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header: Icon + Verdict Label + Staleness Badge
+        children: <Widget>[
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: verdictColor.withValues(alpha: 0.2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      verdictIcon,
-                      color: verdictColor,
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'CAN I GO OUT?',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: OrcaTheme.textSecondary,
-                          letterSpacing: 1.0,
-                        ),
-                      ),
-                      Text(
-                        _verdictText(advisory.verdict),
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
-                          color: verdictColor,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              StalenessBadge(staleness: advisory.staleness),
+            children: <Widget>[
+              const Expanded(child: OrcaEyebrow('DEPARTURE SAFETY VERDICT', color: OrcaTheme.onDeepTealMuted)),
+              OrcaStateChip(state: state, onDark: true),
             ],
           ),
           const SizedBox(height: 14),
-
-          // Primary English Headline
-          Text(
-            advisory.headline,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: OrcaTheme.textPrimary,
-              height: 1.3,
-            ),
-          ),
-
-          // Secondary Hindi/Bilingual Headline if present
-          if (advisory.headlineHi != null && advisory.headlineHi!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              advisory.headlineHi!,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: OrcaTheme.textPrimary.withValues(alpha: 0.85),
-                height: 1.3,
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 14),
-          const Divider(color: OrcaTheme.textMuted, height: 1),
-          const SizedBox(height: 10),
-
-          // Plain Language Bullet Points (§7)
-          ...advisory.plainEn.take(3).map(
-                (bullet) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Icon(Icons.circle, size: 6, color: verdictColor),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          bullet,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            color: OrcaTheme.textSecondary,
-                            height: 1.3,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+          const Text('Can I go fishing today?', style: OrcaType.heroTitle),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              Flexible(
+                child: Text(
+                  verdictText,
+                  style: OrcaType.heroVerdict,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              const SizedBox(width: 12),
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Icon(shape, color: OrcaTheme.onDeepTealStrong, size: 26),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(advisory.headline, style: OrcaType.heroBody.copyWith(fontWeight: FontWeight.w700)),
+          if (advisory.headlineHi != null && advisory.headlineHi!.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 6),
+            Text(
+              advisory.headlineHi!,
+              style: OrcaType.heroBody.copyWith(color: OrcaTheme.onDeepTealMuted),
+            ),
+          ],
+          if (advisory.plainEn.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 16),
+            Divider(color: Colors.white.withValues(alpha: 0.14), height: 1),
+            const SizedBox(height: 14),
+            for (final String bullet in advisory.plainEn.take(4)) ...<Widget>[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: Icon(Icons.circle, size: 5, color: OrcaTheme.onDeepTealStrong),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(child: Text(bullet, style: OrcaType.heroBody.copyWith(fontSize: 12.5))),
+                  ],
+                ),
+              ),
+            ],
+          ],
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              OrcaInfoPill(
+                icon: Icons.fact_check_outlined,
+                label: '${advisory.knownSources}/${advisory.totalSources} sources verified',
+                onDark: true,
+              ),
+              OrcaInfoPill(
+                icon: Icons.schedule_outlined,
+                label: _windowLabel(advisory.safeWindow),
+                onDark: true,
+              ),
+              OrcaInfoPill(
+                icon: Icons.update_rounded,
+                label: 'Retrieved ${DateFormatter.formatIstTime(advisory.timestamp)}',
+                onDark: true,
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  String _verdictText(String v) {
-    final lower = v.toLowerCase().replaceAll('-', '_');
-    if (lower.contains('go') && !lower.contains('no_go') && !lower.contains('nogo')) {
+  String _windowLabel(SafeWindow? window) {
+    if (window == null) return 'Departure window unavailable';
+    if (window.from.isEmpty || window.to.isEmpty) {
+      return window.status == 'UNAVAILABLE' ? 'No safe window in forecast' : 'Departure window unavailable';
+    }
+    return 'Window ${_short(window.from)}–${_short(window.to)}';
+  }
+
+  String _short(String raw) {
+    final DateTime? parsed = DateFormatter.parseIso(raw);
+    if (parsed == null) return raw;
+    return DateFormatter.formatIstTime(parsed);
+  }
+
+  String _verdictText(String value) {
+    final String normal = value.toLowerCase().replaceAll('-', '_');
+    if (normal.contains('go') && !normal.contains('no_go') && !normal.contains('nogo')) {
       return 'GO SAFE ✔';
     }
-    if (lower.contains('caution') || lower.contains('mod')) {
+    if (normal.contains('caution') || normal.contains('mod')) {
       return 'CAUTION ⚠';
     }
-    if (lower.contains('no_go') || lower.contains('nogo') || lower.contains('danger')) {
+    if (normal.contains('no_go') || normal.contains('nogo') || normal.contains('danger')) {
       return 'NO-GO ⛔';
     }
-    return v.toUpperCase();
+    return value.toUpperCase();
   }
 }

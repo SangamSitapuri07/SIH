@@ -79,9 +79,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get unreachableStatus => 'Unreachable';
 
   @override
-  String get demoModeBadge => 'DEMO DATA';
-
-  @override
   String get waveHeight => 'Wave Height';
 
   @override
@@ -128,7 +125,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiRunning => 'Agents collaborating...';
 
   @override
-  String get aiCollaborationTrace => 'Live Agent Collaboration Trace';
+  String get aiCollaborationTrace => 'Agent Collaboration Trace';
 
   @override
   String get aiOrchestrationSynthesis => 'Orchestrator Synthesis';
@@ -148,9 +145,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get noActiveAlerts => 'No active weather or cyclone warnings';
-
-  @override
-  String get simulateAlert => 'Simulate Alert (Demo)';
 
   @override
   String get navigateTitle => 'Route Safety & Land Check';
@@ -198,16 +192,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get checkHealthButton => 'Check Data Sources Health';
 
   @override
-  String get dataSourceCatalog => '14 External Data Sources';
+  String get dataSourceCatalog => 'Provider Source Status';
 
   @override
   String get cacheManagement => 'Local Storage & Cache';
 
   @override
   String get clearCache => 'Clear Cached Data';
-
-  @override
-  String get demoModeSwitch => 'Demo Mode (Mock Fixtures)';
 
   @override
   String get languageLabel => 'Language / भाषा / భాష';

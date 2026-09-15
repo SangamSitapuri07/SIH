@@ -1,28 +1,33 @@
-/// Domain entity representing a severe marine alert or cyclone warning (§4, §8, §19).
+/// A verified provider alert. Optional metadata remains unavailable when the
+/// source did not publish it; the UI must not manufacture a time or agency.
 class AlertItem {
   final String id;
-  final String severity; // info, caution, danger, critical
+  final String? severity;
   final String title;
   final String? titleHi;
   final String message;
   final String? messageHi;
-  final String source;
-  final DateTime issuedAt;
+  final String? source;
+  final DateTime? issuedAt;
   final DateTime? expiresAt;
   final String? affectedArea;
-  final bool isActive;
+  final bool? isActive;
+  final bool isCached;
+  final bool isStale;
 
   const AlertItem({
     required this.id,
-    required this.severity,
+    this.severity,
     required this.title,
     this.titleHi,
     required this.message,
     this.messageHi,
-    required this.source,
-    required this.issuedAt,
+    this.source,
+    this.issuedAt,
     this.expiresAt,
     this.affectedArea,
-    required this.isActive,
+    this.isActive,
+    this.isCached = false,
+    this.isStale = false,
   });
 }

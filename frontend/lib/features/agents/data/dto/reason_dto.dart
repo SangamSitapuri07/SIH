@@ -10,6 +10,9 @@ class ReasonDto {
   final Map<String, dynamic>? dataCoverage;
   final List<dynamic>? agentsList;
   final Map<String, dynamic>? synthesisJson;
+  final DateTime? timestamp;
+  final DateTime? sourceTimestamp;
+  final bool isCached;
 
   ReasonDto({
     this.overallRisk,
@@ -17,6 +20,9 @@ class ReasonDto {
     this.dataCoverage,
     this.agentsList,
     this.synthesisJson,
+    this.timestamp,
+    this.sourceTimestamp,
+    this.isCached = false,
   });
 
   factory ReasonDto.fromJson(Map<String, dynamic> json) {
@@ -35,18 +41,26 @@ class ReasonDto {
     return ReasonDto(
       overallRisk: json['overall_risk'] as String? ??
           json['verdict'] as String? ??
-          'MODERATE',
-      verdict: json['verdict'] as String? ?? 'caution',
+          'UNAVAILABLE',
+      verdict: json['verdict'] as String? ?? 'UNAVAILABLE',
       dataCoverage: json['data_coverage'] as Map<String, dynamic>?,
       agentsList: json['agents'] as List<dynamic>?,
       synthesisJson: synthesis,
+      timestamp: _parseTimestamp(json['timestamp']),
+      sourceTimestamp: _parseTimestamp(json['source_timestamp']),
+      isCached: json['cached'] == true,
     );
   }
 
 
+  static DateTime? _parseTimestamp(dynamic value) {
+    if (value is num) return DateTime.fromMillisecondsSinceEpoch(value.toInt() * 1000, isUtc: true);
+    return DateFormatter.parseIso(value);
+  }
+
   AgentReasoningResult toEntity(StalenessInfo staleness) {
-    final known = dataCoverage?['known'] as int? ?? 7;
-    final total = dataCoverage?['total'] as int? ?? 8;
+    final known = dataCoverage?['known'] as int? ?? 0;
+    final total = dataCoverage?['total'] as int? ?? 0;
     final failed = (dataCoverage?['sources_failed'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList() ??
@@ -71,7 +85,7 @@ class ReasonDto {
           // The backend emits `agent_name`, `type`, `findings` and
           // `confidence`; older fixtures used `name`, `class`, `summary`.
           // Fall back through both so the trace is populated either way.
-          final rawStatus = a['status'] as String? ?? 'completed';
+          final rawStatus = a['status'] as String? ?? 'unavailable';
           final rawClass =
               (a['class'] ?? a['type'] ?? descriptor.classLabel).toString();
           // Normalize class label to the DETERMINISTIC / LLM tags the UI shows.
@@ -80,7 +94,7 @@ class ReasonDto {
               : 'DETERMINISTIC';
           final rawVerdict = a['verdict'] as String?;
           final verdict = rawVerdict ??
-              (rawStatus == 'completed' ? 'good' : 'caution');
+              (rawStatus == 'completed' ? 'good' : 'unavailable');
 
           parsedAgents.add(
             AgentTraceFinding(
@@ -89,11 +103,11 @@ class ReasonDto {
               emoji: (a['emoji'] ?? descriptor.emoji).toString(),
               agentClass: agentClass,
               status: rawStatus,
-              durationMs: (a['duration_ms'] as num?)?.toInt() ?? 50,
+              durationMs: (a['duration_ms'] as num?)?.toInt(),
               verdict: verdict,
               summary: (a['summary'] ??
                       a['findings'] ??
-                      'Agent completed analysis.')
+                      'No verified agent finding was returned.')
                   .toString(),
               evidence: evidenceList,
               warnings: warningsList,
@@ -105,15 +119,15 @@ class ReasonDto {
     }
 
     final synth = OrchestratorSynthesis(
-      headline: synthesisJson?['headline'] as String? ?? 'Safe for day transit within coastal shelf.',
-      recommendation: synthesisJson?['recommendation'] as String? ?? 'Depart between 06:00 and 10:00 IST.',
-      traceOwner: synthesisJson?['trace_owner'] as String? ?? '🧠 Orchestrator Agent (SIH26176)',
-      timestamp: DateFormatter.parseIso(synthesisJson?['timestamp']) ?? DateTime.now(),
+      headline: synthesisJson?['headline'] as String? ?? 'Synthesis unavailable.',
+      recommendation: synthesisJson?['recommendation'] as String? ?? 'No verified synthesis was returned.',
+      traceOwner: synthesisJson?['trace_owner'] as String? ?? 'Unavailable',
+      timestamp: DateFormatter.parseIso(synthesisJson?['timestamp']) ?? timestamp,
     );
 
     return AgentReasoningResult(
-      overallRisk: overallRisk ?? 'MODERATE',
-      verdict: verdict ?? 'caution',
+      overallRisk: overallRisk ?? 'UNAVAILABLE',
+      verdict: verdict ?? 'UNAVAILABLE',
       knownSources: known,
       totalSources: total,
       sourcesFailed: failed,

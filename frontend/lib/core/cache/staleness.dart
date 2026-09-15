@@ -14,15 +14,17 @@ class StalenessInfo {
   final StalenessState state;
   final Duration age;
   final DateTime fetchedAt;
+  final bool isCached;
 
   const StalenessInfo({
     required this.state,
     required this.age,
     required this.fetchedAt,
+    this.isCached = false,
   });
 
   /// Computes staleness from fetch timestamp.
-  factory StalenessInfo.fromDateTime(DateTime fetchedAt) {
+  factory StalenessInfo.fromDateTime(DateTime fetchedAt, {bool isCached = false}) {
     final now = DateTime.now();
     final age = now.difference(fetchedAt);
 
@@ -39,20 +41,28 @@ class StalenessInfo {
       state: state,
       age: age,
       fetchedAt: fetchedAt,
+      isCached: isCached,
     );
   }
 
+  /// True once the payload has outlived the 3-hour freshness budget, or when
+  /// the source could not be reached at all. Screens use this to decide
+  /// between a `CACHED` and a `STALE` badge.
+  bool get isStale =>
+      state == StalenessState.stale || state == StalenessState.unreachable;
+
   /// Badge label for UI display.
   String get label {
+    final prefix = isCached ? 'Cached · ' : '';
     switch (state) {
       case StalenessState.fresh:
-        return 'Fresh (<30m)';
+        return '${prefix}Fresh (<30m)';
       case StalenessState.recent:
-        return 'Recent (${age.inMinutes}m ago)';
+        return '${prefix}Recent (${age.inMinutes}m ago)';
       case StalenessState.stale:
-        return 'Stale (${age.inHours}h ago)';
+        return '${prefix}Stale (${age.inHours}h ago)';
       case StalenessState.unreachable:
-        return 'Unreachable';
+        return '${prefix}Unreachable';
     }
   }
 

@@ -10,6 +10,7 @@ class StatTile extends StatelessWidget {
   final IconData icon;
   final String? source;
   final String? time;
+  final String? timeLabel;
   final String? status; // good, caution, danger
   final VoidCallback? onTap;
 
@@ -21,6 +22,7 @@ class StatTile extends StatelessWidget {
     required this.icon,
     this.source,
     this.time,
+    this.timeLabel,
     this.status,
     this.onTap,
   });
@@ -96,7 +98,7 @@ class StatTile extends StatelessWidget {
             if (source != null) ...[
               const SizedBox(height: 6),
               Text(
-                time != null ? '$source · $time' : source!,
+                time != null ? '$source · ${timeLabel ?? "Time"}: $time' : source!,
                 style: const TextStyle(
                   fontSize: 10,
                   color: OrcaTheme.textMuted,

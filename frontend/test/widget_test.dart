@@ -1,58 +1,68 @@
-// ignore: unused_import
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orca_app/app.dart';
 import 'package:orca_app/core/cache/cache_service.dart';
-import 'package:orca_app/core/widgets/orca_app_bar.dart';
+import 'package:orca_app/features/advisory/presentation/screens/marine_advisory_screen.dart';
 
+/// Shell-level smoke test for the redesigned ORCA workspace.
+///
+/// The app boots without any backend, so every screen has to render its honest
+/// unavailable state instead of throwing or inventing data.
 void main() {
-  testWidgets('OrcaApp boots successfully with 6 tabs and Home as initial screen', (tester) async {
-    final cache = CacheService();
+  testWidgets('OrcaApp boots into the Command Center with the redesigned shell', (WidgetTester tester) async {
+    final CacheService cache = CacheService();
     await cache.set('app.onboarding', <String, dynamic>{'complete': true});
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
+        overrides: <Override>[
           cacheServiceProvider.overrideWithValue(cache),
-          demoModeProvider.overrideWith((ref) => true),
         ],
         child: const OrcaApp(),
       ),
     );
 
-    // Allow mock fixtures and providers to resolve
-    await tester.pumpAndSettle();
+    // Let providers start their requests and fail safely.
+    await tester.pump(const Duration(milliseconds: 100));
 
-    // Verify AppBar Title (Command Center)
+    // Brand mark in the mobile header.
     expect(find.text('ORCA'), findsOneWidget);
 
-    // Verify 6 Bottom Navigation destinations exist
-    expect(find.text('Home'), findsOneWidget);
-    expect(find.text('Map'), findsOneWidget);
-    expect(find.text('AI Trace'), findsOneWidget);
-    expect(find.text('Alerts'), findsOneWidget);
-    expect(find.text('Navigate'), findsOneWidget);
-    expect(find.text('Info'), findsOneWidget);
+    // Mobile navigation: Overview · Ask ORCA · Ocean map · Alerts · More.
+    // 'Overview' and 'Ask ORCA' also appear as the screen title and as a hero
+    // action, so each label is asserted to be present rather than unique.
+    expect(find.text('Overview'), findsWidgets);
+    expect(find.text('Ask ORCA'), findsWidgets);
+    expect(find.text('Ocean map'), findsWidgets);
+    expect(find.text('Alerts'), findsWidgets);
+    expect(find.text('More'), findsWidgets);
 
-    // Tap on AI Trace Tab
-    await tester.tap(find.text('AI Trace'));
-    await tester.pumpAndSettle();
-    expect(find.text('ORCA AI AGENTS'), findsOneWidget);
+    // The shell must not claim a live stream while nothing is connected.
+    expect(find.text('LIVE'), findsNothing);
+  });
 
-    // Tap on Alerts Tab
-    await tester.tap(find.text('Alerts'));
-    await tester.pumpAndSettle();
-    expect(find.text('MARINE ALERTS'), findsOneWidget);
+  testWidgets('Workspace sheet opens the safety advisory screen', (WidgetTester tester) async {
+    final CacheService cache = CacheService();
+    await cache.set('app.onboarding', <String, dynamic>{'complete': true});
 
-    // Tap on Navigate Tab
-    await tester.tap(find.text('Navigate'));
-    await tester.pumpAndSettle();
-    expect(find.text('ROUTE NAVIGATION'), findsOneWidget);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          cacheServiceProvider.overrideWithValue(cache),
+        ],
+        child: const OrcaApp(),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
 
-    // Tap on Info Tab
-    await tester.tap(find.text('Info'));
-    await tester.pumpAndSettle();
-    expect(find.text('SYSTEM & DATA HEALTH'), findsOneWidget);
+    await tester.tap(find.text('More'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('ALL ORCA WORKSPACES'), findsOneWidget);
+
+    await tester.tap(find.text('Safety advisory').last);
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(MarineAdvisoryScreen), findsOneWidget);
   });
 }

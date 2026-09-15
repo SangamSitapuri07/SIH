@@ -18,7 +18,7 @@ class CachedRecord {
 
   bool get isExpired => DateTime.now().difference(fetchedAt) > ttl;
 
-  StalenessInfo get staleness => StalenessInfo.fromDateTime(fetchedAt);
+  StalenessInfo get staleness => StalenessInfo.fromDateTime(fetchedAt, isCached: true);
 
   Map<String, dynamic> toJson() => {
         'data': data,

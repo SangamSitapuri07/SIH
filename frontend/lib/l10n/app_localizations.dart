@@ -238,12 +238,6 @@ abstract class AppLocalizations {
   /// **'Unreachable'**
   String get unreachableStatus;
 
-  /// No description provided for @demoModeBadge.
-  ///
-  /// In en, this message translates to:
-  /// **'DEMO DATA'**
-  String get demoModeBadge;
-
   /// No description provided for @waveHeight.
   ///
   /// In en, this message translates to:
@@ -337,7 +331,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiCollaborationTrace.
   ///
   /// In en, this message translates to:
-  /// **'Live Agent Collaboration Trace'**
+  /// **'Agent Collaboration Trace'**
   String get aiCollaborationTrace;
 
   /// No description provided for @aiOrchestrationSynthesis.
@@ -375,12 +369,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No active weather or cyclone warnings'**
   String get noActiveAlerts;
-
-  /// No description provided for @simulateAlert.
-  ///
-  /// In en, this message translates to:
-  /// **'Simulate Alert (Demo)'**
-  String get simulateAlert;
 
   /// No description provided for @navigateTitle.
   ///
@@ -475,7 +463,7 @@ abstract class AppLocalizations {
   /// No description provided for @dataSourceCatalog.
   ///
   /// In en, this message translates to:
-  /// **'14 External Data Sources'**
+  /// **'Provider Source Status'**
   String get dataSourceCatalog;
 
   /// No description provided for @cacheManagement.
@@ -489,12 +477,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Clear Cached Data'**
   String get clearCache;
-
-  /// No description provided for @demoModeSwitch.
-  ///
-  /// In en, this message translates to:
-  /// **'Demo Mode (Mock Fixtures)'**
-  String get demoModeSwitch;
 
   /// No description provided for @languageLabel.
   ///

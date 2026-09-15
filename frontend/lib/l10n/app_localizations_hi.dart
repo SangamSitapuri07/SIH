@@ -78,9 +78,6 @@ class AppLocalizationsHi extends AppLocalizations {
   String get unreachableStatus => 'संपर्क नहीं हो सका';
 
   @override
-  String get demoModeBadge => 'डेमो डेटा';
-
-  @override
   String get waveHeight => 'लहरों की ऊंचाई';
 
   @override
@@ -127,7 +124,7 @@ class AppLocalizationsHi extends AppLocalizations {
   String get aiRunning => 'एजेंट्स मिलकर विश्लेषण कर रहे हैं...';
 
   @override
-  String get aiCollaborationTrace => 'एजेंट सहयोग लाइव ट्रेस';
+  String get aiCollaborationTrace => 'एजेंट सहयोग ट्रेस';
 
   @override
   String get aiOrchestrationSynthesis => 'अंतिम निर्णय एवं निष्कर्ष';
@@ -147,9 +144,6 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get noActiveAlerts => 'कोई सक्रिय तूफान या मौसम चेतावनी नहीं है';
-
-  @override
-  String get simulateAlert => 'चेतावनी सिमुलेशन (डेमो)';
 
   @override
   String get navigateTitle => 'मार्ग सुरक्षा एवं भूमि जांच';
@@ -197,16 +191,13 @@ class AppLocalizationsHi extends AppLocalizations {
   String get checkHealthButton => 'डेटा स्रोतों की जांच करें';
 
   @override
-  String get dataSourceCatalog => '14 बाहरी डेटा स्रोत';
+  String get dataSourceCatalog => 'प्रदाता स्रोत स्थिति';
 
   @override
   String get cacheManagement => 'लोकल स्टोरेज एवं कैश';
 
   @override
   String get clearCache => 'कैश डेटा साफ़ करें';
-
-  @override
-  String get demoModeSwitch => 'डेमो मोड (नमूना डेटा)';
 
   @override
   String get languageLabel => 'भाषा / Language / భాష';

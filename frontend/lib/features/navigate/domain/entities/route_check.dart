@@ -1,7 +1,7 @@
 /// Detour waypoint computed to avoid land hit (§4, §6).
 class DetourWaypoint {
-  final double lat;
-  final double lon;
+  final double? lat;
+  final double? lon;
   final String name;
   final double clearanceKm;
 
@@ -15,13 +15,13 @@ class DetourWaypoint {
 
 /// Course land verification entity (/api/v1/route-check).
 class RouteCheckEntity {
-  final bool ok;
-  final bool detour;
-  final bool landHit;
+  final bool? ok;
+  final bool? detour;
+  final bool? landHit;
   final String reason;
-  final double distanceKm;
-  final double distanceNm;
-  final double bearingDeg;
+  final double? distanceKm;
+  final double? distanceNm;
+  final double? bearingDeg;
   final List<List<double>> legs;
   final DetourWaypoint? detourWaypoint;
   final List<String> sources;
@@ -42,11 +42,11 @@ class RouteCheckEntity {
 
 /// Single sampling point along route (sampled every ~30 km).
 class TransitPoint {
-  final double sailKm;
-  final double lat;
-  final double lon;
-  final double waveM;
-  final double windKn;
+  final double? sailKm;
+  final double? lat;
+  final double? lon;
+  final double? waveM;
+  final double? windKn;
   final String state; // good, caution, danger
   final String why;
 

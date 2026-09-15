@@ -1,70 +1,84 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/orca_theme.dart';
+import '../../../../core/theme/verdict_colors.dart';
 import '../../domain/entities/zone_snapshot.dart';
-import '../providers/map_provider.dart';
 
-/// Modal dialog allowing skippers/judges to toggle map raster & vector layers (§8).
-class LayerSelectorDialog extends ConsumerWidget {
-  const LayerSelectorDialog({super.key});
+/// Compact capability-aware layer selector. It displays unavailable backend
+/// products transparently instead of rendering a blank or invented overlay.
+class LayerSelectorDialog extends StatelessWidget {
+  final List<MapLayerEntity> layers;
+  final Set<String> selectedIds;
+  final ValueChanged<Set<String>> onChanged;
+
+  const LayerSelectorDialog({
+    super.key,
+    required this.layers,
+    required this.selectedIds,
+    required this.onChanged,
+  });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final layers = ref.watch(mapLayersProvider);
-
+  Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: OrcaTheme.surface,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(OrcaTheme.cardRadius),
         side: const BorderSide(color: OrcaTheme.cardBorder),
       ),
+      titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 8),
       title: const Row(
-        children: [
-          Icon(Icons.layers, color: OrcaTheme.accent, size: 22),
-          SizedBox(width: 8),
-          Text(
-            'Map Data Layers',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
-          ),
+        children: <Widget>[
+          Icon(Icons.layers_outlined, color: OrcaTheme.accentInk, size: 18),
+          SizedBox(width: 10),
+          Text('Map layers', style: OrcaType.sectionTitle),
         ],
       ),
       content: SizedBox(
-        width: double.maxFinite,
+        width: 430,
         child: ListView.separated(
           shrinkWrap: true,
           itemCount: layers.length,
-          separatorBuilder: (context, index) => const Divider(color: OrcaTheme.cardBorder, height: 1),
+          separatorBuilder: (_, __) => const Divider(height: 1, color: OrcaTheme.cardBorder),
           itemBuilder: (context, index) {
             final layer = layers[index];
-            return SwitchListTile(
-              title: Text(
-                layer.name,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: OrcaTheme.textPrimary,
+            final enabled = selectedIds.contains(layer.id);
+            final interactive = layer.isMapRenderable;
+            return Semantics(
+              label: '${layer.name}: ${interactive ? layer.state : 'Unavailable'}',
+              child: SwitchListTile.adaptive(
+                contentPadding: const EdgeInsets.symmetric(vertical: 5),
+                title: Text(layer.name, style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: interactive ? OrcaTheme.textPrimary : OrcaTheme.textMuted,
+                )),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${layer.source}${layer.resolution != null ? ' · ${layer.resolution}' : ''}',
+                      style: const TextStyle(fontSize: 11, color: OrcaTheme.textSecondary)),
+                    if (!interactive && layer.reason != null) ...[
+                      const SizedBox(height: 3),
+                      Text(layer.reason!, style: const TextStyle(fontSize: 10.5, color: VerdictColors.caution)),
+                    ],
+                  ],
                 ),
+                value: enabled && interactive,
+                activeColor: OrcaTheme.accent,
+                onChanged: interactive
+                    ? (value) {
+                        final next = {...selectedIds};
+                        value ? next.add(layer.id) : next.remove(layer.id);
+                        onChanged(next);
+                      }
+                    : null,
               ),
-              subtitle: Text(
-                layer.source,
-                style: const TextStyle(fontSize: 11, color: OrcaTheme.textMuted),
-              ),
-              value: layer.isEnabled,
-              activeThumbColor: OrcaTheme.accent,
-              onChanged: (bool val) {
-                final updated = List<MapLayerEntity>.from(layers);
-                updated[index] = layer.copyWith(isEnabled: val);
-                ref.read(mapLayersProvider.notifier).state = updated;
-              },
             );
           },
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Done', style: TextStyle(color: OrcaTheme.accent, fontWeight: FontWeight.bold)),
-        ),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
       ],
     );
   }

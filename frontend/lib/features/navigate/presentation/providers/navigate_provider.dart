@@ -1,10 +1,6 @@
-import 'dart:convert';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/dio_provider.dart';
-import '../../../../core/widgets/orca_app_bar.dart';
 import '../../data/datasources/navigate_remote.dart';
-import '../../data/dto/route_check_dto.dart';
 import '../../data/repositories/navigate_repo_impl.dart';
 import '../../domain/entities/route_check.dart';
 import '../../domain/repositories/navigate_repo.dart';
@@ -41,23 +37,8 @@ class NavigateNotifier extends StateNotifier<AsyncValue<RouteAnalysisState>> {
   final Ref _ref;
   final GetRouteAdvisoryUseCase _useCase;
 
-  NavigateNotifier(this._ref, this._useCase) : super(const AsyncValue.loading()) {
-    evaluateRoute(
-      fromLat: 18.92,
-      fromLon: 72.83,
-      toLat: 18.75,
-      toLon: 72.55,
-    );
-
-    _ref.listen(demoModeProvider, (prev, next) {
-      evaluateRoute(
-        fromLat: 18.92,
-        fromLon: 72.83,
-        toLat: 18.75,
-        toLon: 72.55,
-      );
-    });
-  }
+  NavigateNotifier(this._ref, this._useCase)
+      : super(const AsyncValue.data(RouteAnalysisState()));
 
   Future<void> evaluateRoute({
     required double fromLat,
@@ -66,31 +47,6 @@ class NavigateNotifier extends StateNotifier<AsyncValue<RouteAnalysisState>> {
     required double toLon,
   }) async {
     state = const AsyncValue.loading();
-    final isDemo = _ref.read(demoModeProvider);
-
-    if (isDemo) {
-      try {
-        final checkRaw = await rootBundle.loadString('assets/fixtures/route_check.json');
-        final checkJson = jsonDecode(checkRaw) as Map<String, dynamic>;
-        final checkDto = RouteCheckDto.fromJson(checkJson);
-
-        final advRaw = await rootBundle.loadString('assets/fixtures/route_advisory.json');
-        final advJson = jsonDecode(advRaw) as Map<String, dynamic>;
-        final advDto = RouteAdvisoryDto.fromJson(advJson);
-
-        state = AsyncValue.data(
-          RouteAnalysisState(
-            check: checkDto.toEntity(),
-            advisory: advDto.toEntity(),
-          ),
-        );
-        return;
-      } catch (e, st) {
-        state = AsyncValue.error(e, st);
-        return;
-      }
-    }
-
     final checkResult = await _useCase.checkRoute(
       fromLat: fromLat,
       fromLon: fromLon,

@@ -1,14 +1,9 @@
-import 'dart:convert';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/cache/cache_service.dart';
-import '../../../../core/cache/staleness.dart';
 import '../../../../core/config/app_config.dart';
+import '../../../../core/config/api_paths.dart';
 import '../../../../core/network/dio_provider.dart';
-import '../../../../core/result/result.dart';
-import '../../../../core/widgets/orca_app_bar.dart';
 import '../../data/datasources/agents_remote.dart';
-import '../../data/dto/reason_dto.dart';
 import '../../data/repositories/agents_repo_impl.dart';
 import '../../domain/entities/agent_reasoning.dart';
 import '../../domain/repositories/agents_repo.dart';
@@ -36,6 +31,52 @@ final getAgentReasoningUseCaseProvider = Provider<GetAgentReasoningUseCase>((ref
   return GetAgentReasoningUseCase(repo);
 });
 
+/// Runtime entry advertised by the actual `/api/v1/agents` backend registry.
+///
+/// The registry reports IDLE until a reasoning request runs, and PROCESSING,
+/// DEGRADED or FAILED while and after one does. IDLE therefore means "not
+/// currently running", not "healthy" — the UI must not present it as readiness.
+class AgentRuntimeStatus {
+  final String id;
+  final String status;
+  final String name;
+  final String type;
+  final String? role;
+
+  const AgentRuntimeStatus({
+    required this.id,
+    required this.status,
+    required this.name,
+    required this.type,
+    this.role,
+  });
+
+  bool get isRunning => status.toUpperCase() == 'PROCESSING';
+  bool get hasProblem {
+    final String normal = status.toUpperCase();
+    return normal == 'FAILED' || normal == 'DEGRADED';
+  }
+
+  bool get isIdle => status.toUpperCase() == 'IDLE';
+}
+
+final agentRuntimeStatusProvider = FutureProvider<List<AgentRuntimeStatus>>((ref) async {
+  final response = await ref.watch(dioProvider).get<dynamic>(ApiPaths.agents);
+  final data = response.data;
+  final list = data is Map<String, dynamic> ? data['agents'] as List<dynamic>? ?? const [] : const [];
+  return list.whereType<Map<String, dynamic>>().map((agent) {
+    final id = agent['id']?.toString();
+    if (id == null) throw const FormatException('Agent registry entry missing id.');
+    return AgentRuntimeStatus(
+      id: id,
+      status: agent['status']?.toString() ?? 'UNAVAILABLE',
+      name: agent['name']?.toString() ?? id,
+      type: agent['type']?.toString() ?? 'Unspecified',
+      role: agent['role']?.toString(),
+    );
+  }).toList();
+});
+
 /// StateNotifier providing live / cached multi-agent reasoning state.
 class AgentsNotifier extends StateNotifier<AsyncValue<AgentReasoningResult>> {
   final Ref _ref;
@@ -44,30 +85,10 @@ class AgentsNotifier extends StateNotifier<AsyncValue<AgentReasoningResult>> {
   AgentsNotifier(this._ref, this._useCase) : super(const AsyncValue.loading()) {
     fetch();
 
-    // Re-fetch if demo mode changes
-    _ref.listen(demoModeProvider, (prev, next) {
-      fetch(forceRefresh: true);
-    });
   }
 
   Future<void> fetch({bool forceRefresh = false}) async {
     state = const AsyncValue.loading();
-    final isDemo = _ref.read(demoModeProvider);
-
-    if (isDemo) {
-      try {
-        final raw = await rootBundle.loadString('assets/fixtures/reason.json');
-        final json = jsonDecode(raw) as Map<String, dynamic>;
-        final dto = ReasonDto.fromJson(json);
-        final staleness = StalenessInfo.fromDateTime(DateTime.now());
-        state = AsyncValue.data(dto.toEntity(staleness));
-        return;
-      } catch (e, st) {
-        state = AsyncValue.error(e, st);
-        return;
-      }
-    }
-
     final result = await _useCase.execute(
       lat: AppConfig.defaultLat,
       lon: AppConfig.defaultLon,

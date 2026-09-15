@@ -13,10 +13,10 @@ class ApiPaths {
   static const String datasets = '/api/v1/datasets';
   static const String zones = '/api/v1/zones';
   static const String alerts = '/api/v1/alerts';
-  static const String alertsSimulate = '/api/v1/alerts/simulate';
   static const String agents = '/api/v1/agents';
   static const String chat = '/api/v1/chat';
   static const String feedback = '/api/v1/feedback';
+  static const String sync = '/api/v1/sync';
   static const String liveStream = '/api/live/stream';
   static const String mapSynoptic = '/api/map/synoptic';
 
@@ -29,8 +29,4 @@ class ApiPaths {
     chat: '/api/chat',
   };
 
-  /// Returns tile URL template for flutter_map.
-  static String tileUrl(String baseUrl, String layerType) {
-    return '$baseUrl/api/v1/tiles/$layerType/{z}/{x}/{y}.png';
-  }
 }

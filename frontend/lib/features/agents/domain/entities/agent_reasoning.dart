@@ -7,7 +7,7 @@ class AgentTraceFinding {
   final String emoji;
   final String agentClass; // DETERMINISTIC or LLM
   final String status; // completed, running, degraded, failed
-  final int durationMs;
+  final int? durationMs;
   final String verdict; // good, caution, danger
   final String summary;
   final List<String> evidence;
@@ -32,13 +32,13 @@ class OrchestratorSynthesis {
   final String headline;
   final String recommendation;
   final String traceOwner;
-  final DateTime timestamp;
+  final DateTime? timestamp;
 
   const OrchestratorSynthesis({
     required this.headline,
     required this.recommendation,
     required this.traceOwner,
-    required this.timestamp,
+    this.timestamp,
   });
 }
 

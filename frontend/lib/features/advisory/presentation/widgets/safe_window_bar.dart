@@ -1,88 +1,145 @@
 import 'package:flutter/material.dart';
+
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
+import '../../../../core/utils/date_formatter.dart';
+import '../../../../core/widgets/orca_ui.dart';
 import '../../domain/entities/advisory.dart';
 
-/// Renders safe departure window banner (§8).
+/// Departure-window card.
+///
+/// The window, its limits and its quality are computed by the deterministic
+/// backend engine. If the engine published no window, this card says exactly
+/// that — it never shortens or invents a departure time.
 class SafeWindowBar extends StatelessWidget {
   final SafeWindow? safeWindow;
 
-  const SafeWindowBar({
-    super.key,
-    required this.safeWindow,
-  });
+  const SafeWindowBar({super.key, required this.safeWindow});
 
   @override
   Widget build(BuildContext context) {
     if (safeWindow == null) {
-      return const SizedBox.shrink();
+      return const OrcaUnavailable(
+        icon: Icons.timer_off_outlined,
+        title: 'Departure window unavailable',
+        message: 'The ORCA Box did not return a safe-departure-window calculation for this request, so no window is shown.',
+      );
     }
 
-    final isSafe = safeWindow!.isSafe;
-    final color = isSafe ? VerdictColors.go : VerdictColors.noGo;
+    final SafeWindow window = safeWindow!;
+    final String status = (window.status ?? '').toUpperCase();
+    final bool hasWindow = window.from.isNotEmpty &&
+        window.to.isNotEmpty &&
+        (status.isEmpty || status == 'AVAILABLE' || status == 'CAUTION');
+    final bool caution = status == 'CAUTION' || (window.quality ?? '').toUpperCase() == 'CAUTION';
+    final Color color = !hasWindow
+        ? OrcaTheme.textMuted
+        : caution
+            ? VerdictColors.caution
+            : VerdictColors.go;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: OrcaTheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.5), width: 1.2),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            isSafe ? Icons.access_time_filled : Icons.timer_off_outlined,
-            color: color,
-            size: 24,
+    return OrcaCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Expanded(child: OrcaEyebrow('DEPARTURE WINDOW', color: OrcaTheme.textMuted)),
+              OrcaStateChip(
+                state: hasWindow ? OrcaDataState.forecast : OrcaDataState.unavailable,
+                overrideLabel: hasWindow
+                    ? (caution ? 'CAUTION WINDOW' : 'VERIFIED WINDOW')
+                    : 'UNAVAILABLE',
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'SAFE DEPARTURE WINDOW',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: OrcaTheme.textSecondary,
-                    letterSpacing: 0.8,
-                  ),
+          const SizedBox(height: 10),
+          if (hasWindow) ...<Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                Icon(
+                  caution ? Icons.warning_amber_rounded : Icons.access_time_filled_rounded,
+                  color: color,
+                  size: 22,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  isSafe
-                      ? '${safeWindow!.from} to ${safeWindow!.to}'
-                      : 'No safe departure window in next 48h',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: isSafe ? Colors.white : VerdictColors.noGo,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${_format(window.from)} → ${_format(window.to)}',
+                    style: OrcaType.cardTitle.copyWith(fontSize: 18),
                   ),
                 ),
               ],
             ),
-          ),
-          if (safeWindow!.hoursRemaining != null && isSafe) ...[
+            if (window.hoursRemaining != null) ...<Widget>[
+              const SizedBox(height: 4),
+              Text(
+                '${window.hoursRemaining!.toStringAsFixed(0)} hour window${window.quality == null ? '' : ' · engine quality ${window.quality}'}',
+                style: OrcaType.caption,
+              ),
+            ],
+          ] else
+            Text(
+              status == 'UNAVAILABLE'
+                  ? 'No qualifying departure window in the returned forecast horizon.'
+                  : 'Departure window status could not be verified.',
+              style: OrcaType.body.copyWith(fontSize: 12.5),
+            ),
+          if (hasWindow && (window.maxWaveM != null || window.maxWindKn != null)) ...<Widget>[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                if (window.maxWaveM != null)
+                  OrcaInfoPill(icon: Icons.waves_rounded, label: 'peak wave ${window.maxWaveM!.toStringAsFixed(1)} m'),
+                if (window.maxWindKn != null)
+                  OrcaInfoPill(icon: Icons.air_rounded, label: 'peak wind ${window.maxWindKn!.toStringAsFixed(1)} kn'),
+                if (window.maxGustKn != null)
+                  OrcaInfoPill(icon: Icons.storm_rounded, label: 'peak gust ${window.maxGustKn!.toStringAsFixed(1)} kn'),
+              ],
+            ),
+          ],
+          if (window.recommendationEn != null && window.recommendationEn!.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: VerdictColors.go.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
+                color: OrcaTheme.surfaceElevated,
+                borderRadius: BorderRadius.circular(11),
               ),
               child: Text(
-                '${safeWindow!.hoursRemaining!.toStringAsFixed(1)}h left',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: VerdictColors.go,
-                ),
+                window.recommendationEn!,
+                style: OrcaType.body.copyWith(fontSize: 12.5, color: OrcaTheme.textPrimary, height: 1.5),
               ),
             ),
           ],
+          if (window.note != null && window.note!.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Icon(Icons.info_outline_rounded, size: 14, color: VerdictColors.caution),
+                const SizedBox(width: 6),
+                Expanded(child: Text(window.note!, style: OrcaType.caption)),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          const OrcaProvenance(
+            source: 'ORCA deterministic safe-window engine',
+            timeLabel: 'GOOD limits: wave < 2.0 m, wind < 15 kn, gust < 25 kn · caution limits 2.5 m / 20 kn / 34 kn',
+            maxLines: 3,
+          ),
         ],
       ),
     );
+  }
+
+  static String _format(String raw) {
+    final DateTime? parsed = DateFormatter.parseIso(raw);
+    if (parsed == null) return raw;
+    return DateFormatter.formatIstTime(parsed);
   }
 }

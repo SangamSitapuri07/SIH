@@ -1,13 +1,18 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../cache/cache_service.dart';
+import '../config/api_paths.dart';
+import '../network/dio_provider.dart';
+import '../offline/connectivity_watcher.dart';
 
 enum SyncStatus { pending, syncing, synced, failed, retrying }
 
 class SyncOperation {
   final String id;
-  final String entityType; // location, catch_report, feedback, profile
-  final String action; // CREATE, UPDATE, DELETE
+  final String entityType;
+  final String action;
   final Map<String, dynamic> payload;
   final DateTime timestamp;
   SyncStatus status;
@@ -23,76 +28,138 @@ class SyncOperation {
     this.retries = 0,
   });
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'entity_type': entityType,
-      'action': action,
-      'payload': payload,
-      'timestamp': timestamp.toIso8601String(),
-      'status': status.name,
-      'retries': retries,
-    };
+  factory SyncOperation.fromJson(Map<String, dynamic> json) {
+    final id = json['id']?.toString();
+    final entityType = json['entity_type']?.toString();
+    final action = json['action']?.toString();
+    final payload = json['payload'];
+    final timestamp = DateTime.tryParse(json['timestamp']?.toString() ?? '');
+    if (id == null || entityType == null || action == null || payload is! Map || timestamp == null) {
+      throw const FormatException('Invalid saved offline operation.');
+    }
+    final statusName = json['status']?.toString();
+    var status = SyncStatus.pending;
+    for (final candidate in SyncStatus.values) {
+      if (candidate.name == statusName) {
+        status = candidate;
+        break;
+      }
+    }
+    return SyncOperation(
+      id: id,
+      entityType: entityType,
+      action: action,
+      payload: Map<String, dynamic>.from(payload),
+      timestamp: timestamp,
+      // A process cannot resume an in-flight request after restart.
+      status: status == SyncStatus.syncing ? SyncStatus.retrying : status,
+      retries: (json['retries'] as num?)?.toInt() ?? 0,
+    );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'entity_type': entityType,
+        'action': action,
+        'payload': payload,
+        'timestamp': timestamp.toIso8601String(),
+        'status': status.name,
+        'retries': retries,
+      };
 }
 
-/// Offline-First Sync Engine (§14, §15, §16).
-/// Automatically queues operations locally and syncs when connectivity returns.
+/// Persistent offline outbox. Operations are removed only after the actual
+/// backend acknowledges the specific request; this never simulates a sync.
 class SyncManager extends StateNotifier<List<SyncOperation>> {
+  static const _cacheKey = 'sync.outbox.v1';
   final Ref _ref;
   bool _isSyncing = false;
 
-  SyncManager(this._ref) : super([]) {
-    _loadOutbox();
+  SyncManager(this._ref) : super(const []) {
+    unawaited(_loadOutbox());
+    _ref.listen<bool>(isOnlineProvider, (previous, online) {
+      if (online && previous != true) unawaited(triggerSync());
+    });
   }
 
-  int get pendingCount => state.where((op) => op.status == SyncStatus.pending || op.status == SyncStatus.retrying).length;
+  int get pendingCount => state.where((operation) =>
+      operation.status == SyncStatus.pending || operation.status == SyncStatus.retrying || operation.status == SyncStatus.failed).length;
   bool get isSyncing => _isSyncing;
 
-  void _loadOutbox() {
-    // Outbox queue initialization
+  Future<void> _loadOutbox() async {
+    final saved = _ref.read(cacheServiceProvider).get(_cacheKey)?.data['operations'];
+    if (saved is List) {
+      final restored = <SyncOperation>[];
+      for (final value in saved) {
+        if (value is Map) {
+          try {
+            restored.add(SyncOperation.fromJson(Map<String, dynamic>.from(value)));
+          } catch (_) {
+            // Corrupt operation records cannot safely be replayed.
+          }
+        }
+      }
+      state = restored;
+    }
+    if (_ref.read(isOnlineProvider)) await triggerSync();
   }
 
+  Future<void> _persist() => _ref.read(cacheServiceProvider).put(
+        _cacheKey,
+        {'operations': state.map((operation) => operation.toJson()).toList()},
+        ttl: const Duration(days: 30),
+      );
+
   void enqueue(String entityType, String action, Map<String, dynamic> payload) {
-    final op = SyncOperation(
-      id: 'sync-${DateTime.now().millisecondsSinceEpoch}',
+    final now = DateTime.now();
+    final operation = SyncOperation(
+      id: 'sync-${now.microsecondsSinceEpoch}',
       entityType: entityType,
       action: action,
       payload: payload,
-      timestamp: DateTime.now(),
+      timestamp: now,
     );
-    state = [...state, op];
-    debugPrint('Queued offline sync operation: ${op.id} ($entityType)');
-    triggerSync();
+    state = [...state, operation];
+    unawaited(_persist());
+    unawaited(triggerSync());
   }
 
   Future<void> triggerSync() async {
-    if (_isSyncing || pendingCount == 0) return;
-
+    if (_isSyncing || pendingCount == 0 || !_ref.read(isOnlineProvider)) return;
     _isSyncing = true;
-    final pendingOps = state.where((op) => op.status == SyncStatus.pending || op.status == SyncStatus.retrying).toList();
+    final queued = state.where((operation) =>
+        operation.status == SyncStatus.pending || operation.status == SyncStatus.retrying || operation.status == SyncStatus.failed).toList();
 
-    for (var op in pendingOps) {
-      op.status = SyncStatus.syncing;
+    for (final operation in queued) {
+      operation.status = SyncStatus.syncing;
       state = [...state];
-
+      await _persist();
       try {
-        await Future.delayed(const Duration(milliseconds: 600)); // Simulate remote sync
-        op.status = SyncStatus.synced;
-        debugPrint('Successfully synced operation: ${op.id}');
-      } catch (e) {
-        op.retries++;
-        op.status = SyncStatus.retrying;
-        debugPrint('Failed to sync operation: ${op.id}, retry count: ${op.retries}');
+        final response = await _ref.read(dioProvider).post<dynamic>(
+          ApiPaths.sync,
+          data: {'operations': [operation.toJson()]},
+        );
+        final data = response.data;
+        final accepted = data is Map && data['status'] == 'synced' && data['processed_operations'] == 1;
+        if (!accepted) throw const FormatException('Backend did not acknowledge the queued operation.');
+        operation.status = SyncStatus.synced;
+      } on DioException catch (error) {
+        operation.retries += 1;
+        operation.status = SyncStatus.retrying;
+        debugPrint('Offline operation ${operation.id} awaits retry: ${error.message}');
+      } catch (error) {
+        operation.retries += 1;
+        operation.status = SyncStatus.failed;
+        debugPrint('Offline operation ${operation.id} was rejected: $error');
       }
+      state = [...state];
+      await _persist();
     }
 
     _isSyncing = false;
-    // Remove synced operations after successful push
-    state = state.where((op) => op.status != SyncStatus.synced).toList();
+    state = state.where((operation) => operation.status != SyncStatus.synced).toList();
+    await _persist();
   }
 }
 
-final syncManagerProvider = StateNotifierProvider<SyncManager, List<SyncOperation>>((ref) {
-  return SyncManager(ref);
-});
+final syncManagerProvider = StateNotifierProvider<SyncManager, List<SyncOperation>>((ref) => SyncManager(ref));

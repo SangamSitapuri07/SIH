@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/sync/sync_manager.dart';
 import '../../../../core/theme/orca_theme.dart';
+import '../../../../core/config/app_config.dart';
 import '../../../../core/theme/verdict_colors.dart';
+import '../../../../core/utils/geo_utils.dart';
+import '../../../../core/widgets/orca_navigation.dart';
+import '../../../advisory/presentation/providers/advisory_provider.dart';
 import '../../domain/catch_report.dart';
 
 final catchReportsProvider = StateNotifierProvider<CatchReportsNotifier, List<CatchReport>>((ref) {
@@ -40,8 +44,11 @@ class CatchReportScreen extends ConsumerStatefulWidget {
 }
 
 class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
-  String _selectedSpecies = 'Indian Mackerel';
-  double _quantityKg = 50.0;
+  String? _selectedSpecies;
+  double _quantityKg = 0.0;
+  final TextEditingController _locationCtrl = TextEditingController();
+  final TextEditingController _latCtrl = TextEditingController();
+  final TextEditingController _lonCtrl = TextEditingController();
   final TextEditingController _noteCtrl = TextEditingController();
 
   final List<String> _commonSpecies = [
@@ -54,16 +61,27 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
   ];
 
   @override
+  void dispose() {
+    _locationCtrl.dispose();
+    _latCtrl.dispose();
+    _lonCtrl.dispose();
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final reports = ref.watch(catchReportsProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'CATCH REPORT',
-          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
-        ),
-        backgroundColor: OrcaTheme.surface,
+    final Map<String, double> working = ref.watch(advisoryLocationProvider);
+
+    return OrcaWorkspaceScaffold(
+      title: 'Catch reports',
+      subtitle: 'Records you log, queued when offline',
+      locationLabel: 'Working location',
+      coordinateLabel: GeoUtils.formatCoordinate(
+        working['lat'] ?? AppConfig.defaultLat,
+        working['lon'] ?? AppConfig.defaultLon,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -94,6 +112,14 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 14),
+                  TextField(controller: _locationCtrl, decoration: const InputDecoration(labelText: 'Catch location name')),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Expanded(child: TextField(controller: _latCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true), decoration: const InputDecoration(labelText: 'Latitude'))),
+                    const SizedBox(width: 8),
+                    Expanded(child: TextField(controller: _lonCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true), decoration: const InputDecoration(labelText: 'Longitude'))),
+                  ]),
                   const SizedBox(height: 14),
                   const Text('Select Fish Species:', style: TextStyle(color: OrcaTheme.textSecondary, fontSize: 13)),
                   const SizedBox(height: 8),
@@ -168,20 +194,25 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
                     height: 50,
                     child: ElevatedButton.icon(
                       onPressed: () {
+                        final lat = double.tryParse(_latCtrl.text.trim());
+                        final lon = double.tryParse(_lonCtrl.text.trim());
+                        if (_locationCtrl.text.trim().isEmpty || lat == null || lon == null ||
+                            !lat.isFinite || !lon.isFinite || lat.abs() > 90 || lon.abs() > 180 ||
+                            _selectedSpecies == null || _quantityKg <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                            content: Text('Enter a location, coordinates, species, and quantity greater than zero.'),
+                            backgroundColor: VerdictColors.caution,
+                          ));
+                          return;
+                        }
                         ref.read(catchReportsProvider.notifier).addReport(
-                          'Veraval Offshore Shelf',
-                          20.9,
-                          70.37,
-                          _selectedSpecies,
-                          _quantityKg,
-                          _noteCtrl.text.isNotEmpty ? _noteCtrl.text : null,
+                          _locationCtrl.text.trim(), lat, lon, _selectedSpecies!, _quantityKg,
+                          _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
                         );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Catch report saved locally & queued for cloud sync!'),
-                            backgroundColor: VerdictColors.go,
-                          ),
-                        );
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('Catch report saved locally and queued for synchronization.'),
+                          backgroundColor: VerdictColors.go,
+                        ));
                       },
                       icon: const Icon(Icons.cloud_upload),
                       label: const Text('SUBMIT REPORT', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1)),

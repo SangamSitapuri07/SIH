@@ -9,6 +9,7 @@ class VariableItem {
   final String status;
   final String source;
   final String time;
+  final String? timeLabel;
   final String? direction;
 
   const VariableItem({
@@ -19,6 +20,7 @@ class VariableItem {
     required this.status,
     required this.source,
     required this.time,
+    this.timeLabel,
     this.direction,
   });
 }
@@ -38,18 +40,37 @@ class HourlyPoint {
   });
 }
 
-/// Safe window departure duration.
+/// Safe departure window computed by the deterministic backend engine.
+///
+/// Every field is optional: the engine either publishes a window with its own
+/// limits, or it publishes no window at all. The client never derives one.
 class SafeWindow {
   final String from;
   final String to;
-  final bool isSafe;
+  final bool? isSafe;
+  final String? status;
   final double? hoursRemaining;
+  final String? quality;
+  final double? maxWaveM;
+  final double? maxWindKn;
+  final double? maxGustKn;
+  final String? note;
+  final String? recommendationEn;
+  final String? recommendationHi;
 
   const SafeWindow({
     required this.from,
     required this.to,
     required this.isSafe,
+    this.status,
     this.hoursRemaining,
+    this.quality,
+    this.maxWaveM,
+    this.maxWindKn,
+    this.maxGustKn,
+    this.note,
+    this.recommendationEn,
+    this.recommendationHi,
   });
 }
 

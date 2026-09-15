@@ -1,16 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/cache/cache_service.dart';
-import '../../../../core/cache/staleness.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/live/live_channel.dart';
 import '../../../../core/network/dio_provider.dart';
-import '../../../../core/widgets/orca_app_bar.dart';
 import '../../data/datasources/advisory_remote.dart';
-import '../../data/dto/advisory_dto.dart';
 import '../../data/repositories/advisory_repo_impl.dart';
 import '../../domain/entities/advisory.dart';
 import '../../domain/repositories/advisory_repo.dart';
@@ -72,10 +67,6 @@ class AdvisoryNotifier extends StateNotifier<AsyncValue<AdvisoryEntity>> {
       });
     });
 
-    // Re-fetch if demo mode changes
-    _ref.listen(demoModeProvider, (prev, next) {
-      fetch(forceRefresh: true);
-    });
   }
 
   Future<void> _bootstrap() async {
@@ -95,24 +86,9 @@ class AdvisoryNotifier extends StateNotifier<AsyncValue<AdvisoryEntity>> {
   }
 
   Future<void> fetch({bool forceRefresh = false}) async {
-    final isDemo = _ref.read(demoModeProvider);
     final coords = _ref.read(advisoryLocationProvider);
     final lat = coords['lat'] ?? AppConfig.defaultLat;
     final lon = coords['lon'] ?? AppConfig.defaultLon;
-
-    if (isDemo) {
-      try {
-        final raw = await rootBundle.loadString('assets/fixtures/advisory.json');
-        final json = jsonDecode(raw) as Map<String, dynamic>;
-        final dto = AdvisoryDto.fromJson(json);
-        final staleness = StalenessInfo.fromDateTime(DateTime.now());
-        state = AsyncValue.data(dto.toEntity(staleness));
-      } catch (e, st) {
-        state = AsyncValue.error(e, st);
-      }
-      return;
-    }
-
     // Only show the blocking spinner when there is nothing on screen yet.
     if (state.valueOrNull == null) {
       state = const AsyncValue.loading();
