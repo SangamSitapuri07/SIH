@@ -204,7 +204,18 @@ def get_reasoning(lat: float = Query(20.9), lon: float = Query(70.37), include_g
     """Run 11-agent collaborative reasoning trace."""
     snap = providers.fetch_zone_snapshot(lat, lon, include_gfw=include_gfw)
     if snap.get("error"):
-        raise HTTPException(status_code=400, detail=snap["reason"])
+        # Return a structured error response instead of raising HTTPException
+        # This allows the client to handle it gracefully
+        return {
+            "error": True,
+            "reason": snap.get("reason", "Unable to fetch marine data"),
+            "latitude": lat,
+            "longitude": lon,
+            "suggestion": "This endpoint requires internet access to Open-Meteo APIs. Please check your network connection or try again later.",
+            "agents": [],
+            "verdict": "UNAVAILABLE",
+            "data_coverage": {"known": 0, "total": 0, "sources_failed": [snap.get("reason", "Unknown error")]}
+        }
     return agents_engine.run_collaborative_reasoning(snap)
 
 # Advisory response cache: identical requests within the TTL are served
@@ -241,7 +252,26 @@ def get_advisory(lat: float = Query(20.9), lon: float = Query(70.37), include_gf
 
     snap = providers.fetch_zone_snapshot(lat, lon, include_gfw=include_gfw)
     if snap.get("error"):
-        raise HTTPException(status_code=400, detail=snap["reason"])
+        # Return a structured error response instead of raising HTTPException
+        # This allows the client to handle it gracefully and show helpful messages
+        return {
+            "error": True,
+            "reason": snap.get("reason", "Unable to fetch marine data"),
+            "latitude": lat,
+            "longitude": lon,
+            "suggestion": "This endpoint requires internet access to Open-Meteo APIs. Please check your network connection or try again later.",
+            "verdict": "UNAVAILABLE",
+            "headline": "DATA UNAVAILABLE",
+            "headline_hi": "डेटा अनुपलब्ध",
+            "headline_te": "డేటా అందుబాటులో లేదు",
+            "plain_en": ["Unable to retrieve live marine data at this time."],
+            "plain_hi": ["इस समय लाइव समुद्री डेटा प्राप्त करने में असमर्थ।"],
+            "sources": [],
+            "sources_failed": [{"source": "Open-Meteo", "reason": snap.get("reason", "Unknown error")}],
+            "timestamp": int(time.time()),
+            "agents": [],
+            "data_coverage": {"known": 0, "total": 0, "sources_failed": [snap.get("reason", "Unknown error")]}
+        }
 
     res = agents_engine.run_collaborative_reasoning(snap)
     vars = snap["variables"]

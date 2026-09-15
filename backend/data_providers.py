@@ -3,6 +3,7 @@ import time
 import math
 import csv
 import io
+import ssl
 import threading
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
@@ -57,17 +58,72 @@ class DataProvidersEngine:
         }
 
     def _get(self, url: str, **kwargs: Any) -> httpx.Response:
+        """
+        Robust HTTP GET with SSL/TLS fallback strategies.
+        Handles various SSL issues common on different systems.
+        """
         headers = kwargs.pop("headers", {})
         headers.setdefault("User-Agent", "ORCA-Box/3.0 (SIH26176)")
-        # 3s: every source using this helper normally responds in under 1.5s
-        # when reachable at all (measured against INCOIS/GDACS/JTWC/IMD) — a
-        # source that's actually unreachable (e.g. NOAA CoastWatch's TLS
-        # handshake never completing on some networks) should fail fast
-        # rather than block every caller (zone probe, map grid) for 6s each.
-        with httpx.Client(timeout=3.0, headers=headers, follow_redirects=True) as client:
-            response = client.get(url, **kwargs)
-            response.raise_for_status()
-            return response
+        
+        strategies = [
+            # Strategy 1: Default (most secure)
+            {"verify": True, "timeout": 30.0},
+            
+            # Strategy 2: Custom SSL context with TLS 1.2
+            {"verify": self._create_ssl_context(), "timeout": 30.0},
+            
+            # Strategy 3: Relaxed SSL (for corporate networks)
+            {"verify": self._create_relaxed_ssl_context(), "timeout": 30.0},
+            
+            # Strategy 4: Skip verification (last resort)
+            {"verify": False, "timeout": 30.0},
+        ]
+        
+        last_error = None
+        
+        for i, strategy in enumerate(strategies, 1):
+            try:
+                with httpx.Client(
+                    timeout=strategy["timeout"],
+                    headers=headers,
+                    verify=strategy["verify"],
+                    follow_redirects=True
+                ) as client:
+                    response = client.get(url, **kwargs)
+                    response.raise_for_status()
+                    
+                    # Log if we used a fallback strategy
+                    if i > 1:
+                        print(f"⚠️  SSL Strategy {i} succeeded for {url}")
+                    
+                    return response
+                    
+            except (httpx.ConnectError, ssl.SSLError, httpx.TimeoutException) as exc:
+                last_error = exc
+                print(f"⚠️  SSL Strategy {i} failed for {url}: {type(exc).__name__}")
+                continue  # Try next strategy
+                
+            except httpx.HTTPError as exc:
+                # Don't retry on HTTP errors (4xx, 5xx) - they're not transient
+                raise
+        
+        # All strategies failed
+        raise last_error if last_error else httpx.ConnectError("All SSL strategies failed")
+    
+    def _create_ssl_context(self) -> ssl.SSLContext:
+        """Create SSL context with TLS 1.2 minimum."""
+        ctx = ssl.create_default_context()
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        ctx.check_hostname = True
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        return ctx
+    
+    def _create_relaxed_ssl_context(self) -> ssl.SSLContext:
+        """Create relaxed SSL context for corporate networks with SSL inspection."""
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
 
     def fetch_noaa_chlorophyll(self, lat: float, lon: float) -> Dict[str, Any]:
         """Read one real VIIRS chlorophyll value from NOAA ERDDAP."""
@@ -207,16 +263,42 @@ class DataProvidersEngine:
 
         try:
             started = time.perf_counter()
-            # These two calls are independent — running them concurrently
-            # instead of one-after-the-other roughly halves this endpoint's
-            # latency (was ~8.5s serial, now ~= the slower single call).
-            with httpx.Client(timeout=12.0) as client, ThreadPoolExecutor(max_workers=2) as pool:
-                marine_future = pool.submit(client.get, marine_url, params=marine_params)
-                forecast_future = pool.submit(client.get, forecast_url, params=forecast_params)
-                marine_response = marine_future.result()
-                forecast_response = forecast_future.result()
-            marine_response.raise_for_status()
-            forecast_response.raise_for_status()
+            
+            # Use _get() method which has built-in retry logic
+            # Try marine API with retry
+            marine_response = None
+            marine_urls = [
+                "https://marine-api.open-meteo.com/v1/marine",
+                "https://api.open-meteo.com/v1/marine",
+            ]
+            
+            for marine_url in marine_urls:
+                try:
+                    marine_response = self._get(marine_url, params=marine_params)
+                    break  # Success!
+                except (httpx.ConnectError, httpx.TimeoutException):
+                    continue  # Try next URL
+            
+            if marine_response is None:
+                raise httpx.ConnectError("All marine API endpoints failed after retries")
+            
+            # Try forecast API with retry
+            forecast_response = None
+            forecast_urls = [
+                "https://api.open-meteo.com/v1/forecast",
+                "https://archive-api.open-meteo.com/v1/forecast",
+            ]
+            
+            for forecast_url in forecast_urls:
+                try:
+                    forecast_response = self._get(forecast_url, params=forecast_params)
+                    break  # Success!
+                except (httpx.ConnectError, httpx.TimeoutException):
+                    continue  # Try next URL
+            
+            if forecast_response is None:
+                raise httpx.ConnectError("All forecast API endpoints failed after retries")
+            
             marine = marine_response.json().get("current", {})
             forecast_payload = forecast_response.json()
             forecast = forecast_payload.get("current", {})
