@@ -344,7 +344,10 @@ class DataProvidersEngine:
         GLOBE verification.
         """
         allowed, _ = self.boundaries.classify(lat, lon)
-        return None if allowed is None else not allowed
+        # An EEZ/territorial-water allow-list is not a land mask: outside can
+        # mean foreign waters or high seas. It can prove known Indian water,
+        # but must never turn every other coordinate into "land".
+        return False if allowed is True else None
 
     def fetch_zone_snapshot(self, lat: float, lon: float, include_gfw: bool = False,
                             include_secondary: bool = True) -> Dict[str, Any]:

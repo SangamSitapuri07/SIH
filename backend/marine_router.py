@@ -107,14 +107,16 @@ class OfficialBoundaryStore:
     in metadata and every route response.
     """
     _WFS = "https://geo.vliz.be/geoserver/MarineRegions/wfs"
-    _NAMES = (
-        "Indian Exclusive Economic Zone",
-        "Indian Exclusive Economic Zone (Andaman and Nicobar Islands)",
+    _SOURCES = (
+        ("MarineRegions:eez", "Indian Exclusive Economic Zone"),
+        ("MarineRegions:eez", "Indian Exclusive Economic Zone (Andaman and Nicobar Islands)"),
+        ("MarineRegions:eez_12nm", "Indian 12 NM"),
+        ("MarineRegions:eez_12nm", "Indian 12 NM (Andaman and Nicobar Islands)"),
     )
 
     def __init__(self, path: str | None = None):
         self.path = path or os.getenv("ORCA_BOUNDARY_GEOJSON")
-        self.cache_path = Path(os.getenv("ORCA_EEZ_CACHE_PATH", str(Path.home() / ".orca" / "india_eez_v12.geojson")))
+        self.cache_path = Path(os.getenv("ORCA_EEZ_CACHE_PATH", str(Path.home() / ".orca" / "india_marine_regions_v12_v4.geojson")))
         self.features: list[dict[str, Any]] = []
         self.state = self._load()
 
@@ -136,7 +138,7 @@ class OfficialBoundaryStore:
                 raise ValueError("only Polygon and MultiPolygon boundary features are accepted")
         self.features = features
         status = "REFERENCE_AVAILABLE" if reference else "AVAILABLE"
-        reason = ("Marine Regions EEZ v12 reference loaded; coastline/EEZ geometry can be routed, "
+        reason = ("Marine Regions India territorial sea v4 + EEZ v12 reference loaded; coastal-water geometry can be routed, "
                   "but restricted-area and regulatory clearance remain unverified.") if reference else "Authority boundary loaded and validated."
         return BoundaryState(True, status, reason, metadata, hashlib.sha256(raw).hexdigest())
 
@@ -155,10 +157,10 @@ class OfficialBoundaryStore:
             return
         try:
             features: list[dict[str, Any]] = []
-            for name in self._NAMES:
+            for layer, name in self._SOURCES:
                 params = {
                     "service": "WFS", "version": "1.0.0", "request": "GetFeature",
-                    "typeName": "MarineRegions:eez", "outputFormat": "application/json",
+                    "typeName": layer, "outputFormat": "application/json",
                     "CQL_FILTER": f"geoname='{name}'",
                 }
                 request = Request(self._WFS + "?" + urlencode(params), headers={"User-Agent": "ORCA-Box/3.0", "Accept": "application/json"})
@@ -185,8 +187,8 @@ class OfficialBoundaryStore:
                 "type": "FeatureCollection",
                 "metadata": {
                     "authority": "Flanders Marine Institute (VLIZ) / Marine Regions",
-                    "dataset": "Indian EEZ, Maritime Boundaries Geodatabase v12",
-                    "version": "12", "published_at": "2023-01-01T00:00:00Z",
+                    "dataset": "Indian territorial sea + EEZ, Marine Regions",
+                    "version": "Territorial Seas v4 / EEZ v12", "published_at": "2023-01-01T00:00:00Z",
                     "crs": "EPSG:4326", "verification_tier": "reference_only",
                     "geometry_simplification_degrees": 0.0025,
                     "source_url": self._WFS,
@@ -248,6 +250,6 @@ class MarineRoutePlanner:
         coords=[[round(lat,5),round(lon,5)] for lat,lon in path]
         reference = self.boundaries.state.status == "REFERENCE_AVAILABLE"
         status = "REFERENCE_ROUTE_GEOMETRY" if reference else "ROUTE_GEOMETRY_VERIFIED"
-        reason = ("Path stays inside the Marine Regions India EEZ reference geometry. Regulatory/restricted-area clearance is not verified."
+        reason = ("Path stays inside the Marine Regions India territorial-sea/EEZ reference geometry. Regulatory/restricted-area clearance is not verified."
                   if reference else "Every route edge is inside authority-declared navigable waters and outside prohibited polygons.")
         return {"status":status, "verified":True, "regulatory_verified":not reference, "reason":reason, "routes":[{"id":"balanced","label":"Balanced EEZ geometry" if reference else "Balanced verified geometry","coordinates":coords,"distance_km":round(distance,1),"distance_nm":round(distance*.539957,1)}], "boundary":{"metadata":self.boundaries.state.metadata,"sha256":self.boundaries.state.checksum}}
