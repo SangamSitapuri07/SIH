@@ -49,7 +49,7 @@ class ProfileScreen extends ConsumerWidget {
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: OrcaTheme.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -81,7 +81,7 @@ class ProfileScreen extends ConsumerWidget {
 
             const Text(
               'Personal & Vessel Settings',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
             ),
             const SizedBox(height: 10),
 
@@ -115,14 +115,14 @@ class ProfileScreen extends ConsumerWidget {
             const SizedBox(height: 20),
             const Text(
               'Notification Preferences',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
             ),
             const SizedBox(height: 10),
 
             SwitchListTile(
               value: profile.notificationPreferences['wave_alerts'] ?? true,
               onChanged: (val) => ref.read(userProfileProvider.notifier).toggleNotification('wave_alerts', val),
-              title: const Text('High Wave & Swell Warnings', style: TextStyle(color: Colors.white)),
+              title: const Text('High Wave & Swell Warnings', style: TextStyle(color: OrcaTheme.textPrimary)),
               tileColor: OrcaTheme.surface,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               activeColor: OrcaTheme.accent,
@@ -131,7 +131,7 @@ class ProfileScreen extends ConsumerWidget {
             SwitchListTile(
               value: profile.notificationPreferences['cyclone_alerts'] ?? true,
               onChanged: (val) => ref.read(userProfileProvider.notifier).toggleNotification('cyclone_alerts', val),
-              title: const Text('Cyclone & Storm Alerts', style: TextStyle(color: Colors.white)),
+              title: const Text('Cyclone & Storm Alerts', style: TextStyle(color: OrcaTheme.textPrimary)),
               tileColor: OrcaTheme.surface,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               activeColor: OrcaTheme.accent,
@@ -148,7 +148,7 @@ class ProfileScreen extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         leading: Icon(icon, color: OrcaTheme.accent),
-        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 14)),
+        title: Text(title, style: const TextStyle(color: OrcaTheme.textPrimary, fontSize: 14)),
         subtitle: Text(subtitle, style: const TextStyle(color: OrcaTheme.textSecondary, fontSize: 12)),
         trailing: const Icon(Icons.chevron_right, color: Colors.grey),
         onTap: onTap,
@@ -164,7 +164,7 @@ class ProfileScreen extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            title: const Text('English', style: TextStyle(color: Colors.white)),
+            title: const Text('English', style: TextStyle(color: OrcaTheme.textPrimary)),
             trailing: currentLang == 'en' ? const Icon(Icons.check, color: OrcaTheme.accent) : null,
             onTap: () {
               ref.read(userProfileProvider.notifier).updateLanguage('en');
@@ -172,7 +172,7 @@ class ProfileScreen extends ConsumerWidget {
             },
           ),
           ListTile(
-            title: const Text('हिंदी (Hindi)', style: TextStyle(color: Colors.white)),
+            title: const Text('हिंदी (Hindi)', style: TextStyle(color: OrcaTheme.textPrimary)),
             trailing: currentLang == 'hi' ? const Icon(Icons.check, color: OrcaTheme.accent) : null,
             onTap: () {
               ref.read(userProfileProvider.notifier).updateLanguage('hi');
@@ -180,7 +180,7 @@ class ProfileScreen extends ConsumerWidget {
             },
           ),
           ListTile(
-            title: const Text('తెలుగు (Telugu)', style: TextStyle(color: Colors.white)),
+            title: const Text('తెలుగు (Telugu)', style: TextStyle(color: OrcaTheme.textPrimary)),
             trailing: currentLang == 'te' ? const Icon(Icons.check, color: OrcaTheme.accent) : null,
             onTap: () {
               ref.read(userProfileProvider.notifier).updateLanguage('te');

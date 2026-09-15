@@ -120,7 +120,7 @@ class _AiScreenState extends ConsumerState<AiScreen> with SingleTickerProviderSt
                             const SizedBox(height: 10),
                             const Text(
                               'Agent Reasoning Unavailable',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
                             ),
                             const SizedBox(height: 6),
                             Text(

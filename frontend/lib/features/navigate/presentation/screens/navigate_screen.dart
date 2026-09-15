@@ -87,7 +87,7 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
                         value: i,
                         child: Text(
                           harboursList[i]['name'] as String,
-                          style: const TextStyle(fontSize: 13, color: Colors.white),
+                          style: const TextStyle(fontSize: 13, color: OrcaTheme.textPrimary),
                         ),
                       ),
                     ),
@@ -127,7 +127,7 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
                         value: i,
                         child: Text(
                           harboursList[i]['name'] as String,
-                          style: const TextStyle(fontSize: 13, color: Colors.white),
+                          style: const TextStyle(fontSize: 13, color: OrcaTheme.textPrimary),
                         ),
                       ),
                     ),
@@ -200,7 +200,7 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
                 ),
                 child: Text(
                   'Route verification failed: $err',
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  style: const TextStyle(color: OrcaTheme.textPrimary, fontSize: 13),
                 ),
               ),
             ),

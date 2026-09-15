@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/verdict_colors.dart';
 import '../../../../core/widgets/staleness_badge.dart';
 import '../../domain/entities/advisory.dart';
+import '../../../../core/theme/orca_theme.dart';
 
 /// Primary skipper safety verdict card (§6, §7, §26A).
 class VerdictCard extends StatelessWidget {
@@ -63,7 +64,7 @@ class VerdictCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: Colors.white70,
+                          color: OrcaTheme.textSecondary,
                           letterSpacing: 1.0,
                         ),
                       ),
@@ -91,7 +92,7 @@ class VerdictCard extends StatelessWidget {
             style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
-              color: Colors.white,
+              color: OrcaTheme.textPrimary,
               height: 1.3,
             ),
           ),
@@ -104,14 +105,14 @@ class VerdictCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: Colors.white.withValues(alpha: 0.85),
+                color: OrcaTheme.textPrimary.withValues(alpha: 0.85),
                 height: 1.3,
               ),
             ),
           ],
 
           const SizedBox(height: 14),
-          const Divider(color: Colors.white12, height: 1),
+          const Divider(color: OrcaTheme.textMuted, height: 1),
           const SizedBox(height: 10),
 
           // Plain Language Bullet Points (§7)
@@ -131,7 +132,7 @@ class VerdictCard extends StatelessWidget {
                           bullet,
                           style: const TextStyle(
                             fontSize: 12.5,
-                            color: Colors.white70,
+                            color: OrcaTheme.textSecondary,
                             height: 1.3,
                           ),
                         ),

@@ -200,7 +200,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                         SizedBox(width: 14),
                         Text(
                           'Probing ocean spot conditions...',
-                          style: TextStyle(color: Colors.white, fontSize: 13),
+                          style: TextStyle(color: OrcaTheme.textPrimary, fontSize: 13),
                         ),
                       ],
                     ),
@@ -219,11 +219,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                       Expanded(
                         child: Text(
                           error.toString(),
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                          style: const TextStyle(color: OrcaTheme.textPrimary, fontSize: 12),
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white70),
+                        icon: const Icon(Icons.close, color: OrcaTheme.textSecondary),
                         onPressed: () {
                           ref.read(probedZoneProvider.notifier).state = null;
                         },

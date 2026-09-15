@@ -68,7 +68,7 @@ class AlertsScreen extends ConsumerWidget {
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: OrcaTheme.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -106,7 +106,7 @@ class AlertsScreen extends ConsumerWidget {
                   Text(
                     'Failed to load alerts: $err',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    style: const TextStyle(color: OrcaTheme.textPrimary, fontSize: 13),
                   ),
                   const SizedBox(height: 12),
                   ElevatedButton(

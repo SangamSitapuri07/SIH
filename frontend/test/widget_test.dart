@@ -24,8 +24,8 @@ void main() {
     // Allow mock fixtures and providers to resolve
     await tester.pumpAndSettle();
 
-    // Verify AppBar Title
-    expect(find.text('ORCA ADVISORY'), findsOneWidget);
+    // Verify AppBar Title (Command Center)
+    expect(find.text('ORCA'), findsOneWidget);
 
     // Verify 6 Bottom Navigation destinations exist
     expect(find.text('Home'), findsOneWidget);

@@ -24,7 +24,7 @@ class LayerSelectorDialog extends ConsumerWidget {
           SizedBox(width: 8),
           Text(
             'Map Data Layers',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
           ),
         ],
       ),
@@ -42,7 +42,7 @@ class LayerSelectorDialog extends ConsumerWidget {
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: OrcaTheme.textPrimary,
                 ),
               ),
               subtitle: Text(

@@ -40,7 +40,7 @@ class SavedLocationsScreen extends ConsumerWidget {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: OrcaTheme.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -78,7 +78,7 @@ class SavedLocationsScreen extends ConsumerWidget {
                               loc.name,
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                                color: OrcaTheme.textPrimary,
                               ),
                             ),
                             if (loc.isFavourite) ...[
@@ -126,7 +126,7 @@ class SavedLocationsScreen extends ConsumerWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: OrcaTheme.surface,
-        title: const Text('Save New Spot', style: TextStyle(color: Colors.white)),
+        title: const Text('Save New Spot', style: TextStyle(color: OrcaTheme.textPrimary)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

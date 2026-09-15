@@ -40,7 +40,7 @@ class HistoryScreen extends ConsumerWidget {
                 children: [
                   const Text(
                     'Past Advisory Archive',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
                   ),
                   const SizedBox(height: 4),
                   const Text(
@@ -123,7 +123,7 @@ class HistoryScreen extends ConsumerWidget {
             style: const TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 15,
-              color: Colors.white,
+              color: OrcaTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 4),
@@ -136,7 +136,7 @@ class HistoryScreen extends ConsumerWidget {
             Wrap(
               spacing: 6,
               children: item.majorHazards.map((String h) => Chip(
-                label: Text(h, style: const TextStyle(fontSize: 11, color: Colors.white)),
+                label: Text(h, style: const TextStyle(fontSize: 11, color: OrcaTheme.textPrimary)),
                 backgroundColor: VerdictColors.noGoBg,
                 side: BorderSide(color: VerdictColors.noGo.withAlpha(100)),
                 visualDensity: VisualDensity.compact,

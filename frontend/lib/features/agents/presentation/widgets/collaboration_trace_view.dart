@@ -126,7 +126,7 @@ class CollaborationTraceView extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 13.5,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: OrcaTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 4),

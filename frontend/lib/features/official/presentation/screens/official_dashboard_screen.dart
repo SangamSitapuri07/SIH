@@ -69,7 +69,7 @@ class OfficialDashboardScreen extends ConsumerWidget {
           children: [
             const Text(
               'Regional Marine Intelligence Summary',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
             ),
             const SizedBox(height: 4),
             const Text(
@@ -96,22 +96,22 @@ class OfficialDashboardScreen extends ConsumerWidget {
               decoration: BoxDecoration(
                 color: OrcaTheme.surface,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white12),
+                border: Border.all(color: OrcaTheme.textMuted),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
                     'Sector Risk Breakdown',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
                   ),
                   const SizedBox(height: 12),
                   _buildSectorRow('Veraval Offshore Sector', 'GOOD', VerdictColors.go),
-                  const Divider(color: Colors.white12),
+                  const Divider(color: OrcaTheme.textMuted),
                   _buildSectorRow('Porbandar Sector', 'CAUTION', VerdictColors.caution),
-                  const Divider(color: Colors.white12),
+                  const Divider(color: OrcaTheme.textMuted),
                   _buildSectorRow('Jafrabad Coastal Sector', 'GOOD', VerdictColors.go),
-                  const Divider(color: Colors.white12),
+                  const Divider(color: OrcaTheme.textMuted),
                   _buildSectorRow('Okha Deep Offshore Sector', 'NO-GO', VerdictColors.noGo),
                 ],
               ),
@@ -124,14 +124,14 @@ class OfficialDashboardScreen extends ConsumerWidget {
               decoration: BoxDecoration(
                 color: OrcaTheme.surface,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white12),
+                border: Border.all(color: OrcaTheme.textMuted),
               ),
               child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'Aggregated Catch & Ecological Insights',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
                   ),
                   SizedBox(height: 10),
                   Row(
@@ -189,7 +189,7 @@ class OfficialDashboardScreen extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
+          Text(name, style: const TextStyle(color: OrcaTheme.textPrimary, fontWeight: FontWeight.w500)),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(

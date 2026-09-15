@@ -55,7 +55,7 @@ class AlertCard extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 14.5,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: OrcaTheme.textPrimary,
                       ),
                     ),
                     if (alert.titleHi != null) ...[
@@ -65,7 +65,7 @@ class AlertCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white.withValues(alpha: 0.8),
+                          color: OrcaTheme.textPrimary.withValues(alpha: 0.8),
                         ),
                       ),
                     ],
@@ -107,7 +107,7 @@ class AlertCard extends StatelessWidget {
               alert.messageHi!,
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.white.withValues(alpha: 0.75),
+                color: OrcaTheme.textPrimary.withValues(alpha: 0.75),
                 height: 1.3,
               ),
             ),

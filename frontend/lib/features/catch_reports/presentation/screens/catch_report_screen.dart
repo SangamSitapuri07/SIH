@@ -89,7 +89,7 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: OrcaTheme.textPrimary,
                         ),
                       ),
                     ],
@@ -207,7 +207,7 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
             ] else ...[
               const Text(
                 'My Submitted Catch Reports',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
               ),
               const SizedBox(height: 10),
               for (final r in reports) ...[
@@ -222,7 +222,7 @@ class _CatchReportScreenState extends ConsumerState<CatchReportScreen> {
                     ),
                     title: Text(
                       '${r.species} — ${r.quantityKg.toInt()} kg',
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
                     ),
                     subtitle: Text(
                       '${r.locationName} • Date: ${r.catchDate}',

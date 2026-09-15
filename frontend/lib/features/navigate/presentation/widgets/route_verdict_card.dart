@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/verdict_colors.dart';
 import '../../domain/entities/route_advisory.dart';
 import '../../domain/entities/route_check.dart';
+import '../../../../core/theme/orca_theme.dart';
 
 /// Card rendering transit safety verdict & 2km land verification badge (§4, §6).
 class RouteVerdictCard extends StatelessWidget {
@@ -69,7 +70,7 @@ class RouteVerdictCard extends StatelessWidget {
                 child: Text(
                   '${advisory.pointsKnown}/${advisory.totalPoints} pts live',
                   style: const TextStyle(
-                    color: Colors.white70,
+                    color: OrcaTheme.textSecondary,
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
                   ),
@@ -85,12 +86,12 @@ class RouteVerdictCard extends StatelessWidget {
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: Colors.white,
+              color: OrcaTheme.textPrimary,
               height: 1.3,
             ),
           ),
           const SizedBox(height: 12),
-          const Divider(color: Colors.white12, height: 1),
+          const Divider(color: OrcaTheme.textMuted, height: 1),
           const SizedBox(height: 10),
 
           // Land Clearance Badge (§6)
@@ -123,13 +124,13 @@ class RouteVerdictCard extends StatelessWidget {
           // Safe departure window at start
           Row(
             children: [
-              const Icon(Icons.timer_outlined, size: 16, color: Colors.white70),
+              const Icon(Icons.timer_outlined, size: 16, color: OrcaTheme.textSecondary),
               const SizedBox(width: 6),
               Text(
                 'Safe Departure: ${advisory.safeWindowFrom} to ${advisory.safeWindowTo}',
                 style: const TextStyle(
                   fontSize: 12,
-                  color: Colors.white,
+                  color: OrcaTheme.textPrimary,
                   fontWeight: FontWeight.w500,
                 ),
               ),

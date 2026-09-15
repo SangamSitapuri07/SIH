@@ -67,7 +67,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         style: TextStyle(
                           fontSize: 26,
                           fontWeight: FontWeight.w900,
-                          color: Colors.white,
+                          color: OrcaTheme.textPrimary,
                           letterSpacing: 1.0,
                         ),
                       ),
@@ -89,7 +89,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: OrcaTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 6),
@@ -137,7 +137,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       const SizedBox(height: 8),
                       TextField(
                         controller: _urlController,
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        style: const TextStyle(color: OrcaTheme.textPrimary, fontSize: 13),
                         decoration: InputDecoration(
                           filled: true,
                           fillColor: OrcaTheme.surface,
@@ -164,7 +164,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                           contentPadding: EdgeInsets.zero,
                           title: const Text(
                             'Show Prototype',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
                           ),
                           subtitle: const Text(
                             'Uses bundled demonstration fixtures only for prototype review',

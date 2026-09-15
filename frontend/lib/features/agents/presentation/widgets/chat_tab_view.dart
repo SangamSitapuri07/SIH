@@ -33,7 +33,7 @@ class ChatTabView extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: OrcaTheme.textPrimary,
                       ),
                     ),
                   ],

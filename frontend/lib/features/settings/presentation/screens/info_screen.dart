@@ -63,7 +63,7 @@ class InfoScreen extends ConsumerWidget {
                           style: const TextStyle(
                             fontSize: 13.5,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: OrcaTheme.textPrimary,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -147,12 +147,15 @@ class InfoScreen extends ConsumerWidget {
               ),
               child: Column(
                 children: [
-                  // Demo Mode Toggle
-                  SwitchListTile(
+                  // Demo Mode Toggle (Material wrapper keeps ink/splash
+                  // rendering correct on the white decorated container)
+                  Material(
+                    type: MaterialType.transparency,
+                    child: SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text(
                       'Show Prototype',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
                     ),
                     subtitle: const Text(
                       'Uses bundled demonstration fixtures only when enabled.',
@@ -189,7 +192,7 @@ class InfoScreen extends ConsumerWidget {
                         children: [
                           Text(
                             'Language / भाषा / భాష',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
                           ),
                           SizedBox(height: 2),
                           Text(
@@ -203,9 +206,9 @@ class InfoScreen extends ConsumerWidget {
                         dropdownColor: OrcaTheme.surfaceElevated,
                         underline: const SizedBox.shrink(),
                         items: const [
-                          DropdownMenuItem(value: 'en', child: Text('English', style: TextStyle(color: Colors.white, fontSize: 13))),
-                          DropdownMenuItem(value: 'hi', child: Text('हिन्दी (Hindi)', style: TextStyle(color: Colors.white, fontSize: 13))),
-                          DropdownMenuItem(value: 'te', child: Text('తెలుగు (Telugu)', style: TextStyle(color: Colors.white, fontSize: 13))),
+                          DropdownMenuItem(value: 'en', child: Text('English', style: TextStyle(color: OrcaTheme.textPrimary, fontSize: 13))),
+                          DropdownMenuItem(value: 'hi', child: Text('हिन्दी (Hindi)', style: TextStyle(color: OrcaTheme.textPrimary, fontSize: 13))),
+                          DropdownMenuItem(value: 'te', child: Text('తెలుగు (Telugu)', style: TextStyle(color: OrcaTheme.textPrimary, fontSize: 13))),
                         ],
                         onChanged: (val) async {
                           if (val != null) {
@@ -246,7 +249,7 @@ class InfoScreen extends ConsumerWidget {
                       const SizedBox(height: 2),
                       Text(
                         '${cacheService.keyCount} cached items active',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
                       ),
                     ],
                   ),
@@ -292,7 +295,7 @@ class InfoScreen extends ConsumerWidget {
                 ),
                 child: Text(
                   'Health check error: $err',
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  style: const TextStyle(color: OrcaTheme.textPrimary, fontSize: 12),
                 ),
               ),
             ),
