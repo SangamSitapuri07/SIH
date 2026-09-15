@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import '../../../../core/config/api_paths.dart';
+import '../../../../core/config/app_config.dart';
 import '../dto/route_advisory_dto.dart';
 import '../dto/route_check_dto.dart';
 
@@ -9,7 +10,7 @@ class NavigateRemoteDataSource {
 
   NavigateRemoteDataSource(this._dio);
 
-  /// Performs 2km GLOBE land mask collision check & detour computation.
+  /// Computes a boundary-constrained route using the configured marine polygons.
   Future<RouteCheckDto> checkRoute({
     required double fromLat,
     required double fromLon,
@@ -24,6 +25,10 @@ class NavigateRemoteDataSource {
         'to_lat': toLat,
         'to_lon': toLon,
       },
+      options: Options(
+        receiveTimeout: AppConfig.advisoryRequestTimeout,
+        sendTimeout: AppConfig.advisoryRequestTimeout,
+      ),
     );
 
     if (response.data == null) {
@@ -48,6 +53,10 @@ class NavigateRemoteDataSource {
         'to_lat': toLat,
         'to_lon': toLon,
       },
+      options: Options(
+        receiveTimeout: AppConfig.advisoryRequestTimeout,
+        sendTimeout: AppConfig.advisoryRequestTimeout,
+      ),
     );
 
     if (response.data == null) {

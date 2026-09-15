@@ -29,7 +29,9 @@ class NavigateRepositoryImpl implements NavigateRepository {
       );
       return Result.ok(dto.toEntity());
     } on DioException catch (dioErr) {
-      if (dioErr.type == DioExceptionType.connectionTimeout) {
+      if (dioErr.type == DioExceptionType.connectionTimeout ||
+          dioErr.type == DioExceptionType.receiveTimeout ||
+          dioErr.type == DioExceptionType.sendTimeout) {
         return const Result.err(AppFailure.timeout());
       }
       return const Result.err(AppFailure.serverDown());
@@ -54,7 +56,9 @@ class NavigateRepositoryImpl implements NavigateRepository {
       );
       return Result.ok(dto.toEntity());
     } on DioException catch (dioErr) {
-      if (dioErr.type == DioExceptionType.connectionTimeout) {
+      if (dioErr.type == DioExceptionType.connectionTimeout ||
+          dioErr.type == DioExceptionType.receiveTimeout ||
+          dioErr.type == DioExceptionType.sendTimeout) {
         return const Result.err(AppFailure.timeout());
       }
       return const Result.err(AppFailure.serverDown());

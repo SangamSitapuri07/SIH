@@ -81,6 +81,13 @@ def _simplify_geometry(geometry: dict[str, Any]) -> None:
     elif kind == "MultiPolygon": geometry["coordinates"] = [[_simplify_ring(ring) for ring in polygon] for polygon in coords]
 
 
+def _geometry_bbox(geometry: dict[str, Any]) -> tuple[float, float, float, float]:
+    points = [point for ring in _rings(geometry) for point in ring]
+    if not points: return (0.0, 0.0, 0.0, 0.0)
+    lons = [point[0] for point in points]; lats = [point[1] for point in points]
+    return min(lats), min(lons), max(lats), max(lons)
+
+
 def _inside_geometry(lat: float, lon: float, geometry: dict[str, Any]) -> bool:
     kind, coords = geometry.get("type"), geometry.get("coordinates", [])
     polygons = [coords] if kind == "Polygon" else coords if kind == "MultiPolygon" else []
@@ -118,6 +125,7 @@ class OfficialBoundaryStore:
         self.path = path or os.getenv("ORCA_BOUNDARY_GEOJSON")
         self.cache_path = Path(os.getenv("ORCA_EEZ_CACHE_PATH", str(Path.home() / ".orca" / "india_marine_regions_v12_v4.geojson")))
         self.features: list[dict[str, Any]] = []
+        self._prepared: list[tuple[str, dict[str, Any], tuple[float, float, float, float]]] = []
         self.state = self._load()
 
     def _validate(self, raw: bytes, *, reference: bool = False) -> BoundaryState:
@@ -137,6 +145,11 @@ class OfficialBoundaryStore:
             if (feature.get("geometry") or {}).get("type") not in {"Polygon", "MultiPolygon"}:
                 raise ValueError("only Polygon and MultiPolygon boundary features are accepted")
         self.features = features
+        self._prepared = [
+            (str((feature.get("properties") or {}).get("orca_role", "")).lower(),
+             feature["geometry"], _geometry_bbox(feature["geometry"]))
+            for feature in features
+        ]
         status = "REFERENCE_AVAILABLE" if reference else "AVAILABLE"
         reason = ("Marine Regions India territorial sea v4 + EEZ v12 reference loaded; coastal-water geometry can be routed, "
                   "but restricted-area and regulatory clearance remain unverified.") if reference else "Authority boundary loaded and validated."
@@ -204,8 +217,15 @@ class OfficialBoundaryStore:
 
     def classify(self, lat: float, lon: float) -> tuple[bool | None, str]:
         if not self.state.ready: return None, self.state.reason
-        navigable = any(_inside_geometry(lat, lon, f["geometry"]) for f in self.features if str((f.get("properties") or {}).get("orca_role", "")).lower()=="navigable")
-        prohibited = any(_inside_geometry(lat, lon, f["geometry"]) for f in self.features if str((f.get("properties") or {}).get("orca_role", "")).lower()=="prohibited")
+        def contains(role: str) -> bool:
+            return any(
+                min_lat <= lat <= max_lat and min_lon <= lon <= max_lon and
+                _inside_geometry(lat, lon, geometry)
+                for item_role, geometry, (min_lat, min_lon, max_lat, max_lon) in self._prepared
+                if item_role == role
+            )
+        navigable = contains("navigable")
+        prohibited = contains("prohibited")
         return navigable and not prohibited, "inside the configured marine polygon" if navigable and not prohibited else "outside the India EEZ reference or inside a configured prohibited zone"
 
 class MarineRoutePlanner:
@@ -219,24 +239,36 @@ class MarineRoutePlanner:
         for label, point in (("departure", start), ("destination", end)):
             allowed, reason = self.boundaries.classify(*point)
             if not allowed: return {"status":"NO_SAFE_ROUTE", "verified":True, "reason":f"{label.title()} is {reason}.", "routes":[]}
+        direct_km = haversine(start, end)
+        # Long cross-coast routes need enough southward search room to go
+        # around the Indian peninsula, but a 5 km global grid exceeds the
+        # client's 45-second request window. Preserve fine coastal routing for
+        # short legs and use a bounded coarse planning grid for long legs.
+        grid_km = max(grid_km, 20.0 if direct_km > 700 else 10.0 if direct_km > 250 else 5.0)
         midlat=(start[0]+end[0])/2; dlat=grid_km/111.0; dlon=grid_km/(111.0*max(.2, math.cos(math.radians(midlat))))
-        margin=max(4, int(haversine(start,end)/grid_km*.35)); minlat=min(start[0],end[0])-margin*dlat; minlon=min(start[1],end[1])-margin*dlon
+        margin_km = min(1100.0, max(40.0, direct_km * (1.05 if direct_km > 500 else 0.45)))
+        margin=max(4, math.ceil(margin_km/grid_km)); minlat=min(start[0],end[0])-margin*dlat; minlon=min(start[1],end[1])-margin*dlon
         def key(p): return (round((p[0]-minlat)/dlat), round((p[1]-minlon)/dlon))
         def point(k): return (minlat+k[0]*dlat, minlon+k[1]*dlon)
-        def edge_allowed(a: tuple[float,float], b: tuple[float,float]) -> bool:
-            # A grid node alone can jump across a narrow island/restricted
-            # polygon. Verify the complete edge at <=1 km spacing.
-            count = max(1, math.ceil(haversine(a, b)))
-            return all(self.boundaries.classify(a[0]+(b[0]-a[0])*i/count, a[1]+(b[1]-a[1])*i/count)[0] is True for i in range(count+1))
-        s,t=key(start),key(end); frontier=[(0.0,s)]; came={s:None}; cost={s:0.0}; max_nodes=25000
+        allowed_cache: dict[tuple[int, int], bool] = {}
+        def is_allowed(position: tuple[float, float]) -> bool:
+            cache_key = (round(position[0] * 10000), round(position[1] * 10000))
+            if cache_key not in allowed_cache:
+                allowed_cache[cache_key] = self.boundaries.classify(*position)[0] is True
+            return allowed_cache[cache_key]
+        def edge_allowed(a: tuple[float,float], b: tuple[float,float], spacing_km: float = 5.0) -> bool:
+            # During search sample every 5 km; the final selected path is
+            # rechecked at <=1 km spacing before it can be returned.
+            count = max(1, math.ceil(haversine(a, b) / spacing_km))
+            return all(is_allowed((a[0]+(b[0]-a[0])*i/count, a[1]+(b[1]-a[1])*i/count)) for i in range(count+1))
+        s,t=key(start),key(end); frontier=[(0.0,s)]; came={s:None}; cost={s:0.0}; max_nodes=60000
         while frontier and len(came)<max_nodes:
             _,cur=heapq.heappop(frontier)
             if cur==t: break
             for di,dj in ((-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)):
                 nxt=(cur[0]+di,cur[1]+dj); pos=point(nxt)
                 if abs(nxt[0]-s[0])>margin+abs(t[0]-s[0]) or abs(nxt[1]-s[1])>margin+abs(t[1]-s[1]): continue
-                allowed,_=self.boundaries.classify(*pos)
-                if not allowed or not edge_allowed(point(cur), pos): continue
+                if not is_allowed(pos) or not edge_allowed(point(cur), pos): continue
                 new=cost[cur]+haversine(point(cur),pos)
                 if new<cost.get(nxt,float("inf")):
                     cost[nxt]=new; came[nxt]=cur; heapq.heappush(frontier,(new+haversine(pos,end),nxt))
@@ -244,7 +276,7 @@ class MarineRoutePlanner:
         path=[]; cur=t
         while cur is not None: path.append(point(cur)); cur=came[cur]
         path=list(reversed(path)); path[0]=start; path[-1]=end
-        if not all(edge_allowed(a, b) for a, b in zip(path, path[1:])):
+        if not all(edge_allowed(a, b, 1.0) for a, b in zip(path, path[1:])):
             return {"status":"NO_SAFE_ROUTE", "verified":True, "reason":"Endpoint connector crosses a prohibited or non-navigable area.", "routes":[]}
         distance=sum(haversine(a,b) for a,b in zip(path,path[1:]))
         coords=[[round(lat,5),round(lon,5)] for lat,lon in path]
