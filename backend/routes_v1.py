@@ -382,8 +382,13 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
     worst_level = "GOOD"
     unknown_inputs = False
 
-    for idx, pt in enumerate(legs):
-        snap = providers.fetch_zone_snapshot(pt[0], pt[1])
+    # Route points are independent. Fetching them serially made a 10-point
+    # route take several minutes when NOAA/INCOIS were slow; bounded parallel
+    # sampling keeps the request within the app's network timeout.
+    with ThreadPoolExecutor(max_workers=min(6, len(legs))) as pool:
+        snapshots = list(pool.map(lambda pt: providers.fetch_zone_snapshot(pt[0], pt[1]), legs))
+
+    for idx, (pt, snap) in enumerate(zip(legs, snapshots)):
         if snap.get("error"):
             unknown_inputs = True
             points.append({

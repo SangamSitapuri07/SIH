@@ -26,6 +26,8 @@ class DataProvidersEngine:
         self.mosdac = MosdacProvider()
         self.boundaries = OfficialBoundaryStore()
         self.route_planner = MarineRoutePlanner(self.boundaries)
+        self._route_cache: Dict[tuple[float, float, float, float], tuple[float, Dict[str, Any]]] = {}
+        self._route_cache_lock = threading.Lock()
         # TTL cache for zone snapshots: identical coordinates within the TTL
         # return instantly instead of re-hitting every upstream provider.
         self._snapshot_cache: Dict[str, Dict[str, Any]] = {}
@@ -529,7 +531,16 @@ class DataProvidersEngine:
         """Plan a fail-closed path through official navigable polygons."""
         start = (from_lat, from_lon)
         end = (to_lat, to_lon)
-        plan = self.route_planner.plan(start, end)
+        cache_key = tuple(round(value, 5) for value in (from_lat, from_lon, to_lat, to_lon))
+        with self._route_cache_lock:
+            cached = self._route_cache.get(cache_key)
+        if cached and time.time() - cached[0] < 600:
+            plan = cached[1]
+        else:
+            plan = self.route_planner.plan(start, end)
+            if plan.get("routes"):
+                with self._route_cache_lock:
+                    self._route_cache[cache_key] = (time.time(), plan)
         boundary_state = self.boundaries.state
         self.provider_status["official_navigation_boundaries"].update(
             status=boundary_state.status,
