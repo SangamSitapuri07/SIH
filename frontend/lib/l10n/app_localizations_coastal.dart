@@ -28,6 +28,14 @@ class AppLocalizationsCoastal extends AppLocalizationsEn {
       'alertsTitle': 'सक्रिय सागरी इशारे', 'navigateTitle': 'मार्ग सुरक्षा आणि जमीन तपासणी', 'infoTitle': 'सिस्टम आणि डेटा स्थिती',
       'save': 'जतन करा', 'cancel': 'रद्द करा', 'retry': 'पुन्हा प्रयत्न', 'languageLabel': 'भाषा',
     },
+    'kok': {
+      'appTagline': 'सहयोगी एजंटां वरवीं दर्याची स्थिती आनी सुरक्षेचो सल्लो',
+      'tabHome': 'मुखेल', 'tabMap': 'नकाशो', 'tabAi': 'AI एजंट', 'tabAlerts': 'शिटकावणी', 'tabNavigate': 'मार्ग', 'tabInfo': 'माहिती',
+      'verdictGo': 'वचप सुरक्षित', 'verdictCaution': 'सावधान', 'verdictNoGo': 'धोको — वचूं नाका', 'verdictUnknown': 'खबर ना',
+      'canIGoTitle': 'आयज दर्यांत वचूं येता?', 'safeWindowLabel': 'सुरक्षित वेळ', 'variablesTitle': 'सद्याची स्थिती',
+      'alertsTitle': 'सक्रिय दर्यावेले शिटकावणी', 'navigateTitle': 'मार्ग सुरक्षा आनी जमीन तपासणी', 'infoTitle': 'यंत्रणा आनी म्हायती स्थिती',
+      'save': 'सांबाळ', 'cancel': 'रद्द', 'retry': 'परतून यत्न कर', 'languageLabel': 'भास',
+    },
     'kn': {
       'appTagline': 'ಸಹಯೋಗಿ ಏಜೆಂಟ್‌ಗಳೊಂದಿಗೆ ಸಮುದ್ರ ಸ್ಥಿತಿ ಮತ್ತು ಸುರಕ್ಷತಾ ಸಲಹೆ',
       'tabHome': 'ಮುಖಪುಟ', 'tabMap': 'ನಕ್ಷೆ', 'tabAi': 'AI ಏಜೆಂಟ್‌ಗಳು', 'tabAlerts': 'ಎಚ್ಚರಿಕೆಗಳು', 'tabNavigate': 'ಮಾರ್ಗ', 'tabInfo': 'ಮಾಹಿತಿ',

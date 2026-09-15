@@ -1,5 +1,5 @@
+import json
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, List
 
 from ollama_client import ollama
@@ -28,40 +28,66 @@ class MultiAgentEngine:
     def list_agents(self) -> List[Dict[str, Any]]:
         return self.AGENT_REGISTRY
 
-    def _analytical_finding(self, agent_id: str, evidence: List[str], fallback: str) -> Dict[str, Any]:
-        """Run one bounded evidence-only LLM interpretation with an honest fallback."""
+    def _analytical_findings(self, jobs: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """Run every analytical role in one Ollama request.
+
+        Ollama serializes work on most laptops. Sending six simultaneous Qwen
+        requests used six copies of the model context, starved CPU/RAM, and
+        made all six requests hit the same timeout. One structured request is
+        both faster and materially more reliable on an edge device.
+        """
+        evidence_payload = {
+            agent_id: job["evidence"] for agent_id, job in jobs.items()
+        }
         started = time.monotonic()
         response = ollama.generate(
             prompt=(
-                f"Agent: {agent_id}\n"
-                f"Evidence supplied by ORCA: {'; '.join(evidence)}\n"
-                "Give a short fisherman-friendly interpretation using only this evidence. "
-                "Do not invent measurements, sources, timestamps, observations, or confidence. "
-                "Do not make or change a safety verdict. If evidence is insufficient, say so."
+                "Analyse the following ORCA evidence for six specialist roles. "
+                "Return ONLY one valid JSON object whose keys exactly match the supplied role IDs "
+                "and whose values are short fisherman-friendly strings. Use only supplied evidence. "
+                "Do not invent measurements, sources, times, confidence, or safety verdicts. "
+                "If evidence is insufficient, say so for that role.\n"
+                f"ROLE_EVIDENCE={json.dumps(evidence_payload, ensure_ascii=False)}"
             ),
             system=(
-                "You are an analytical component of ORCA. You are not the safety authority. "
-                "The deterministic Marine Risk agent owns the final verdict."
+                "You are ORCA's analytical explanation layer. The deterministic Marine Risk "
+                "engine owns the safety verdict; never change or create a verdict."
             ),
             temperature=0.1,
-            max_tokens=120,
+            max_tokens=480,
+            json_mode=True,
         )
         elapsed_ms = int((time.monotonic() - started) * 1000)
-        return {
-            "findings": response or fallback,
-            "status": "completed" if response else "degraded",
-            "duration_ms": elapsed_ms,
-            "llm_attempted": True,
-            "llm_invoked": response is not None,
-            "llm_model": ollama.model,
-            "fallback_used": response is None,
-        }
+
+        parsed: Dict[str, Any] = {}
+        if response:
+            try:
+                parsed_value = json.loads(response)
+                if isinstance(parsed_value, dict):
+                    parsed = parsed_value
+            except (TypeError, ValueError):
+                parsed = {}
+
+        results: Dict[str, Dict[str, Any]] = {}
+        for agent_id, job in jobs.items():
+            finding = parsed.get(agent_id)
+            valid = isinstance(finding, str) and bool(finding.strip())
+            results[agent_id] = {
+                "findings": finding.strip() if valid else job["fallback"],
+                "status": "completed" if valid else "degraded",
+                "duration_ms": elapsed_ms,
+                "llm_attempted": True,
+                "llm_invoked": valid,
+                "llm_model": ollama.model,
+                "fallback_used": not valid,
+            }
+        return results
 
     def run_collaborative_reasoning(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
         """Runs all 11 agents and produces structured trace & final verdict.
 
-        LLM/Analytical agents run concurrently through a thread pool: total
-        latency ~= slowest single LLM call instead of the sum of five.
+        LLM/Analytical roles share one structured Ollama inference so local
+        CPU/GPU memory is not overwhelmed by six concurrent model contexts.
         """
         lat = snapshot.get("latitude", 20.9)
         lon = snapshot.get("longitude", 70.37)
@@ -102,52 +128,38 @@ class MultiAgentEngine:
             risk_level = "GOOD"
             reasons.append("Waves and wind are within safe small-craft limits.")
 
-        # Kick off all six LLM/Analytical agents in parallel. Every call is
-        # individually timeout-bounded with a deterministic fallback, so a slow
-        # or offline Ollama degrades gracefully instead of stacking 6x.
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            ocean_future = pool.submit(
-                self._analytical_finding,
-                "ocean_analysis",
-                [f"wave height {wave_h:.1f} m", f"wave period {vars.get('wave_period_s', 'unavailable')} s", f"current {current_text}"],
-                f"Wave height is {wave_h:.1f} m with swell period {vars.get('wave_period_s', 'unavailable')} s. Surface currents at {current_text}.",
-            )
-            satellite_future = pool.submit(
-                self._analytical_finding,
-                "satellite_analysis",
-                [f"chlorophyll-a {chl} mg/m³", f"SST {vars.get('sst_celsius')} °C"],
-                f"Chlorophyll-a density measured at {chl} mg/m³." if chl is not None else "Chlorophyll measurement unavailable.",
-            )
-            weather_future = pool.submit(
-                self._analytical_finding,
-                "weather_hazard",
-                [f"sustained wind {wind_kn:.1f} kn", f"wind gust {gust_kn:.1f} kn", "source: Open-Meteo Forecast"],
-                f"Wind sustained at {wind_kn:.1f} kn with peak gusts reaching {gust_kn:.1f} kn.",
-            )
-            ecology_future = pool.submit(
-                self._analytical_finding,
-                "marine_ecology",
-                [f"chlorophyll-a {chl} mg/m³", f"SST {vars.get('sst_celsius')} °C"],
-                "Ecological interpretation is unavailable without a validated chlorophyll measurement.",
-            )
-            pfz_future = pool.submit(
-                self._analytical_finding,
-                "fisheries_pfz",
-                [f"PFZ features returned: {len(snapshot.get('pfz', []))}", f"chlorophyll-a {chl} mg/m³"],
-                "PFZ interpretation is unavailable without validated official PFZ geometry and measurements.",
-            )
-            orchestrator_future = pool.submit(
-                self._analytical_finding,
-                "orchestrator",
-                [f"deterministic risk level {risk_level}", *reasons, f"wave height {wave_h:.1f} m", f"wind gust {gust_kn:.1f} kn"],
-                f"Deterministic Marine Risk result is {risk_level}. Follow the stated safety advice.",
-            )
-            ocean_llm = ocean_future.result()
-            satellite_llm = satellite_future.result()
-            weather_llm = weather_future.result()
-            ecology_llm = ecology_future.result()
-            pfz_llm = pfz_future.result()
-            orchestrator_llm = orchestrator_future.result()
+        analytical = self._analytical_findings({
+            "ocean_analysis": {
+                "evidence": [f"wave height {wave_h:.1f} m", f"wave period {vars.get('wave_period_s', 'unavailable')} s", f"current {current_text}"],
+                "fallback": f"Wave height is {wave_h:.1f} m with swell period {vars.get('wave_period_s', 'unavailable')} s. Surface currents at {current_text}.",
+            },
+            "satellite_analysis": {
+                "evidence": [f"chlorophyll-a {chl} mg/m³", f"SST {vars.get('sst_celsius')} °C"],
+                "fallback": f"Chlorophyll-a density measured at {chl} mg/m³." if chl is not None else "Chlorophyll measurement unavailable.",
+            },
+            "weather_hazard": {
+                "evidence": [f"sustained wind {wind_kn:.1f} kn", f"wind gust {gust_kn:.1f} kn", "source: Open-Meteo Forecast"],
+                "fallback": f"Wind sustained at {wind_kn:.1f} kn with peak gusts reaching {gust_kn:.1f} kn.",
+            },
+            "marine_ecology": {
+                "evidence": [f"chlorophyll-a {chl} mg/m³", f"SST {vars.get('sst_celsius')} °C"],
+                "fallback": "Ecological interpretation is unavailable without a validated chlorophyll measurement.",
+            },
+            "fisheries_pfz": {
+                "evidence": [f"PFZ features returned: {len(snapshot.get('pfz', []))}", f"chlorophyll-a {chl} mg/m³"],
+                "fallback": "PFZ interpretation is unavailable without validated official PFZ geometry and measurements.",
+            },
+            "orchestrator": {
+                "evidence": [f"deterministic risk level {risk_level}", *reasons, f"wave height {wave_h:.1f} m", f"wind gust {gust_kn:.1f} kn"],
+                "fallback": f"Deterministic Marine Risk result is {risk_level}. Follow the stated safety advice.",
+            },
+        })
+        ocean_llm = analytical["ocean_analysis"]
+        satellite_llm = analytical["satellite_analysis"]
+        weather_llm = analytical["weather_hazard"]
+        ecology_llm = analytical["marine_ecology"]
+        pfz_llm = analytical["fisheries_pfz"]
+        orchestrator_llm = analytical["orchestrator"]
 
         # Agent 1: Data Validation
         val_agent = {
@@ -286,6 +298,11 @@ class MultiAgentEngine:
                 f"लहरें कम हैं ({wave_h:.1f} मीटर) और हवा हल्की है ({wind_kn:.1f} समुद्री मील)।",
                 "आधिकारिक PFZ geometry उपलब्ध होने पर ही मत्स्य क्षेत्र दिखाया जाएगा।"
             ]
+            plain_te = [
+                "సముద్ర పరిస్థితులు ప్రశాంతంగా ఉన్నాయి; చేపల వేటకు సురక్షితం.",
+                f"అలలు {wave_h:.1f} మీటర్లు, గాలి {wind_kn:.1f} నాట్లు.",
+                "అధికారిక PFZ సమాచారం అందుబాటులో ఉన్నప్పుడు మాత్రమే చూపబడుతుంది."
+            ]
         elif risk_level == "CAUTION":
             headline_en = "CAUTION ADVISED — MODERATE SEA"
             headline_hi = "सावधानी बरतें — मध्यम समुद्र"
@@ -300,6 +317,11 @@ class MultiAgentEngine:
                 f"दोपहर के आसपास {gust_kn:.1f} समुद्री मील तक हवा के झोंके संभव हैं।",
                 "आगे जाने से पहले अपने लौटने के रास्ते की जांच करें।"
             ]
+            plain_te = [
+                f"అలలు మధ్యస్థంగా ఉన్నాయి ({wave_h:.1f} మీటర్లు); సముద్రంలో జాగ్రత్త వహించండి.",
+                f"గాలి వేగం {gust_kn:.1f} నాట్ల వరకు చేరవచ్చు.",
+                "ముందుకు వెళ్లే ముందు తిరుగు మార్గాన్ని తనిఖీ చేయండి."
+            ]
         else:
             headline_en = "DANGER — DO NOT GO TO SEA"
             headline_hi = "खतरा — आज समुद्र में न जाएं"
@@ -313,6 +335,11 @@ class MultiAgentEngine:
                 f"खतरनाक उबड़-खाबड़ समुद्र! लहरें {wave_h:.1f} मीटर तक पहुंच रही हैं।",
                 f"तेज हवा के झोंके {gust_kn:.1f} समुद्री मील तक हैं जो सुरक्षा सीमा से अधिक हैं।",
                 "मौसम की चेतावनी हटने तक बंदरगाह पर ही रहें।"
+            ]
+            plain_te = [
+                f"ప్రమాదకరమైన సముద్ర పరిస్థితులు; అలలు {wave_h:.1f} మీటర్ల వరకు ఉన్నాయి.",
+                f"గాలి వేగం {gust_kn:.1f} నాట్లు; ఇది భద్రతా పరిమితిని మించింది.",
+                "హెచ్చరిక తొలగే వరకు నౌకాశ్రయంలోనే ఉండండి."
             ]
 
         orchestrator_agent = {
@@ -337,6 +364,7 @@ class MultiAgentEngine:
             "headline_te": headline_te,
             "plain_en": plain_en,
             "plain_hi": plain_hi,
+            "plain_te": plain_te,
             "agents": agents_list,
             "data_coverage": {
                 "known": len(source_names),

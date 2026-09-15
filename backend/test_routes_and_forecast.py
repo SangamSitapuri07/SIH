@@ -73,6 +73,7 @@ class RouteAndForecastTests(unittest.TestCase):
                     "headline_te": "",
                     "plain_en": "",
                     "plain_hi": "",
+                    "plain_te": "",
                     "agents": [],
                     "data_coverage": {},
                 }

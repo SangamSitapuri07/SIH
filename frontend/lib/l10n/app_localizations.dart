@@ -100,6 +100,7 @@ abstract class AppLocalizations {
     Locale('hi'),
     Locale('gu'),
     Locale('mr'),
+    Locale('kok'),
     Locale('kn'),
     Locale('ml'),
     Locale('ta'),
@@ -550,6 +551,7 @@ AppLocalizations lookupAppLocalizations(Locale locale) {
       return AppLocalizationsHi();
     case 'gu':
     case 'mr':
+    case 'kok':
     case 'kn':
     case 'ml':
     case 'ta':

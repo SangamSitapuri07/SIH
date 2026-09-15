@@ -12,6 +12,7 @@ from agents_engine import MultiAgentEngine
 from supabase_service import SupabaseService
 from mosdac_datasets import registry_status
 from safe_window import find_safe_departure_window
+from ollama_client import ollama
 
 router = APIRouter(prefix="/api/v1")
 providers = DataProvidersEngine()
@@ -69,6 +70,7 @@ def get_health():
     """Live source health and system status for client applications."""
     health = providers.check_health()
     health["mosdac_activation"] = registry_status()
+    health["ollama"] = ollama.health()
     return health
 
 @router.get("/zone")
@@ -279,6 +281,7 @@ def get_advisory(lat: float = Query(20.9), lon: float = Query(70.37), include_gf
         "headline_te": res["headline_te"],
         "plain_en": res["plain_en"],
         "plain_hi": res["plain_hi"],
+        "plain_te": res["plain_te"],
         "variables": {
             key: {
                 "value": value,

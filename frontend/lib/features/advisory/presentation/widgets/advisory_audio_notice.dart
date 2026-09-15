@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/localization/language_options.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/widgets/orca_ui.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
@@ -20,12 +21,13 @@ class AdvisoryAudioNotice extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final String language = ref.watch(selectedLocaleProvider);
-    final String languageName = switch (language) {
-      'hi' => 'Hindi',
-      'te' => 'Telugu',
-      _ => 'English',
-    };
-    final int lineCount = language == 'hi' ? advisory.plainHi.length : advisory.plainEn.length;
+    final String languageName = orcaLanguages
+        .firstWhere(
+          (OrcaLanguageOption option) => option.code == language,
+          orElse: () => orcaLanguages.first,
+        )
+        .englishName;
+    final int lineCount = advisory.localizedPlain(language).length;
 
     return OrcaCard(
       child: Column(

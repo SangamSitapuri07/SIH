@@ -139,6 +139,7 @@ class CommandCenterVerdictPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final String language = Localizations.localeOf(context).languageCode;
     final bool online = ref.watch(isOnlineProvider);
     final bool streamLive = ref.watch(liveChannelProvider) == LiveStreamStatus.connected;
 
@@ -153,10 +154,10 @@ class CommandCenterVerdictPanel extends ConsumerWidget {
           );
 
     final String verdict = advisory == null ? 'UNVERIFIED' : verdictDisplay(advisory!.verdict);
-    final String headline = advisory?.headline ?? (isLoading
+    final String headline = advisory?.localizedHeadline(language) ?? (isLoading
         ? 'Checking verified marine inputs…'
         : 'No safety verdict is available from this deployment right now.');
-    final List<String> supporting = advisory?.plainEn.take(2).toList() ?? const <String>[];
+    final List<String> supporting = advisory?.localizedPlain(language).take(2).toList() ?? const <String>[];
 
     final String evidenceLabel = advisory == null
         ? 'Evidence unavailable'

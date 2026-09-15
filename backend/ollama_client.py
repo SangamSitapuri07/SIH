@@ -12,7 +12,8 @@ Design rules:
      the LLM/Analytical agents fall back to deterministic analysis immediately.
   2. Marine Risk Agent (Agent 10) is ALWAYS deterministic; Ollama NEVER touches safety thresholds.
   3. All prompts are structured and bounded — no open-ended generation.
-  4. Timeout is aggressively short (configurable via OLLAMA_TIMEOUT_S env var, default 25 s).
+  4. One bounded request may include model cold-start time. The timeout is
+     configurable via OLLAMA_TIMEOUT_S (default/minimum 120 s).
 """
 
 import os
@@ -27,7 +28,8 @@ logger = logging.getLogger("orca.ollama")
 
 _DEFAULT_HOST = "http://localhost:11434"
 _DEFAULT_MODEL = "qwen3:8b"
-_DEFAULT_TIMEOUT = 8.0  # seconds; deterministic analysis remains authoritative
+_DEFAULT_TIMEOUT = 120.0  # includes first-run model loading on CPU-only devices
+_MIN_TIMEOUT = 120.0
 
 class OllamaClient:
     """
@@ -38,19 +40,31 @@ class OllamaClient:
 
     def __init__(self):
         self.host = os.getenv("OLLAMA_HOST", _DEFAULT_HOST).rstrip("/")
-        self.model = os.getenv("OLLAMA_MODEL", _DEFAULT_MODEL)
-        self.timeout = float(os.getenv("OLLAMA_TIMEOUT_S", str(_DEFAULT_TIMEOUT)))
+        self.model = os.getenv("OLLAMA_MODEL", _DEFAULT_MODEL).strip()
+        configured_timeout = float(os.getenv("OLLAMA_TIMEOUT_S", str(_DEFAULT_TIMEOUT)))
+        # Older ORCA .env files used 25s. That is shorter than a Qwen3:8b cold
+        # start on CPU and caused a false "not connected" result.
+        self.timeout = max(_MIN_TIMEOUT, configured_timeout)
         self._available: Optional[bool] = None  # lazily determined
+        self._installed_models: list[str] = []
 
     def is_available(self) -> bool:
         """Check whether Ollama is reachable. Cached after first successful probe."""
         if self._available is True:
             return True
         try:
-            resp = httpx.get(f"{self.host}/api/tags", timeout=3.0)
+            resp = httpx.get(f"{self.host}/api/tags", timeout=5.0)
             self._available = resp.status_code == 200
+            if self._available:
+                payload = resp.json()
+                self._installed_models = [
+                    str(item.get("name"))
+                    for item in payload.get("models", [])
+                    if item.get("name")
+                ]
         except Exception:
             self._available = False
+            self._installed_models = []
         return self._available
 
     def generate(
@@ -59,6 +73,7 @@ class OllamaClient:
         system: Optional[str] = None,
         temperature: float = 0.3,
         max_tokens: int = 512,
+        json_mode: bool = False,
     ) -> Optional[str]:
         """
         Call Ollama /api/generate (non-streaming).
@@ -67,7 +82,15 @@ class OllamaClient:
         Callers MUST handle None and fall back to deterministic logic.
         """
         if not self.is_available():
-            logger.warning("[Ollama] Server not reachable — falling back to deterministic analysis.")
+            logger.warning("[Ollama] Server not reachable at %s — using deterministic fallback.", self.host)
+            return None
+        if self._installed_models and self.model not in self._installed_models:
+            logger.error(
+                "[Ollama] Model '%s' is not installed. Available models: %s. Run: ollama pull %s",
+                self.model,
+                ", ".join(self._installed_models),
+                self.model,
+            )
             return None
 
         payload: dict = {
@@ -78,12 +101,15 @@ class OllamaClient:
             # and caused every analytical agent to fall back. Disable thinking
             # so bounded interpretations complete inside OLLAMA_TIMEOUT_S.
             "think": False,
+            "keep_alive": "30m",
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
                 "stop": ["</analysis>", "---END---"],
             },
         }
+        if json_mode:
+            payload["format"] = "json"
         if system:
             payload["system"] = system
 
@@ -106,8 +132,14 @@ class OllamaClient:
             return response_text if response_text else None
 
         except httpx.TimeoutException:
-            logger.warning(f"[Ollama] Request timed out after {self.timeout}s — using deterministic fallback.")
-            self._available = False  # avoid repeating the timeout for every agent
+            logger.warning(
+                "[Ollama] Generation timed out after %.1fs at %s. The server is reachable; "
+                "use a smaller OLLAMA_MODEL or raise OLLAMA_TIMEOUT_S.",
+                self.timeout,
+                self.host,
+            )
+            # A generation timeout does not mean the Ollama server disconnected.
+            # Keep reachability true so a later warm-model request can succeed.
             return None
         except Exception as e:
             logger.error(f"[Ollama] Unexpected error: {e}")
