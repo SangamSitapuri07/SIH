@@ -11,6 +11,7 @@ from typing import Dict, Any, List
 import httpx
 from gfw_provider import GfwProvider
 from mosdac_provider import MosdacProvider
+from marine_router import OfficialBoundaryStore, MarineRoutePlanner, haversine, bearing
 
 
 class DataProvidersEngine:
@@ -23,13 +24,14 @@ class DataProvidersEngine:
     def __init__(self):
         self.gfw = GfwProvider()
         self.mosdac = MosdacProvider()
+        self.boundaries = OfficialBoundaryStore()
+        self.route_planner = MarineRoutePlanner(self.boundaries)
         # TTL cache for zone snapshots: identical coordinates within the TTL
         # return instantly instead of re-hitting every upstream provider.
         self._snapshot_cache: Dict[str, Dict[str, Any]] = {}
         self._snapshot_cache_times: Dict[str, float] = {}
         self._snapshot_cache_lock = threading.Lock()
         self._snapshot_ttl_s = float(os.getenv("SNAPSHOT_CACHE_TTL_S", "600"))
-        now = int(time.time())
         self.provider_status = {
             "open_meteo_marine": {"name": "Open-Meteo Marine (MFWAM/ECMWF)", "status": "UNVERIFIED", "latency_ms": None},
             "open_meteo_forecast": {"name": "Open-Meteo Forecast (ECMWF IFS)", "status": "UNVERIFIED", "latency_ms": None},
@@ -49,7 +51,13 @@ class DataProvidersEngine:
                 "reason": "Token configured; no GFW request has run yet." if self.gfw.configured else "Set GFW_API_TOKEN to enable AIS effort and fleet queries.",
             },
             "jtwc_cyclone": {"name": "JTWC US Navy Cyclone Warnings", "status": "UNVERIFIED", "latency_ms": None},
-            "globe_land_mask": {"name": "GLOBE 1km Land Mask (Offline)", "status": "AVAILABLE", "latency_ms": 2, "checked_at": now, "offline": True},
+            "official_navigation_boundaries": {
+                "name": "Official Navigation Boundaries (GeoJSON)",
+                "status": self.boundaries.state.status,
+                "latency_ms": None,
+                "reason": self.boundaries.state.reason,
+                "offline": True,
+            },
         }
 
     def _record_provider(self, key: str, status: str, *, latency_ms: int | None = None,
@@ -326,17 +334,15 @@ class DataProvidersEngine:
             result["sources_failed"].append({"source": "JTWC", "reason": str(exc)})
         return result
 
-    def is_land(self, lat: float, lon: float) -> bool:
-        """GLOBE 1km land mask offline check."""
-        # Simple geographic land bounding box for demonstration/offline check
-        # Gujarat/Mumbai inland checks
-        if lat > 20.95 and lon < 70.35: # Inland north of Veraval
-            return False # Coast/Sea border
-        if lat > 22.0 and lon > 70.0 and lon < 73.0: # Inland Gujarat landmass
-            return True
-        if lat > 18.9 and lat < 19.3 and lon > 72.85: # Inland Mumbai landmass
-            return True
-        return False
+    def is_land(self, lat: float, lon: float) -> bool | None:
+        """Return False only for authority-verified navigable water.
+
+        Unknown is represented by None; the previous hand-written Mumbai and
+        Gujarat boxes were not a land-mask dataset and were unsafe to report as
+        GLOBE verification.
+        """
+        allowed, _ = self.boundaries.classify(lat, lon)
+        return None if allowed is None else not allowed
 
     def fetch_zone_snapshot(self, lat: float, lon: float, include_gfw: bool = False) -> Dict[str, Any]:
         """Fetch live marine and forecast observations for a coordinate.
@@ -482,7 +488,7 @@ class DataProvidersEngine:
             "latitude": lat,
             "longitude": lon,
             "timestamp": now_ts,
-            "on_land": False,
+            "on_land": on_land,
             "variables": {
                 "wave_height_m": wave_height,
                 "wave_period_s": wave_period,
@@ -520,36 +526,24 @@ class DataProvidersEngine:
         return result
 
     def verify_route(self, from_lat: float, from_lon: float, to_lat: float, to_lon: float) -> Dict[str, Any]:
-        """Verify route course against GLOBE 1km land mask every 2km."""
-        dx = to_lon - from_lon
-        dy = to_lat - from_lat
-        total_dist_deg = math.sqrt(dx*dx + dy*dy)
-        distance_km = round(total_dist_deg * 111.0, 1)
-        distance_nm = round(distance_km * 0.539957, 1)
-        bearing_deg = round((math.degrees(math.atan2(dx, dy)) + 360) % 360, 1)
-
-        steps = max(5, int(distance_km / 2.0))
-        land_hit = False
-        sample_points = []
-
-        for i in range(steps + 1):
-            t = i / steps
-            plat = from_lat + t * dy
-            plon = from_lon + t * dx
-            hit = self.is_land(plat, plon)
-            sample_points.append([round(plat, 4), round(plon, 4)])
-            if hit:
-                land_hit = True
-
-        detour = None
-
+        """Plan a fail-closed path through official navigable polygons."""
+        start = (from_lat, from_lon)
+        end = (to_lat, to_lon)
+        plan = self.route_planner.plan(start, end)
+        route = plan.get("routes", [None])[0] if plan.get("routes") else None
+        legs = route["coordinates"] if route else [[from_lat, from_lon], [to_lat, to_lon]]
+        distance_km = route.get("distance_km") if route else round(haversine(start, end), 1)
         return {
-            "ok": not land_hit,
-            "land_hit": land_hit,
+            "ok": True if plan.get("verified") and route else None,
+            "land_hit": None if not plan.get("verified") else not bool(route),
             "distance_km": distance_km,
-            "distance_nm": distance_nm,
-            "bearing_deg": bearing_deg,
-            "legs": [[from_lat, from_lon], [to_lat, to_lon]],
-            "detour": detour,
-            "reason": "Course verified against the configured land check." if not land_hit else "Direct course crosses land. No verified marine detour is available."
+            "distance_nm": route.get("distance_nm") if route else round(distance_km * 0.539957, 1),
+            "bearing_deg": round(bearing(start, end), 1),
+            "legs": legs,
+            "detour": bool(route and len(legs) > 2),
+            "reason": plan["reason"],
+            "status": plan["status"],
+            "alternatives": plan.get("routes", []),
+            "boundary": plan.get("boundary"),
+            "sources": [self.boundaries.state.metadata.get("authority")] if self.boundaries.state.ready else [],
         }

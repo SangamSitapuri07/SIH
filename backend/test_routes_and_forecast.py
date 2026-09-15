@@ -6,13 +6,15 @@ from data_providers import DataProvidersEngine
 
 
 class RouteAndForecastTests(unittest.TestCase):
-    def test_land_crossing_does_not_fabricate_detour(self):
-        provider = DataProvidersEngine()
+    def test_missing_official_boundary_fails_closed(self):
+        with patch.dict("os.environ", {}, clear=True):
+            provider = DataProvidersEngine()
         result = provider.verify_route(22.1, 71.0, 22.2, 71.1)
-        self.assertTrue(result["land_hit"])
-        self.assertIsNone(result["detour"])
-        self.assertEqual(result["legs"], [[22.1, 71.0], [22.2, 71.1]])
-        self.assertIn("No verified marine detour", result["reason"])
+        self.assertIsNone(result["ok"])
+        self.assertIsNone(result["land_hit"])
+        self.assertFalse(result["detour"])
+        self.assertEqual(result["status"], "BOUNDARY_UNVERIFIED")
+        self.assertIn("ORCA_BOUNDARY_GEOJSON", result["reason"])
 
     def test_route_advisory_marks_missing_live_point_unverified(self):
         class Provider:

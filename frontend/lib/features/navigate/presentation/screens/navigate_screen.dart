@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../l10n/app_localizations.dart';
@@ -85,6 +87,13 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
                 style: OrcaType.body.copyWith(fontSize: 13),
               ),
               const SizedBox(height: 18),
+              _RoutePickerMap(
+                departure: _coordinate(_fromLat, _fromLon),
+                destination: _coordinate(_toLat, _toLon),
+                route: state.valueOrNull?.check?.legs ?? const <List<double>>[],
+                onPointPicked: _setPickedPoint,
+              ),
+              const SizedBox(height: 14),
               _RouteForm(
                 formKey: _formKey,
                 fromLat: _fromLat,
@@ -214,6 +223,28 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
     });
   }
 
+  LatLng? _coordinate(TextEditingController lat, TextEditingController lon) {
+    final double? latitude = double.tryParse(lat.text.trim());
+    final double? longitude = double.tryParse(lon.text.trim());
+    return latitude == null || longitude == null ? null : LatLng(latitude, longitude);
+  }
+
+  void _setPickedPoint(LatLng point) {
+    setState(() {
+      if (_coordinate(_fromLat, _fromLon) == null || _coordinate(_toLat, _toLon) != null) {
+        _fromLat.text = point.latitude.toStringAsFixed(5);
+        _fromLon.text = point.longitude.toStringAsFixed(5);
+        _toLat.clear();
+        _toLon.clear();
+        _formMessage = 'Departure selected. Tap the map again for destination.';
+      } else {
+        _toLat.text = point.latitude.toStringAsFixed(5);
+        _toLon.text = point.longitude.toStringAsFixed(5);
+        _formMessage = 'Destination selected. Check route to run verified planning.';
+      }
+    });
+  }
+
   void _checkRoute() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _formMessage = null);
@@ -223,6 +254,83 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
           toLat: double.parse(_toLat.text.trim()),
           toLon: double.parse(_toLon.text.trim()),
         );
+  }
+}
+
+class _RoutePickerMap extends StatelessWidget {
+  final LatLng? departure;
+  final LatLng? destination;
+  final List<List<double>> route;
+  final ValueChanged<LatLng> onPointPicked;
+
+  const _RoutePickerMap({
+    required this.departure,
+    required this.destination,
+    required this.route,
+    required this.onPointPicked,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final LatLng centre = departure ?? const LatLng(AppConfig.defaultLat, AppConfig.defaultLon);
+    final List<LatLng> line = route
+        .where((List<double> point) => point.length >= 2)
+        .map((List<double> point) => LatLng(point[0], point[1]))
+        .toList();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: SizedBox(
+        height: 300,
+        child: FlutterMap(
+          options: MapOptions(
+            initialCenter: centre,
+            initialZoom: 8,
+            onTap: (_, LatLng point) => onPointPicked(point),
+          ),
+          children: <Widget>[
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'org.orca.marine',
+            ),
+            if (line.length >= 2)
+              PolylineLayer(
+                polylines: <Polyline>[
+                  Polyline(points: line, strokeWidth: 5, color: OrcaTheme.accent),
+                ],
+              ),
+            MarkerLayer(
+              markers: <Marker>[
+                if (departure != null)
+                  Marker(
+                    point: departure!,
+                    width: 42,
+                    height: 42,
+                    child: const OrcaIconBadge(icon: Icons.trip_origin_rounded),
+                  ),
+                if (destination != null)
+                  Marker(
+                    point: destination!,
+                    width: 42,
+                    height: 42,
+                    child: const OrcaIconBadge(icon: Icons.flag_rounded),
+                  ),
+              ],
+            ),
+            Positioned(
+              left: 10,
+              top: 10,
+              child: DecoratedBox(
+                decoration: BoxDecoration(color: OrcaTheme.surface, borderRadius: BorderRadius.circular(8)),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  child: Text('Tap destination · tap again to restart', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

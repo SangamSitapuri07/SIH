@@ -331,14 +331,35 @@ def math_sin(val: float) -> float:
 
 @router.get("/route-check")
 def check_route(from_lat: float = Query(20.9), from_lon: float = Query(70.37), to_lat: float = Query(20.75), to_lon: float = Query(70.2)):
-    """Course verifier against GLOBE land mask."""
+    """Fail-closed A* planner over configured official navigation boundaries."""
     return providers.verify_route(from_lat, from_lon, to_lat, to_lon)
 
 @router.get("/route-advisory")
 def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37), to_lat: float = Query(20.75), to_lon: float = Query(70.2)):
     """Transit verdict along route points."""
     route_info = providers.verify_route(from_lat, from_lon, to_lat, to_lon)
-    legs = route_info["legs"]
+    full_legs = route_info["legs"]
+    if route_info.get("ok") is not True:
+        return {
+            "verdict": {
+                "level": route_info.get("status", "BOUNDARY_UNVERIFIED"),
+                "points_known": 0,
+                "total": 0,
+                "land_verified": False,
+                "headline": route_info["reason"],
+            },
+            "distance_km": route_info["distance_km"],
+            "distance_nm": route_info["distance_nm"],
+            "detour": route_info["detour"],
+            "points": [],
+            "sources": route_info.get("sources", []),
+        }
+    # Bound upstream calls while preserving the full planned geometry in
+    # route-check. Route weather samples are distributed across the path.
+    stride = max(1, (len(full_legs) - 1) // 10)
+    legs = full_legs[::stride]
+    if legs[-1] != full_legs[-1]:
+        legs.append(full_legs[-1])
 
     points = []
     worst_level = "GOOD"
@@ -350,8 +371,9 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
             unknown_inputs = True
             points.append({
                 "point_index": idx,
-                "latitude": pt[0],
-                "longitude": pt[1],
+                "lat": pt[0],
+                "lon": pt[1],
+                "sail_km": round(route_info["distance_km"] * idx / max(1, len(legs) - 1), 1),
                 "wave_m": None,
                 "wind_kn": None,
                 "state": "unverified",
@@ -365,8 +387,9 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
             unknown_inputs = True
             points.append({
                 "point_index": idx,
-                "latitude": pt[0],
-                "longitude": pt[1],
+                "lat": pt[0],
+                "lon": pt[1],
+                "sail_km": round(route_info["distance_km"] * idx / max(1, len(legs) - 1), 1),
                 "wave_m": wave,
                 "wind_kn": wind,
                 "state": "unverified",
@@ -384,8 +407,9 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
 
         points.append({
             "point_index": idx,
-            "latitude": pt[0],
-            "longitude": pt[1],
+            "lat": pt[0],
+            "lon": pt[1],
+            "sail_km": round(route_info["distance_km"] * idx / max(1, len(legs) - 1), 1),
             "wave_m": wave,
             "wind_kn": wind,
             "state": state,
@@ -398,14 +422,16 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
     return {
         "verdict": {
             "level": worst_level,
-            "points_known": len(points),
-            "land_verified": route_info["ok"]
+            "points_known": sum(1 for point in points if point["state"] != "unverified"),
+            "total": len(points),
+            "land_verified": route_info["ok"],
+            "headline": "Route conditions verified." if worst_level == "GOOD" else ("Route has dangerous conditions." if worst_level == "NO-GO" else "Route requires caution or has unavailable inputs."),
         },
         "distance_km": route_info["distance_km"],
         "distance_nm": route_info["distance_nm"],
         "detour": route_info["detour"],
         "points": points,
-        "sources": snap.get("sources_used", [])
+        "sources": [source.get("name", "unknown") for source in snap.get("sources_used", [])]
     }
 
 @router.post("/ingestion/test-alert")
