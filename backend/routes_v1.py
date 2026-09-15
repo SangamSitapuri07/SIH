@@ -66,9 +66,9 @@ STORE_CATCH = []
 # --- PHASE 1 CORE ENDPOINTS ---
 
 @router.get("/health")
-def get_health():
-    """Live source health and system status for client applications."""
-    health = providers.check_health()
+def get_health(probe: bool = Query(False)):
+    """Source health; ``probe=true`` actively exercises operational providers."""
+    health = providers.check_health(probe=probe)
     health["mosdac_activation"] = registry_status()
     health["ollama"] = ollama.health()
     return health

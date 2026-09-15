@@ -43,10 +43,13 @@ class HealthNotifier extends StateNotifier<AsyncValue<SystemHealthSnapshot>> {
     checkHealth();
   }
 
-  Future<void> checkHealth() async {
+  Future<void> checkHealth({bool probe = false}) async {
     state = const AsyncValue.loading();
     try {
-      final response = await _ref.read(dioProvider).get<Map<String, dynamic>>(ApiPaths.health);
+      final response = await _ref.read(dioProvider).get<Map<String, dynamic>>(
+        ApiPaths.health,
+        queryParameters: <String, dynamic>{if (probe) 'probe': true},
+      );
       final payload = response.data;
       if (payload == null) throw const FormatException('Empty health response');
       state = AsyncValue.data(_parseHealth(payload));

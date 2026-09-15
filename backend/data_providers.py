@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, List
 import httpx
 from gfw_provider import GfwProvider
+from mosdac_provider import MosdacProvider
 
 
 class DataProvidersEngine:
@@ -18,6 +19,7 @@ class DataProvidersEngine:
 
     def __init__(self):
         self.gfw = GfwProvider()
+        self.mosdac = MosdacProvider()
         # TTL cache for zone snapshots: identical coordinates within the TTL
         # return instantly instead of re-hitting every upstream provider.
         self._snapshot_cache: Dict[str, Dict[str, Any]] = {}
@@ -31,9 +33,9 @@ class DataProvidersEngine:
             "noaa_erddap": {"name": "NOAA CoastWatch ERDDAP (Chlorophyll-a)", "status": "UNVERIFIED", "latency_ms": None},
             "isro_mosdac": {
                 "name": "ISRO MOSDAC OCM-3 (Oceansat-3)",
-                "status": "CONFIGURED" if (os.getenv("MOSDAC_USERNAME") and os.getenv("MOSDAC_PASSWORD")) else "CREDENTIAL_REQUIRED",
+                "status": "CONFIGURED" if self.mosdac.credentials_configured else "CREDENTIAL_REQUIRED",
                 "latency_ms": None,
-                "reason": "Credentials configured; no dataset request has run yet." if (os.getenv("MOSDAC_USERNAME") and os.getenv("MOSDAC_PASSWORD")) else "Set MOSDAC_USERNAME and MOSDAC_PASSWORD to enable authenticated products.",
+                "reason": "Credentials configured; access has not been checked yet." if self.mosdac.credentials_configured else "Set MOSDAC_USERNAME and MOSDAC_PASSWORD to enable authenticated products.",
             },
             "incois_pfz": {"name": "INCOIS PFZ (GeoServer WFS)", "status": "UNVERIFIED", "latency_ms": None},
             "incois_las": {"name": "INCOIS Live Access Server", "status": "NOT_INTEGRATED", "latency_ms": None, "reason": "No verified LAS dataset contract is used by this build."},
@@ -58,7 +60,55 @@ class DataProvidersEngine:
         if observed_at:
             item["observed_at"] = observed_at
 
-    def check_health(self) -> Dict[str, Any]:
+    def check_health(self, probe: bool = False) -> Dict[str, Any]:
+        """Return observed provider health, optionally running live probes.
+
+        A normal read is fast and reports the latest real request state. The
+        explicit Info-screen refresh uses ``probe=True`` to exercise the
+        operational zone, GFW and cyclone paths rather than merely repeating
+        configuration metadata.
+        """
+        if probe:
+            def probe_zone() -> None:
+                try:
+                    self.fetch_zone_snapshot(18.92, 72.83, include_gfw=True)
+                except Exception as exc:
+                    # Individual providers normally return structured errors;
+                    # this guard keeps diagnostics available for unexpected
+                    # failures without claiming success.
+                    self._record_provider("open_meteo_marine", "UNREACHABLE", reason=str(exc))
+                    self._record_provider("open_meteo_forecast", "UNREACHABLE", reason=str(exc))
+
+            def probe_cyclones() -> None:
+                try:
+                    self.fetch_cyclone_sources()
+                except Exception as exc:
+                    self._record_provider("jtwc_cyclone", "UNREACHABLE", reason=str(exc))
+
+            def probe_mosdac() -> None:
+                result = self.mosdac.check_access()
+                raw_status = str(result.get("status", "unavailable")).upper()
+                status = {
+                    "CONNECTED": "CONNECTED",
+                    "CREDENTIAL_REQUIRED": "CREDENTIAL_REQUIRED",
+                    "AUTHENTICATION_FAILED": "AUTHENTICATION_FAILED",
+                    "UNREACHABLE": "UNREACHABLE",
+                }.get(raw_status, "UNAVAILABLE")
+                self._record_provider(
+                    "isro_mosdac", status,
+                    latency_ms=result.get("latency_ms"),
+                    reason=result.get("reason"),
+                )
+
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                futures = [
+                    pool.submit(probe_zone),
+                    pool.submit(probe_cyclones),
+                    pool.submit(probe_mosdac),
+                ]
+                for future in futures:
+                    future.result()
+
         usable = {"FRESH", "AVAILABLE", "CACHED", "CONNECTED"}
         core_ok = all(
             self.provider_status[key]["status"] in usable
@@ -357,7 +407,14 @@ class DataProvidersEngine:
                 self._record_provider("gfw_ais", "FRESH" if "fresh" in gfw_statuses else "CACHED")
             else:
                 reason = str(gfw_effort.get("error") or gfw_fleet.get("error") or "GFW returned no usable result")
-                status = "TOKEN_REQUIRED" if "token_required" in gfw_statuses else "UNAVAILABLE"
+                if "token_required" in gfw_statuses:
+                    status = "TOKEN_REQUIRED"
+                elif "authentication_failed" in gfw_statuses or "permission_denied" in gfw_statuses:
+                    status = "AUTHENTICATION_FAILED"
+                elif "rate_limited" in gfw_statuses:
+                    status = "RATE_LIMITED"
+                else:
+                    status = "UNAVAILABLE"
                 self._record_provider("gfw_ais", status, reason=reason)
         sources_used = [
             {"name": "Open-Meteo Marine", "dataset": "Live marine current", "latency_ms": latency_ms, "status": "FRESH"},

@@ -61,7 +61,7 @@ class InfoScreen extends ConsumerWidget {
       stateLabel: health == null
           ? 'HEALTH UNAVAILABLE'
           : '$operational/${health.dataSources.length} USABLE',
-      onRefresh: () => ref.read(healthProvider.notifier).checkHealth(),
+      onRefresh: () => ref.read(healthProvider.notifier).checkHealth(probe: true),
       body: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final bool twoColumn = constraints.maxWidth > OrcaTheme.compactBreakpoint;
@@ -75,7 +75,7 @@ class InfoScreen extends ConsumerWidget {
                     ? 'The ORCA Box health endpoint did not answer'
                     : 'Status, latency and last observation reported by ${baseUrl}',
                 actionLabel: 'Re-check',
-                onAction: () => ref.read(healthProvider.notifier).checkHealth(),
+                onAction: () => ref.read(healthProvider.notifier).checkHealth(probe: true),
               ),
               const SizedBox(height: 12),
               healthState.when(
@@ -118,7 +118,7 @@ class InfoScreen extends ConsumerWidget {
                       title: 'System health unavailable',
                       message: '$error\nORCA could not reach the health endpoint, so no provider is reported as working.',
                       actionLabel: 'Retry',
-                      onAction: () => ref.read(healthProvider.notifier).checkHealth(),
+                      onAction: () => ref.read(healthProvider.notifier).checkHealth(probe: true),
                     ),
                     const SizedBox(height: 12),
                     const _RecoveryCard(),
@@ -165,7 +165,7 @@ class InfoScreen extends ConsumerWidget {
           );
 
           final Widget body = RefreshIndicator(
-            onRefresh: () => ref.read(healthProvider.notifier).checkHealth(),
+            onRefresh: () => ref.read(healthProvider.notifier).checkHealth(probe: true),
             color: OrcaTheme.accent,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -221,7 +221,7 @@ class _SourceTile extends StatelessWidget {
     final Color color = switch (status) {
       'FRESH' || 'CACHED' || 'CONNECTED' || 'AVAILABLE' || 'OK' => VerdictColors.go,
       'CONFIGURED' || 'UNVERIFIED' || 'NOT_INTEGRATED' => VerdictColors.caution,
-      'UNAVAILABLE' || 'UNREACHABLE' || 'FAILED' => VerdictColors.critical,
+      'UNAVAILABLE' || 'UNREACHABLE' || 'AUTHENTICATION_FAILED' || 'RATE_LIMITED' || 'FAILED' => VerdictColors.critical,
       'CREDENTIAL_REQUIRED' || 'TOKEN_REQUIRED' => VerdictColors.stale,
       _ => VerdictColors.stale,
     };

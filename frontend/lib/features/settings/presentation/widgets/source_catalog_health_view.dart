@@ -73,6 +73,8 @@ class SourceCatalogHealthView extends StatelessWidget {
     if (status == 'UNAVAILABLE' ||
         status == 'UNREACHABLE' ||
         status == 'FAILED' ||
+        status == 'AUTHENTICATION_FAILED' ||
+        status == 'RATE_LIMITED' ||
         status == 'ERROR' ||
         status == 'DOWN') {
       return _Group.down;
