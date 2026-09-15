@@ -595,8 +595,10 @@ class DataProvidersEngine:
         legs = route["coordinates"] if route else [[from_lat, from_lon], [to_lat, to_lon]]
         distance_km = route.get("distance_km") if route else round(haversine(start, end), 1)
         return {
-            "ok": True if plan.get("verified") and route else None,
-            "land_hit": None if not plan.get("verified") else not bool(route),
+            "ok": (bool(route) if plan.get("verified") else None),
+            # Outside an allow-list may be foreign/high-seas water; without a
+            # dedicated land dataset it must not be labelled as a land hit.
+            "land_hit": None,
             "distance_km": distance_km,
             "distance_nm": route.get("distance_nm") if route else round(distance_km * 0.539957, 1),
             "bearing_deg": round(bearing(start, end), 1),
