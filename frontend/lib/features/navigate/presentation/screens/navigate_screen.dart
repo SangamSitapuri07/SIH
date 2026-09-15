@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/config/app_config.dart';
+import '../../../../l10n/app_localizations.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/widgets/orca_navigation.dart';
@@ -59,7 +60,7 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
     final AsyncValue<RouteAnalysisState> state = ref.watch(navigateProvider);
 
     return OrcaWorkspaceScaffold(
-      title: 'Route planner',
+      title: AppLocalizations.of(context)?.navigateTitle ?? 'Route planner',
       subtitle: 'Course verification and sampled transit',
       locationLabel: 'Departure',
       coordinateLabel: _departureLabel(),

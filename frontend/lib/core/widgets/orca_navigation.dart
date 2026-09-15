@@ -4,12 +4,14 @@ import 'package:go_router/go_router.dart';
 
 import '../cache/cache_service.dart';
 import '../live/live_channel.dart';
+import '../localization/language_options.dart';
 import '../network/dio_provider.dart';
 import '../offline/connectivity_watcher.dart';
 import '../theme/orca_theme.dart';
 import '../theme/verdict_colors.dart';
 import '../utils/date_formatter.dart';
 import '../../features/settings/presentation/providers/settings_provider.dart';
+import '../../l10n/app_localizations.dart';
 import 'orca_app_bar.dart';
 import 'orca_ui.dart';
 
@@ -115,6 +117,21 @@ const List<OrcaDestination> orcaUtilityDestinations = <OrcaDestination>[
     selectedIcon: Icons.person_rounded,
   ),
 ];
+
+String localizedDestinationLabel(BuildContext context, OrcaDestination destination) {
+  final AppLocalizations? strings = AppLocalizations.of(context);
+  if (strings == null) return destination.label;
+  return switch (destination.path) {
+    '/home' => strings.tabHome,
+    '/ai' => strings.tabAi,
+    '/map' => strings.tabMap,
+    '/alerts' => strings.tabAlerts,
+    '/navigate' => strings.tabNavigate,
+    '/info' => strings.tabInfo,
+    '/advisory' => strings.canIGoTitle,
+    _ => destination.label,
+  };
+}
 
 OrcaDestination? orcaDestinationFor(String location) {
   for (final OrcaDestination destination in <OrcaDestination>[
@@ -295,10 +312,11 @@ class _SideDestination extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String label = localizedDestinationLabel(context, destination);
     return Semantics(
       selected: selected,
       button: true,
-      label: destination.label,
+      label: label,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
         child: Material(
@@ -326,7 +344,7 @@ class _SideDestination extends StatelessWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        destination.label,
+                        label,
                         style: OrcaType.navLink.copyWith(
                           color: selected ? const Color(0xFF0D4D61) : OrcaTheme.navInk,
                         ),
@@ -447,10 +465,11 @@ class _MobileTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color color = selected ? const Color(0xFF138F91) : OrcaTheme.textMuted;
+    final String label = localizedDestinationLabel(context, destination);
     return Semantics(
       selected: selected,
       button: true,
-      label: destination.label,
+      label: label,
       child: InkWell(
         onTap: onTap,
         child: Column(
@@ -488,7 +507,7 @@ class _MobileTab extends StatelessWidget {
             ),
             const SizedBox(height: 3),
             Text(
-              destination.label,
+              label,
               style: TextStyle(
                 fontFamily: kOrcaSans,
                 fontSize: 9,
@@ -541,7 +560,7 @@ Future<void> showOrcaWorkspaceSheet(BuildContext context, String location) {
                 contentPadding: EdgeInsets.zero,
                 leading: OrcaIconBadge(icon: destination.icon),
                 title: Text(
-                  destination.label,
+                  localizedDestinationLabel(context, destination),
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                 ),
                 subtitle: Text(destination.description, style: OrcaType.caption),
@@ -808,11 +827,12 @@ class OrcaLanguageSelector extends ConsumerWidget {
               color: OrcaTheme.headingSoft,
               fontFamily: kOrcaSans,
             ),
-            items: const <DropdownMenuItem<String>>[
-              DropdownMenuItem<String>(value: 'en', child: Text('English')),
-              DropdownMenuItem<String>(value: 'hi', child: Text('हिन्दी')),
-              DropdownMenuItem<String>(value: 'te', child: Text('తెలుగు')),
-            ],
+            items: orcaLanguages
+                .map((OrcaLanguageOption option) => DropdownMenuItem<String>(
+                      value: option.code,
+                      child: Text(option.nativeName),
+                    ))
+                .toList(),
             onChanged: (String? value) async {
               if (value == null) return;
               ref.read(selectedLocaleProvider.notifier).state = value;

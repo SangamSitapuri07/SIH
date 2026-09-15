@@ -1,0 +1,9 @@
+{
+  "@@locale": "kn",
+  "appName": "ORCA", "appTagline": "ಸಹಯೋಗಿ ಏಜೆಂಟ್‌ಗಳೊಂದಿಗೆ ಸಮುದ್ರ ಸ್ಥಿತಿ ಮತ್ತು ಸುರಕ್ಷತಾ ಸಲಹೆ",
+  "tabHome": "ಮುಖಪುಟ", "tabMap": "ನಕ್ಷೆ", "tabAi": "AI ಏಜೆಂಟ್‌ಗಳು", "tabAlerts": "ಎಚ್ಚರಿಕೆಗಳು", "tabNavigate": "ಮಾರ್ಗ", "tabInfo": "ಮಾಹಿತಿ",
+  "verdictGo": "ಹೋಗಲು ಸುರಕ್ಷಿತ", "verdictCaution": "ಎಚ್ಚರಿಕೆ", "verdictNoGo": "ಅಪಾಯ — ಹೋಗಬೇಡಿ", "verdictUnknown": "ತಿಳಿದಿಲ್ಲ",
+  "canIGoTitle": "ಇಂದು ಸಮುದ್ರಕ್ಕೆ ಹೋಗಬಹುದೇ?", "safeWindowLabel": "ಸುರಕ್ಷಿತ ಸಮಯ", "variablesTitle": "ಪ್ರಸ್ತುತ ಸ್ಥಿತಿ",
+  "alertsTitle": "ಸಕ್ರಿಯ ಸಮುದ್ರ ಎಚ್ಚರಿಕೆಗಳು", "navigateTitle": "ಮಾರ್ಗ ಸುರಕ್ಷತೆ ಮತ್ತು ಭೂ ಪರಿಶೀಲನೆ", "infoTitle": "ವ್ಯವಸ್ಥೆ ಮತ್ತು ಡೇಟಾ ಸ್ಥಿತಿ",
+  "save": "ಉಳಿಸಿ", "cancel": "ರದ್ದು", "retry": "ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ", "languageLabel": "ಭಾಷೆ"
+}

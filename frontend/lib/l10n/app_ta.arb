@@ -1,0 +1,9 @@
+{
+  "@@locale": "ta",
+  "appName": "ORCA", "appTagline": "கூட்டு முகவர்களுடன் கடல் நிலை மற்றும் பாதுகாப்பு ஆலோசனை",
+  "tabHome": "முகப்பு", "tabMap": "வரைபடம்", "tabAi": "AI முகவர்கள்", "tabAlerts": "எச்சரிக்கைகள்", "tabNavigate": "வழி", "tabInfo": "தகவல்",
+  "verdictGo": "செல்வது பாதுகாப்பானது", "verdictCaution": "எச்சரிக்கை", "verdictNoGo": "ஆபத்து — செல்ல வேண்டாம்", "verdictUnknown": "தெரியவில்லை",
+  "canIGoTitle": "இன்று கடலுக்குச் செல்லலாமா?", "safeWindowLabel": "பாதுகாப்பான நேரம்", "variablesTitle": "தற்போதைய நிலை",
+  "alertsTitle": "செயலில் உள்ள கடல் எச்சரிக்கைகள்", "navigateTitle": "வழிப் பாதுகாப்பு மற்றும் நிலச் சோதனை", "infoTitle": "அமைப்பு மற்றும் தரவு நிலை",
+  "save": "சேமி", "cancel": "ரத்து செய்", "retry": "மீண்டும் முயற்சி", "languageLabel": "மொழி"
+}

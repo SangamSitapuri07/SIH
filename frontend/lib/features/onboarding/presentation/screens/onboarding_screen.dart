@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/localization/language_options.dart';
 import '../../../../core/network/dio_provider.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/cache/cache_service.dart';
@@ -111,13 +112,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          _langChip('English', 'en'),
-                          const SizedBox(width: 8),
-                          _langChip('हिन्दी', 'hi'),
-                          const SizedBox(width: 8),
-                          _langChip('తెలుగు', 'te'),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: <Widget>[
+                          for (final OrcaLanguageOption option in orcaLanguages)
+                            _langChip(option.nativeName, option.code),
                         ],
                       ),
                       const SizedBox(height: 24),
@@ -189,8 +189,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   Widget _langChip(String label, String code) {
     final isSelected = _selectedLang == code;
-    return Expanded(
-      child: InkWell(
+    return InkWell(
         onTap: () => setState(() => _selectedLang = code),
         borderRadius: BorderRadius.circular(8),
         child: Container(
@@ -213,7 +212,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }

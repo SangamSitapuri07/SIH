@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/cache/cache_service.dart';
 import '../../../../core/cache/staleness.dart';
+import '../../../../core/localization/language_options.dart';
 import '../../../../core/network/dio_provider.dart';
 import '../../../../core/sync/sync_manager.dart';
 import '../../../../core/theme/orca_theme.dart';
@@ -11,6 +12,7 @@ import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/widgets/orca_navigation.dart';
 import '../../../../core/widgets/orca_ui.dart';
 import '../../../../core/widgets/toast.dart';
+import '../../../../l10n/app_localizations.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/server_config_dialog.dart';
 
@@ -49,7 +51,7 @@ class InfoScreen extends ConsumerWidget {
             .length;
 
     return OrcaWorkspaceScaffold(
-      title: 'Data sources',
+      title: AppLocalizations.of(context)?.infoTitle ?? 'Data sources',
       subtitle: 'Provider health, cache freshness and recovery',
       locationLabel: 'ORCA Box',
       coordinateLabel: baseUrl,
@@ -346,11 +348,12 @@ class _LanguageCard extends StatelessWidget {
             DropdownButtonFormField<String>(
               value: language,
               decoration: const InputDecoration(labelText: 'Interface language'),
-              items: const <DropdownMenuItem<String>>[
-                DropdownMenuItem<String>(value: 'en', child: Text('English')),
-                DropdownMenuItem<String>(value: 'hi', child: Text('हिन्दी')),
-                DropdownMenuItem<String>(value: 'te', child: Text('తెలుగు')),
-              ],
+              items: orcaLanguages
+                  .map((OrcaLanguageOption option) => DropdownMenuItem<String>(
+                        value: option.code,
+                        child: Text(option.label),
+                      ))
+                  .toList(),
               onChanged: (String? value) {
                 if (value != null) onChanged(value);
               },

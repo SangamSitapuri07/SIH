@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/auth/supabase_auth_service.dart';
 import '../../../../core/cache/cache_service.dart';
+import '../../../../core/localization/language_options.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/widgets/orca_navigation.dart';
 import '../../../../core/widgets/orca_ui.dart';
@@ -266,20 +267,16 @@ class ProfileScreen extends ConsumerWidget {
                 child: OrcaEyebrow('INTERFACE LANGUAGE', color: OrcaTheme.textMuted),
               ),
             ),
-            for (final (String code, String label) in const <(String, String)>[
-              ('en', 'English'),
-              ('hi', 'हिंदी (Hindi)'),
-              ('te', 'తెలుగు (Telugu)'),
-            ])
+            for (final OrcaLanguageOption option in orcaLanguages)
               ListTile(
-                title: Text(label),
-                trailing: currentLang == code ? const Icon(Icons.check, color: OrcaTheme.accentDark) : null,
+                title: Text(option.label),
+                trailing: currentLang == option.code ? const Icon(Icons.check, color: OrcaTheme.accentDark) : null,
                 onTap: () async {
-                  await ref.read(userProfileProvider.notifier).updateLanguage(code);
-                  ref.read(selectedLocaleProvider.notifier).state = code;
+                  await ref.read(userProfileProvider.notifier).updateLanguage(option.code);
+                  ref.read(selectedLocaleProvider.notifier).state = option.code;
                   await ref
                       .read(cacheServiceProvider)
-                      .put('settings.locale', <String, dynamic>{'value': code}, ttl: const Duration(days: 3650));
+                      .put('settings.locale', <String, dynamic>{'value': option.code}, ttl: const Duration(days: 3650));
                   if (sheetContext.mounted) Navigator.pop(sheetContext);
                 },
               ),

@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart' as intl;
 
+import 'app_localizations_coastal.dart';
 import 'app_localizations_en.dart';
 import 'app_localizations_hi.dart';
 import 'app_localizations_te.dart';
@@ -97,7 +98,14 @@ abstract class AppLocalizations {
   static const List<Locale> supportedLocales = <Locale>[
     Locale('en'),
     Locale('hi'),
-    Locale('te')
+    Locale('gu'),
+    Locale('mr'),
+    Locale('kn'),
+    Locale('ml'),
+    Locale('ta'),
+    Locale('te'),
+    Locale('or'),
+    Locale('bn'),
   ];
 
   /// No description provided for @appName.
@@ -525,8 +533,9 @@ class _AppLocalizationsDelegate
   }
 
   @override
-  bool isSupported(Locale locale) =>
-      <String>['en', 'hi', 'te'].contains(locale.languageCode);
+  bool isSupported(Locale locale) => <String>[
+        'en', 'hi', 'gu', 'mr', 'kn', 'ml', 'ta', 'te', 'or', 'bn',
+      ].contains(locale.languageCode);
 
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
@@ -539,6 +548,14 @@ AppLocalizations lookupAppLocalizations(Locale locale) {
       return AppLocalizationsEn();
     case 'hi':
       return AppLocalizationsHi();
+    case 'gu':
+    case 'mr':
+    case 'kn':
+    case 'ml':
+    case 'ta':
+    case 'or':
+    case 'bn':
+      return AppLocalizationsCoastal(locale.languageCode);
     case 'te':
       return AppLocalizationsTe();
   }

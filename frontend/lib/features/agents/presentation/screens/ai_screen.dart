@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/live/live_channel.dart';
+import '../../../../l10n/app_localizations.dart';
 import '../../../../core/offline/connectivity_watcher.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
@@ -106,7 +107,7 @@ class _AiScreenState extends ConsumerState<AiScreen> {
     );
 
     return OrcaWorkspaceScaffold(
-      title: 'Ask ORCA',
+      title: AppLocalizations.of(context)?.tabAi ?? 'AI Agents',
       subtitle: 'Reasoning, evidence and service status',
       locationLabel: 'Working location',
       coordinateLabel: GeoUtils.formatCoordinate(lat, lon),

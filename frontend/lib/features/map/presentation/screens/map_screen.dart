@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/offline/connectivity_watcher.dart';
+import '../../../../l10n/app_localizations.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
 import '../../../../core/utils/date_formatter.dart';
@@ -102,7 +103,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final MapGridDto? gridData = grid?.valueOrNull;
 
     return OrcaWorkspaceScaffold(
-      title: 'Ocean map',
+      title: AppLocalizations.of(context)?.tabMap ?? 'Map',
       subtitle: 'Fields, layers and point inspection',
       locationLabel: 'Map centre',
       coordinateLabel: GeoUtils.formatCoordinate(_fieldCenter.latitude, _fieldCenter.longitude),
