@@ -54,7 +54,12 @@ class AgentReasoningPanel extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 10),
-        _RegistryCard(runtimeState: runtimeState, onRun: onRun, onAskWhy: onAskWhy),
+        _RegistryCard(
+          runtimeState: runtimeState,
+          reasoningLoading: reasoningState.isLoading,
+          onRun: onRun,
+          onAskWhy: onAskWhy,
+        ),
         const SizedBox(height: 14),
         ...reasoningState.when(
           loading: () => <Widget>[
@@ -121,11 +126,13 @@ class AgentReasoningPanel extends ConsumerWidget {
 
 class _RegistryCard extends ConsumerWidget {
   final AsyncValue<List<AgentRuntimeStatus>> runtimeState;
+  final bool reasoningLoading;
   final VoidCallback onRun;
   final VoidCallback onAskWhy;
 
   const _RegistryCard({
     required this.runtimeState,
+    required this.reasoningLoading,
     required this.onRun,
     required this.onAskWhy,
   });
@@ -236,10 +243,10 @@ class _RegistryCard extends ConsumerWidget {
             children: <Widget>[
               Expanded(
                 child: OrcaPillButton(
-                  label: 'Run reasoning pass',
-                  icon: Icons.play_arrow_rounded,
+                  label: reasoningLoading ? 'Reasoning in progress…' : 'Run reasoning pass',
+                  icon: reasoningLoading ? Icons.hourglass_top_rounded : Icons.play_arrow_rounded,
                   primary: true,
-                  onPressed: onRun,
+                  onPressed: reasoningLoading ? null : onRun,
                 ),
               ),
               const SizedBox(width: 8),

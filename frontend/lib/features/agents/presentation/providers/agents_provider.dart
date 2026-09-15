@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/cache/cache_service.dart';
 import '../../../../core/config/app_config.dart';
@@ -89,6 +91,12 @@ class AgentsNotifier extends StateNotifier<AsyncValue<AgentReasoningResult>> {
 
   Future<void> fetch({bool forceRefresh = false}) async {
     state = const AsyncValue.loading();
+    // `/reason` and `/agents` are independent requests. Refresh the registry
+    // shortly after the reasoning request starts so PROCESSING is visible,
+    // then refresh it again when the trace completes.
+    Timer(const Duration(milliseconds: 500), () {
+      if (mounted) _ref.invalidate(agentRuntimeStatusProvider);
+    });
     final result = await _useCase.execute(
       lat: AppConfig.defaultLat,
       lon: AppConfig.defaultLon,
@@ -103,6 +111,7 @@ class AgentsNotifier extends StateNotifier<AsyncValue<AgentReasoningResult>> {
         state = AsyncValue.error(failure.message, StackTrace.current);
       },
     );
+    _ref.invalidate(agentRuntimeStatusProvider);
   }
 }
 

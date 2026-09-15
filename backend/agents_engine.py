@@ -1,5 +1,6 @@
 import json
 import time
+import threading
 from typing import Dict, Any, List
 
 from ollama_client import ollama
@@ -25,8 +26,49 @@ class MultiAgentEngine:
         {"id": "orchestrator", "name": "Orchestrator Agent", "type": "LLM/Analytical", "role": "Synthesize agent findings into plain bilingual safety lines"}
     ]
 
+    def __init__(self):
+        self._runtime_lock = threading.Lock()
+        self._run_lock = threading.Lock()
+        self._runtime = {
+            agent["id"]: {
+                "status": "IDLE",
+                "last_duration_ms": None,
+                "last_error": None,
+            }
+            for agent in self.AGENT_REGISTRY
+        }
+
     def list_agents(self) -> List[Dict[str, Any]]:
-        return self.AGENT_REGISTRY
+        """Return registry metadata with truthful per-process runtime state."""
+        with self._runtime_lock:
+            return [
+                {**agent, **dict(self._runtime[agent["id"]])}
+                for agent in self.AGENT_REGISTRY
+            ]
+
+    def _set_all_runtime(self, status: str, error: str | None = None) -> None:
+        with self._runtime_lock:
+            for runtime in self._runtime.values():
+                runtime["status"] = status
+                runtime["last_error"] = error
+
+    def _record_runtime_results(self, result: Dict[str, Any]) -> None:
+        by_id = {
+            agent.get("agent_id"): agent
+            for agent in result.get("agents", [])
+            if agent.get("agent_id")
+        }
+        with self._runtime_lock:
+            for agent_id, runtime in self._runtime.items():
+                finding = by_id.get(agent_id)
+                if finding is None:
+                    runtime["status"] = "FAILED"
+                    runtime["last_error"] = "Agent result missing from reasoning trace"
+                    continue
+                status = str(finding.get("status", "completed")).upper()
+                runtime["status"] = status
+                runtime["last_duration_ms"] = finding.get("duration_ms")
+                runtime["last_error"] = None
 
     def _analytical_findings(self, jobs: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         """Run every analytical role in one Ollama request.
@@ -84,7 +126,19 @@ class MultiAgentEngine:
         return results
 
     def run_collaborative_reasoning(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
-        """Runs all 11 agents and produces structured trace & final verdict.
+        """Run the pipeline while exposing live status through `/agents`."""
+        with self._run_lock:
+            self._set_all_runtime("PROCESSING")
+            try:
+                result = self._run_collaborative_reasoning(snapshot)
+            except Exception as exc:
+                self._set_all_runtime("FAILED", str(exc))
+                raise
+            self._record_runtime_results(result)
+            return result
+
+    def _run_collaborative_reasoning(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
+        """Build the complete 11-agent reasoning trace.
 
         LLM/Analytical roles share one structured Ollama inference so local
         CPU/GPU memory is not overwhelmed by six concurrent model contexts.
