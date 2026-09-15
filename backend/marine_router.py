@@ -237,7 +237,11 @@ class OfficialBoundaryStore:
             )
         navigable = contains("navigable")
         prohibited = contains("prohibited")
-        return navigable and not prohibited, "inside the configured marine polygon" if navigable and not prohibited else "outside the India EEZ reference or inside a configured prohibited zone"
+        if prohibited:
+            return False, "inside a configured prohibited zone"
+        if not navigable:
+            return False, "outside the India territorial-sea/EEZ reference"
+        return True, "inside the configured marine polygon"
 
 class MarineRoutePlanner:
     """A* over a local WGS84 grid; all expanded nodes are boundary-verified."""

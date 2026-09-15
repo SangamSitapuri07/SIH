@@ -628,7 +628,7 @@ class _SearchPanel extends StatelessWidget {
                     textInputAction: TextInputAction.search,
                     decoration: const InputDecoration(
                       isDense: true,
-                      hintText: 'Coordinates (18.92, 72.83) or saved location',
+                      hintText: 'Coordinates (18.92, 72.20) or saved location',
                       prefixIcon: Icon(Icons.search_rounded, size: 18),
                       contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     ),

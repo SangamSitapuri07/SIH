@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
         poll_interval_s=600.0,   # per-coordinate snapshot refresh every 10 min
         cyclone_interval_s=1800.0,  # GDACS/JTWC check every 30 min
     )
-    ingestion_daemon.watch(18.92, 72.83, label="Default (Mumbai Offshore)")
+    ingestion_daemon.watch(18.92, 72.20, label="Default (Mumbai Offshore)")
     ingestion_daemon.start()
     # Client-requested coordinates join the watchlist automatically.
     routes_v1.set_watch_hook(lambda lat, lon: ingestion_daemon.watch(lat, lon))

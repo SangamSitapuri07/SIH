@@ -12,9 +12,10 @@ class AppConfig {
   /// Default port for ORCA box.
   static const int defaultPort = 8000;
 
-  /// Default coordinates: Mumbai Offshore Coast (18.92°N, 72.83°E).
+  /// Default coordinates: open water west of Mumbai (18.92°N, 72.20°E).
+  /// The previous 72.83°E point lies on/at Mumbai's harbour-side land edge.
   static const double defaultLat = 18.92;
-  static const double defaultLon = 72.83;
+  static const double defaultLon = 72.20;
 
   /// Normal request windows. External advisory and alert providers can be
   /// slow (GDACS/JTWC/INCOIS WFS), so a short client timeout would make a

@@ -84,7 +84,7 @@ class DataProvidersEngine:
         if probe:
             def probe_zone() -> None:
                 try:
-                    self.fetch_zone_snapshot(18.92, 72.83, include_gfw=True)
+                    self.fetch_zone_snapshot(18.92, 72.20, include_gfw=True)
                 except Exception as exc:
                     # Individual providers normally return structured errors;
                     # this guard keeps diagnostics available for unexpected
