@@ -53,7 +53,7 @@ class AgentCard extends StatelessWidget {
                         style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: OrcaTheme.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -77,7 +77,7 @@ class AgentCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            '${finding.durationMs}ms',
+                            finding.durationMs == null ? 'Duration unavailable' : '${finding.durationMs} ms',
                             style: const TextStyle(
                               fontSize: 10,
                               color: OrcaTheme.textMuted,

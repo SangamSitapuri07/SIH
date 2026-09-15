@@ -18,12 +18,19 @@ class SavedLocation {
   });
 
   factory SavedLocation.fromJson(Map<String, dynamic> json) {
+    final id = json['id']?.toString();
+    final name = json['name']?.toString();
+    final latitude = (json['latitude'] as num?)?.toDouble();
+    final longitude = (json['longitude'] as num?)?.toDouble();
+    if (id == null || name == null || name.trim().isEmpty || latitude == null || longitude == null) {
+      throw const FormatException('Saved location is missing a name or coordinates.');
+    }
     return SavedLocation(
-      id: json['id'] as String? ?? 'loc-${DateTime.now().millisecondsSinceEpoch}',
-      name: json['name'] as String? ?? 'Saved Location',
-      latitude: (json['latitude'] as num).toDouble(),
-      longitude: (json['longitude'] as num).toDouble(),
-      category: json['category'] as String? ?? 'Fishing Area',
+      id: id,
+      name: name,
+      latitude: latitude,
+      longitude: longitude,
+      category: json['category']?.toString() ?? 'Uncategorized',
       isFavourite: json['is_favourite'] as bool? ?? false,
       notes: json['notes'] as String?,
     );

@@ -25,7 +25,7 @@ class UserProfile {
   factory UserProfile.defaultGuest() {
     return const UserProfile(
       userId: 'guest',
-      displayName: 'Guest Fisher',
+      displayName: 'Guest',
       preferredLanguage: 'en',
       preferredFishingArea: '',
       homeHarbour: '',
@@ -42,12 +42,12 @@ class UserProfile {
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
-      userId: (json['user_id'] as String?) ?? 'guest-fisher-01',
-      displayName: (json['display_name'] as String?) ?? 'Fisherman',
+      userId: (json['user_id'] as String?) ?? 'guest',
+      displayName: (json['display_name'] as String?) ?? 'Guest',
       preferredLanguage: (json['preferred_language'] as String?) ?? 'en',
-      preferredFishingArea: (json['preferred_fishing_area'] as String?) ?? 'Veraval Offshore',
-      homeHarbour: (json['home_harbour'] as String?) ?? 'Veraval Harbour',
-      vesselType: (json['vessel_type'] as String?) ?? 'Motorized Boat',
+      preferredFishingArea: (json['preferred_fishing_area'] as String?) ?? '',
+      homeHarbour: (json['home_harbour'] as String?) ?? '',
+      vesselType: (json['vessel_type'] as String?) ?? '',
       vesselRegistration: json['vessel_registration'] as String?,
       notificationPreferences: Map<String, bool>.from(
         (json['notification_preferences'] as Map?) ?? {
@@ -100,7 +100,7 @@ class UserProfile {
 class SupabaseAuthService {
   final CacheService _cache;
   UserProfile _currentProfile;
-  bool _isAuthenticated = true; // Guest session active by default
+  bool _isAuthenticated = false; // No authenticated identity is assumed.
 
   SupabaseAuthService(this._cache) : _currentProfile = UserProfile.defaultGuest() {
     _loadLocalSession();
@@ -123,12 +123,6 @@ class SupabaseAuthService {
   Future<void> updateProfile(UserProfile newProfile) async {
     _currentProfile = newProfile;
     await _cache.set('auth.profile', newProfile.toJson());
-  }
-
-  Future<void> loginDemoUser(String displayName) async {
-    _isAuthenticated = true;
-    _currentProfile = _currentProfile.copyWith(displayName: displayName);
-    await _cache.set('auth.profile', _currentProfile.toJson());
   }
 
   Future<void> logout() async {

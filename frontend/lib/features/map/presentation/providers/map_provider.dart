@@ -1,100 +1,87 @@
-import 'dart:convert';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/cache/cache_service.dart';
-import '../../../../core/cache/staleness.dart';
 import '../../../../core/network/dio_provider.dart';
-import '../../../../core/widgets/orca_app_bar.dart';
 import '../../data/datasources/map_remote.dart';
-import '../../data/dto/zone_dto.dart';
 import '../../data/repositories/map_repo_impl.dart';
 import '../../domain/entities/zone_snapshot.dart';
 import '../../domain/repositories/map_repo.dart';
 import '../../domain/usecases/get_zone_snapshot.dart';
 
-/// Provider for MapRemoteDataSource.
 final mapRemoteDataSourceProvider = Provider<MapRemoteDataSource>((ref) {
-  final dio = ref.watch(dioProvider);
-  return MapRemoteDataSource(dio);
+  return MapRemoteDataSource(ref.watch(dioProvider));
 });
 
-/// Provider for MapRepository.
-final mapRepositoryProvider = Provider<MapRepository>((ref) {
-  final remote = ref.watch(mapRemoteDataSourceProvider);
-  final cache = ref.watch(cacheServiceProvider);
-  return MapRepositoryImpl(
-    remoteDataSource: remote,
-    cacheService: cache,
-  );
-});
+final mapRepositoryProvider = Provider<MapRepository>((ref) => MapRepositoryImpl(
+      remoteDataSource: ref.watch(mapRemoteDataSourceProvider),
+      cacheService: ref.watch(cacheServiceProvider),
+    ));
 
-/// Provider for GetZoneSnapshotUseCase.
 final getZoneSnapshotUseCaseProvider = Provider<GetZoneSnapshotUseCase>((ref) {
-  final repo = ref.watch(mapRepositoryProvider);
-  return GetZoneSnapshotUseCase(repo);
+  return GetZoneSnapshotUseCase(ref.watch(mapRepositoryProvider));
 });
 
-/// Map layers state provider.
-final mapLayersProvider = StateProvider<List<MapLayerEntity>>((ref) {
-  return const <MapLayerEntity>[
-    MapLayerEntity(
-      id: 'wave_height',
-      name: 'Wave Height Overlay',
-      unit: 'm',
-      source: 'Open-Meteo Marine',
-      tileUrl: '/api/v1/tiles/waves/{z}/{x}/{y}.png',
-      isEnabled: true,
-    ),
-    MapLayerEntity(
-      id: 'chlorophyll',
-      name: 'Chlorophyll-a (Fish Food)',
-      unit: 'mg/m³',
-      source: 'NOAA CoastWatch / OCM-3',
-      tileUrl: '/api/v1/tiles/chl/{z}/{x}/{y}.png',
-      isEnabled: false,
-    ),
-    MapLayerEntity(
-      id: 'incois_pfz',
-      name: 'INCOIS PFZ Lines',
-      unit: 'WFS',
-      source: 'INCOIS Hyderabad',
-      tileUrl: '/api/v1/tiles/pfz/{z}/{x}/{y}.png',
-      isEnabled: true,
-    ),
-  ];
+/// Layer selection deliberately starts empty. An unavailable backend layer can
+/// never appear enabled simply because the client guessed a tile URL.
+final mapLayerSelectionProvider = StateProvider<Set<String>>((ref) => <String>{});
+
+final mapLayerCatalogProvider = FutureProvider.family<List<MapLayerEntity>, MapCenter>((ref, center) async {
+  final layers = await ref.watch(mapRemoteDataSourceProvider).getLayers(
+        lat: center.lat,
+        lon: center.lon,
+      );
+  return layers.map((layer) => layer.toEntity()).toList();
 });
 
-/// Probed zone snapshot state provider.
+/// Request identity is value based, so a forecast timeline selection always
+/// obtains the corresponding underlying backend timestep.
+class MapGridRequest {
+  final double lat;
+  final double lon;
+  final double span;
+  final String? validTime;
+
+  const MapGridRequest({required this.lat, required this.lon, required this.span, this.validTime});
+
+  @override
+  bool operator ==(Object other) => other is MapGridRequest &&
+      lat == other.lat && lon == other.lon && span == other.span && validTime == other.validTime;
+
+  @override
+  int get hashCode => Object.hash(lat, lon, span, validTime);
+}
+
+class MapCenter {
+  final double lat;
+  final double lon;
+  const MapCenter(this.lat, this.lon);
+
+  @override
+  bool operator ==(Object other) => other is MapCenter && lat == other.lat && lon == other.lon;
+
+  @override
+  int get hashCode => Object.hash(lat, lon);
+}
+
+final mapPfzProvider = FutureProvider<PfzResponseDto>((ref) {
+  return ref.watch(mapRemoteDataSourceProvider).getPfz();
+});
+
+final mapGridProvider = FutureProvider.family<MapGridDto, MapGridRequest>((ref, request) {
+  return ref.watch(mapRemoteDataSourceProvider).getGrid(
+        lat: request.lat,
+        lon: request.lon,
+        span: request.span,
+        validTime: request.validTime,
+      );
+});
+
 final probedZoneProvider = StateProvider<AsyncValue<ZoneSnapshot?>?>((ref) => null);
 
-/// Helper function to probe coordinate.
 Future<void> probeCoordinate(WidgetRef ref, double lat, double lon) async {
   ref.read(probedZoneProvider.notifier).state = const AsyncValue.loading();
-  final isDemo = ref.read(demoModeProvider);
-
-  if (isDemo) {
-    try {
-      final raw = await rootBundle.loadString('assets/fixtures/zone.json');
-      final json = jsonDecode(raw) as Map<String, dynamic>;
-      final dto = ZoneDto.fromJson(json);
-      final staleness = StalenessInfo.fromDateTime(DateTime.now());
-      ref.read(probedZoneProvider.notifier).state = AsyncValue.data(dto.toEntity(staleness));
-      return;
-    } catch (e, st) {
-      ref.read(probedZoneProvider.notifier).state = AsyncValue.error(e, st);
-      return;
-    }
-  }
-
-  final useCase = ref.read(getZoneSnapshotUseCaseProvider);
-  final result = await useCase.execute(lat: lat, lon: lon);
-
+  final result = await ref.read(getZoneSnapshotUseCaseProvider).execute(lat: lat, lon: lon);
   result.when(
-    ok: (snapshot) {
-      ref.read(probedZoneProvider.notifier).state = AsyncValue.data(snapshot);
-    },
-    err: (failure) {
-      ref.read(probedZoneProvider.notifier).state = AsyncValue.error(failure.message, StackTrace.current);
-    },
+    ok: (snapshot) => ref.read(probedZoneProvider.notifier).state = AsyncValue.data(snapshot),
+    err: (failure) => ref.read(probedZoneProvider.notifier).state = AsyncValue.error(failure.message, StackTrace.current),
   );
 }

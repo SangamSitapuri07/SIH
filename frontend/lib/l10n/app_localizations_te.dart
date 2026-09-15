@@ -79,9 +79,6 @@ class AppLocalizationsTe extends AppLocalizations {
   String get unreachableStatus => 'అందుబాటులో లేదు';
 
   @override
-  String get demoModeBadge => 'డెమో డేటా';
-
-  @override
   String get waveHeight => 'అలల ఎత్తు';
 
   @override
@@ -128,7 +125,7 @@ class AppLocalizationsTe extends AppLocalizations {
   String get aiRunning => 'ఏజెంట్లు విశ్లేషిస్తున్నారు...';
 
   @override
-  String get aiCollaborationTrace => 'ఏజెంట్ సమన్వయ లైవ్ ట్రేస్';
+  String get aiCollaborationTrace => 'ఏజెంట్ సమన్వయ ట్రేస్';
 
   @override
   String get aiOrchestrationSynthesis => 'తుది నిర్ణయం మరియు ముగింపు';
@@ -149,9 +146,6 @@ class AppLocalizationsTe extends AppLocalizations {
   @override
   String get noActiveAlerts =>
       'ప్రస్తుతం ఎలాంటి తుఫాను లేదా వాతావరణ హెచ్చరికలు లేవు';
-
-  @override
-  String get simulateAlert => 'హెచ్చరిక అనుకరణ (డెమో)';
 
   @override
   String get navigateTitle => 'మార్గ భద్రత & భూమి తనిఖీ';
@@ -200,16 +194,13 @@ class AppLocalizationsTe extends AppLocalizations {
   String get checkHealthButton => 'డేటా మూలాల స్థితిని తనిఖీ చేయండి';
 
   @override
-  String get dataSourceCatalog => '14 బాహ్య డేటా మూలాలు';
+  String get dataSourceCatalog => 'ప్రొవైడర్ మూల స్థితి';
 
   @override
   String get cacheManagement => 'లోకల్ స్టోరేజ్ & కాష్';
 
   @override
   String get clearCache => 'కాష్ డేటాను తొలగించండి';
-
-  @override
-  String get demoModeSwitch => 'డెమో మోడ్ (నమూనా డేటా)';
 
   @override
   String get languageLabel => 'భాష / Language / भाषा';

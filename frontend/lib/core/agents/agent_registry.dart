@@ -43,16 +43,14 @@ class AgentRegistry {
       agentClass: AgentClass.deterministic,
       blurb: 'QC gate: validates physical ranges, missing values, timestamps, and lag chains across all feeds.',
       accentColor: VerdictColors.go,
-      defaultSources: <String>['Open-Meteo', 'NOAA', 'INCOIS', 'MOSDAC'],
     ),
     AgentDescriptor(
       id: 'gis_spatial',
       emoji: '🗺️',
       name: 'GIS & Spatial',
       agentClass: AgentClass.deterministic,
-      blurb: 'Calculates offshore distance, EEZ zones, maritime boundaries, and nearest safe harbours.',
+      blurb: 'Spatial analysis is available only when its backend source evidence is returned.',
       accentColor: VerdictColors.info,
-      defaultSources: <String>['GLOBE 1km', 'PostGIS', 'INCOIS WFS'],
     ),
     AgentDescriptor(
       id: 'ocean_analysis',
@@ -61,7 +59,6 @@ class AgentRegistry {
       agentClass: AgentClass.llm,
       blurb: 'Analyzes significant wave height, swell period, steepness ratio, currents, and SST gradients.',
       accentColor: VerdictColors.sea,
-      defaultSources: <String>['Open-Meteo Marine (MFWAM/ECMWF)'],
     ),
     AgentDescriptor(
       id: 'satellite_analysis',
@@ -70,7 +67,6 @@ class AgentRegistry {
       agentClass: AgentClass.llm,
       blurb: 'Processes satellite chlorophyll-a and optical colour (ISRO OCM-3 & NOAA CoastWatch).',
       accentColor: Color(0xFF38BDF8),
-      defaultSources: <String>['ISRO MOSDAC OCM-3', 'NOAA CoastWatch', 'ESA OC-CCI'],
     ),
     AgentDescriptor(
       id: 'weather_hazard',
@@ -79,7 +75,6 @@ class AgentRegistry {
       agentClass: AgentClass.llm,
       blurb: 'Tracks tropical storm advisories, WMO 34kn gales, squalls, and lightning hazards.',
       accentColor: VerdictColors.caution,
-      defaultSources: <String>['JTWC (US Navy)', 'Open-Meteo Forecast'],
     ),
     AgentDescriptor(
       id: 'map_synoptic',
@@ -88,7 +83,6 @@ class AgentRegistry {
       agentClass: AgentClass.deterministic,
       blurb: 'Generates synoptic pressure fields, isobars, and high/low atmospheric cells.',
       accentColor: Color(0xFF818CF8),
-      defaultSources: <String>['ECMWF IFS', 'Open-Meteo'],
     ),
     AgentDescriptor(
       id: 'marine_ecology',
@@ -97,7 +91,6 @@ class AgentRegistry {
       agentClass: AgentClass.llm,
       blurb: 'Synthesizes thermal frontal boundaries with chlorophyll to evaluate biological productivity.',
       accentColor: Color(0xFF34D399),
-      defaultSources: <String>['NOAA CoastWatch', 'MOSDAC OCM-3', 'INCOIS'],
     ),
     AgentDescriptor(
       id: 'fisheries_pfz',
@@ -106,7 +99,6 @@ class AgentRegistry {
       agentClass: AgentClass.llm,
       blurb: 'Interprets official INCOIS Potential Fishing Zones & fleet density for fishing recommendations.',
       accentColor: Color(0xFFA78BFA),
-      defaultSources: <String>['INCOIS PFZ GeoServer WFS', 'GFW AIS'],
     ),
     AgentDescriptor(
       id: 'anomaly_detection',
@@ -115,7 +107,6 @@ class AgentRegistry {
       agentClass: AgentClass.deterministic,
       blurb: 'Computes z-scores comparing today conditions against 2024-2025 seasonal climatology.',
       accentColor: Color(0xFFF472B6),
-      defaultSources: <String>['Open-Meteo Archive'],
     ),
     AgentDescriptor(
       id: 'marine_risk',
@@ -124,7 +115,6 @@ class AgentRegistry {
       agentClass: AgentClass.deterministic,
       blurb: 'Executes non-linear worst-case fold across ocean, weather, and land risk to produce verdict.',
       accentColor: VerdictColors.noGo,
-      defaultSources: <String>['All Agent Findings'],
     ),
     AgentDescriptor(
       id: 'orchestrator',
@@ -133,7 +123,6 @@ class AgentRegistry {
       agentClass: AgentClass.llm,
       blurb: 'Coordinates multi-agent waves, resolves dependencies, and synthesizes final skipper advice.',
       accentColor: Color(0xFFF59E0B),
-      defaultSources: <String>['ORCA Situation Board'],
     ),
   ];
 

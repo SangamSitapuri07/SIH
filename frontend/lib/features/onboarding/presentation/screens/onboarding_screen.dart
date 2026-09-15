@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/dio_provider.dart';
 import '../../../../core/theme/orca_theme.dart';
-import '../../../../core/theme/verdict_colors.dart';
-import '../../../../core/widgets/orca_app_bar.dart';
 import '../../../../core/cache/cache_service.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 
@@ -23,7 +21,6 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   late TextEditingController _urlController;
   String _selectedLang = 'en';
-  bool _demoMode = false;
 
   @override
   void initState() {
@@ -67,7 +64,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         style: TextStyle(
                           fontSize: 26,
                           fontWeight: FontWeight.w900,
-                          color: Colors.white,
+                          color: OrcaTheme.textPrimary,
                           letterSpacing: 1.0,
                         ),
                       ),
@@ -89,7 +86,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: OrcaTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 6),
@@ -137,7 +134,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       const SizedBox(height: 8),
                       TextField(
                         controller: _urlController,
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        style: const TextStyle(color: OrcaTheme.textPrimary, fontSize: 13),
                         decoration: InputDecoration(
                           filled: true,
                           fillColor: OrcaTheme.surface,
@@ -152,29 +149,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       ),
                       const SizedBox(height: 24),
 
-                      // 3. Demo Mode Toggle
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: OrcaTheme.surface,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: OrcaTheme.cardBorder),
-                        ),
-                        child: SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text(
-                            'Show Prototype',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
-                          ),
-                          subtitle: const Text(
-                            'Uses bundled demonstration fixtures only for prototype review',
-                            style: TextStyle(fontSize: 11, color: OrcaTheme.textMuted),
-                          ),
-                          value: _demoMode,
-                          activeThumbColor: VerdictColors.caution,
-                          onChanged: (val) => setState(() => _demoMode = val),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -194,11 +168,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   }
                   ref.read(baseUrlProvider.notifier).state = baseUrl;
                   ref.read(selectedLocaleProvider.notifier).state = _selectedLang;
-                  ref.read(demoModeProvider.notifier).state = _demoMode;
                   final cache = ref.read(cacheServiceProvider);
                   await cache.put('settings.base_url', <String, dynamic>{'value': baseUrl}, ttl: const Duration(days: 3650));
                   await cache.put('settings.locale', <String, dynamic>{'value': _selectedLang}, ttl: const Duration(days: 3650));
-                  await cache.put('settings.demo_mode', <String, dynamic>{'value': _demoMode}, ttl: const Duration(days: 3650));
                   await cache.put(
                     'app.onboarding',
                     <String, dynamic>{'complete': true},
@@ -234,7 +206,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             child: Text(
               label,
               style: TextStyle(
-                color: isSelected ? Colors.black : Colors.white,
+                color: isSelected ? Colors.white : OrcaTheme.textPrimary,
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
               ),

@@ -42,12 +42,17 @@ class AgentsRepositoryImpl implements AgentsRepository {
         'data_coverage': dto.dataCoverage,
         'agents': dto.agentsList,
         'orchestrator_synthesis': dto.synthesisJson,
-        'timestamp': DateTime.now().toIso8601String(),
+        'timestamp': dto.timestamp?.toIso8601String(),
+        'source_timestamp': dto.sourceTimestamp?.toIso8601String(),
+        'cached': dto.isCached,
       };
       await _cacheService.put(cacheKey, jsonMap);
 
-      final staleness = StalenessInfo.fromDateTime(DateTime.now());
-      return Result.ok(dto.toEntity(staleness));
+      final sourceTime = dto.sourceTimestamp ?? dto.timestamp;
+      if (sourceTime == null) {
+        return const Result.err(AppFailure.unknown('Agent source timestamp unavailable.'));
+      }
+      return Result.ok(dto.toEntity(StalenessInfo.fromDateTime(sourceTime, isCached: dto.isCached)));
     } on DioException catch (dioErr) {
       if (cached != null) {
         final dto = ReasonDto.fromJson(cached.data);

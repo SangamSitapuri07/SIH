@@ -16,12 +16,14 @@ class AppConfig {
   static const double defaultLat = 18.92;
   static const double defaultLon = 72.83;
 
-  /// Connection establishment timeout — kept short so an unreachable ORCA
-  /// Box fails fast (then falls back to cache) instead of hanging the UI.
-  /// Receive/send use longer windows below.
-  static const Duration connectTimeout = Duration(seconds: 5);
-  static const Duration receiveTimeout = Duration(seconds: 15);
-  static const Duration sendTimeout = Duration(seconds: 15);
+  /// Normal request windows. External advisory and alert providers can be
+  /// slow (GDACS/JTWC/INCOIS WFS), so a short client timeout would make a
+  /// reachable source look unavailable. 45s keeps the client honest without
+  /// hanging the UI, and every screen still shows a cached/stale state if the
+  /// window is exceeded.
+  static const Duration connectTimeout = Duration(seconds: 45);
+  static const Duration receiveTimeout = Duration(seconds: 45);
+  static const Duration sendTimeout = Duration(seconds: 45);
 
   /// Long-running advisory generation can take up to ~136s on current CPU.
   static const Duration advisoryRequestTimeout = Duration(seconds: 180);

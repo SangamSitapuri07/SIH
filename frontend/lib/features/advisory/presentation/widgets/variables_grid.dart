@@ -1,123 +1,144 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/orca_theme.dart';
-import '../../../../core/utils/formatters.dart';
-import '../../../../core/widgets/stat_tile.dart';
-import '../../domain/entities/advisory.dart';
 
-/// Grid of marine variables with source and status badges (§8).
+import '../../../../core/theme/orca_theme.dart';
+import '../../../../core/widgets/orca_ui.dart';
+import '../../domain/entities/advisory.dart';
+import 'variable_provenance.dart';
+
+/// Grid of the marine variables the backend published for this advisory.
+///
+/// Each tile carries the provider, the provider time and the value's own state.
+/// A variable the deployment did not publish is shown as unavailable rather
+/// than being omitted or estimated.
 class VariablesGrid extends StatelessWidget {
   final Map<String, VariableItem> variables;
+  final int columns;
 
   const VariablesGrid({
     super.key,
     required this.variables,
+    this.columns = 2,
   });
 
-  /// Looks up a variable by trying each candidate key in order.
-  ///
-  /// The backend emits keys such as `wave_height_m`, `wind_speed_kn`,
-  /// `wind_gust_kn`, `sst_celsius`, `current_speed_kn`, `chlorophyll_mg_m3`,
-  /// while older fixtures used short names. Trying both keeps the grid
-  /// populated regardless of which shape the server returns.
-  VariableItem? _pick(Map<String, VariableItem> vars, List<String> keys) {
-    for (final k in keys) {
-      final v = vars[k];
-      if (v != null) return v;
-    }
-    return null;
-  }
+  static const List<_Spec> _specs = <_Spec>[
+    _Spec(key: 'wave_height_m', label: 'Wave height', icon: Icons.waves_rounded, decimals: 1),
+    _Spec(key: 'wave_period_s', label: 'Swell period', icon: Icons.tsunami_rounded, decimals: 1),
+    _Spec(key: 'wind_speed_kn', label: 'Sustained wind', icon: Icons.air_rounded, decimals: 1),
+    _Spec(key: 'wind_gust_kn', label: 'Wind gusts', icon: Icons.storm_rounded, decimals: 1),
+    _Spec(key: 'sst_celsius', label: 'Sea surface temp', icon: Icons.thermostat_rounded, decimals: 1),
+    _Spec(key: 'current_speed_kn', label: 'Surface current', icon: Icons.navigation_rounded, decimals: 2),
+    _Spec(key: 'chlorophyll_mg_m3', label: 'Chlorophyll-a', icon: Icons.bubble_chart_outlined, decimals: 2),
+    _Spec(key: 'fishing_effort_hours', label: 'Fishing effort', icon: Icons.sailing_outlined, decimals: 1),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    final wave = _pick(variables, ['wave_height_m', 'wave_height', 'swell_height_m']);
-    final wind = _pick(variables, ['wind_speed_kn', 'wind_speed']);
-    final gusts = _pick(variables, ['wind_gust_kn', 'wind_gusts', 'wind_gust']);
-    final sst = _pick(variables, ['sst_celsius', 'sea_surface_temp', 'sea_temp_c']);
-    final current = _pick(variables, ['current_speed_kn', 'ocean_current', 'current_speed']);
-    final chl = _pick(variables, ['chlorophyll_mg_m3', 'chlorophyll']);
+    final List<Widget> tiles = <Widget>[
+      for (final _Spec spec in _specs)
+        _buildTile(spec, variables[spec.key]),
+    ];
+    return _MetricGrid(columns: columns, children: tiles);
+  }
 
+  Widget _buildTile(_Spec spec, VariableItem? variable) {
+    final String unit = variable == null ? '' : unitSuffix(variable.unit);
+    final OrcaDataState state = variable == null
+        ? OrcaDataState.unavailable
+        : variableState(variable);
+    final String? direction = variable?.direction;
 
+    return OrcaMetricTile(
+      label: spec.label,
+      icon: spec.icon,
+      value: variable?.value == null
+          ? kOrcaUnavailableValue
+          : formatMeasurement(variable!.value, unit, decimals: spec.decimals),
+      unit: variable?.value == null ? null : unit,
+      caption: switch (state) {
+        OrcaDataState.unavailable => 'Not published by any connected source',
+        OrcaDataState.cached => 'Cached provider value',
+        OrcaDataState.stale => 'Value may be out of date',
+        _ => variableTimeLabel(variable),
+      },
+      state: state,
+      provenance: direction == null || direction.trim().isEmpty
+          ? (variable?.source ?? 'Source unavailable')
+          : '${variable?.source ?? 'Source unavailable'} · $direction',
+    );
+  }
+}
+
+class _Spec {
+  final String key;
+  final String label;
+  final IconData icon;
+  final int decimals;
+
+  const _Spec({required this.key, required this.label, required this.icon, required this.decimals});
+}
+
+class _MetricGrid extends StatelessWidget {
+  final int columns;
+  final List<Widget> children;
+
+  const _MetricGrid({required this.columns, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    if (columns <= 1) {
+      return Column(
+        children: <Widget>[
+          for (int i = 0; i < children.length; i++) ...<Widget>[
+            children[i],
+            if (i != children.length - 1) const SizedBox(height: 10),
+          ],
+        ],
+      );
+    }
+    final int rows = (children.length / columns).ceil();
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-          child: Text(
-            'KEY OCEAN CONDITIONS',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: OrcaTheme.textSecondary,
-              letterSpacing: 0.8,
+      children: <Widget>[
+        for (int row = 0; row < rows; row++) ...<Widget>[
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                for (int col = 0; col < columns; col++)
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        left: col == 0 ? 0 : 5,
+                        right: col == columns - 1 ? 0 : 5,
+                      ),
+                      child: row * columns + col < children.length
+                          ? children[row * columns + col]
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+              ],
             ),
           ),
-        ),
-        const SizedBox(height: 4),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 1.35,
-          children: [
-            StatTile(
-              label: 'Wave Height',
-              value: wave?.value != null ? '${wave!.value!.toStringAsFixed(1)}' : '--',
-              unit: 'm',
-              icon: Icons.waves,
-              status: wave?.status,
-              source: wave?.source ?? 'Open-Meteo',
-              time: wave?.time,
-            ),
-            StatTile(
-              label: 'Sustained Wind',
-              value: wind?.value != null ? '${wind!.value!.toStringAsFixed(1)}' : '--',
-              unit: 'kn',
-              icon: Icons.air,
-              status: wind?.status,
-              source: wind?.source ?? 'ECMWF IFS',
-              time: wind?.time,
-            ),
-            StatTile(
-              label: 'Wind Gusts',
-              value: gusts?.value != null ? '${gusts!.value!.toStringAsFixed(1)}' : '--',
-              unit: 'kn',
-              icon: Icons.storm,
-              status: gusts?.status,
-              source: gusts?.source ?? 'ECMWF IFS',
-              time: gusts?.time,
-            ),
-            StatTile(
-              label: 'Sea Surface Temp',
-              value: sst?.value != null ? '${sst!.value!.toStringAsFixed(1)}' : '--',
-              unit: '°C',
-              icon: Icons.thermostat,
-              status: sst?.status,
-              source: sst?.source ?? 'Open-Meteo',
-              time: sst?.time,
-            ),
-            StatTile(
-              label: 'Surface Current',
-              value: current?.value != null ? '${current!.value!.toStringAsFixed(1)}' : '--',
-              unit: current?.direction != null ? 'kn ${current!.direction}' : 'kn',
-              icon: Icons.navigation,
-              status: current?.status,
-              source: current?.source ?? 'Open-Meteo',
-              time: current?.time,
-            ),
-            StatTile(
-              label: 'Chlorophyll-a',
-              value: chl?.value != null ? '${chl!.value!.toStringAsFixed(2)}' : '--',
-              unit: 'mg/m³',
-              icon: Icons.biotech,
-              status: chl?.status,
-              source: chl?.source ?? 'NOAA ERDDAP',
-              time: chl?.time,
-            ),
-          ],
-        ),
+          if (row != rows - 1) const SizedBox(height: 10),
+        ],
       ],
     );
   }
+}
+
+/// Shared small legend row used by advisory cards.
+class OrcaLegendDot extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const OrcaLegendDot({super.key, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 5),
+          Text(label, style: OrcaType.caption.copyWith(fontSize: 10.5, color: OrcaTheme.textSecondary)),
+        ],
+      );
 }

@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/api_paths.dart';
+import '../config/app_config.dart';
 import '../network/dio_provider.dart';
 import '../network/sse.dart';
 
@@ -48,6 +49,14 @@ class LiveChannelNotifier extends StateNotifier<LiveStreamStatus> {
             'Accept': 'text/event-stream',
             'Cache-Control': 'no-cache',
           },
+          // SSE is intentionally persistent: the backend sends keepalives and
+          // real events can be minutes apart. A receive timeout would kill a
+          // healthy stream, so this endpoint never times out on receive.
+          // Connect/send keep the configured windows so an unreachable box
+          // still fails in bounded time instead of hanging forever.
+          connectTimeout: AppConfig.connectTimeout,
+          sendTimeout: AppConfig.sendTimeout,
+          receiveTimeout: Duration.zero,
         ),
       );
 

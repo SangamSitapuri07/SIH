@@ -42,7 +42,7 @@ class _ServerConfigDialogState extends ConsumerState<ServerConfigDialog> {
           SizedBox(width: 8),
           Text(
             'ORCA Box Server URL',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
           ),
         ],
       ),
@@ -57,7 +57,7 @@ class _ServerConfigDialogState extends ConsumerState<ServerConfigDialog> {
           const SizedBox(height: 14),
           TextField(
             controller: _controller,
-            style: const TextStyle(color: Colors.white, fontSize: 13),
+            style: const TextStyle(color: OrcaTheme.textPrimary, fontSize: 13),
             decoration: InputDecoration(
               filled: true,
               fillColor: OrcaTheme.surfaceElevated,

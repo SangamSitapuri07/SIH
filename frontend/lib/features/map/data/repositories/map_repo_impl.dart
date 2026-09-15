@@ -1,15 +1,17 @@
 import 'package:dio/dio.dart';
 import '../../../../core/cache/cache_service.dart';
 import '../../../../core/cache/staleness.dart';
+import '../../../../core/config/app_config.dart';
 import '../../../../core/result/app_failure.dart';
 import '../../../../core/result/result.dart';
-
 import '../../domain/entities/zone_snapshot.dart';
 import '../../domain/repositories/map_repo.dart';
 import '../datasources/map_remote.dart';
 import '../dto/zone_dto.dart';
 
-/// Implementation of MapRepository (§10).
+/// Cache-aware implementation for point probes. It never creates substitute
+/// marine values: a cached response is explicitly marked stale by its cache
+/// metadata and a response without required coordinates/timestamp is rejected.
 class MapRepositoryImpl implements MapRepository {
   final MapRemoteDataSource _remoteDataSource;
   final CacheService _cacheService;
@@ -21,17 +23,12 @@ class MapRepositoryImpl implements MapRepository {
         _cacheService = cacheService;
 
   @override
-  Future<Result<ZoneSnapshot>> probeZone({
-    required double lat,
-    required double lon,
-  }) async {
+  Future<Result<ZoneSnapshot>> probeZone({required double lat, required double lon}) async {
     final cacheKey = 'zone_${lat.toStringAsFixed(2)}_${lon.toStringAsFixed(2)}';
     final cached = _cacheService.get(cacheKey);
-
     try {
       final dto = await _remoteDataSource.getZoneSnapshot(lat: lat, lon: lon);
-
-      final jsonMap = <String, dynamic>{
+      await _cacheService.put(cacheKey, {
         'lat': dto.lat,
         'lon': dto.lon,
         'zone_name': dto.zoneName,
@@ -50,55 +47,43 @@ class MapRepositoryImpl implements MapRepository {
         'nearest_harbour_dist_km': dto.nearestHarbourDistKm,
         'sources': dto.sources,
         'sources_failed': dto.sourcesFailed,
-        'timestamp': DateTime.now().toIso8601String(),
-      };
-      await _cacheService.put(cacheKey, jsonMap);
-
-      final staleness = StalenessInfo.fromDateTime(DateTime.now());
-      return Result.ok(dto.toEntity(staleness));
-    } on DioException catch (dioErr) {
+        'timestamp': dto.timestamp!.toIso8601String(),
+        'cached': dto.isCached,
+      });
+      return Result.ok(dto.toEntity(StalenessInfo.fromDateTime(dto.timestamp!, isCached: dto.isCached)));
+    } on DioException catch (error) {
       if (cached != null) {
-        final dto = ZoneDto.fromJson(cached.data);
-        return Result.ok(dto.toEntity(cached.staleness));
+        try {
+          return Result.ok(ZoneDto.fromJson(cached.data).toEntity(cached.staleness));
+        } catch (_) {
+          // An old/corrupt cache cannot be presented as verified information.
+        }
       }
-      if (dioErr.type == DioExceptionType.connectionTimeout) {
+      if (error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.receiveTimeout) {
         return const Result.err(AppFailure.timeout());
       }
       return const Result.err(AppFailure.serverDown());
-    } catch (e) {
+    } catch (error) {
       if (cached != null) {
-        final dto = ZoneDto.fromJson(cached.data);
-        return Result.ok(dto.toEntity(cached.staleness));
+        try {
+          return Result.ok(ZoneDto.fromJson(cached.data).toEntity(cached.staleness));
+        } catch (_) {}
       }
-      return Result.err(AppFailure.unknown(e.toString()));
+      return Result.err(AppFailure.unknown(error.toString()));
     }
   }
 
   @override
   Future<Result<List<MapLayerEntity>>> getLayers() async {
     try {
-      final dts = await _remoteDataSource.getLayers();
-      return Result.ok(dts.map((d) => d.toEntity()).toList());
-    } catch (e) {
-      // Return default default layers if remote call fails
-      return Result.ok(<MapLayerEntity>[
-        const MapLayerEntity(
-          id: 'wave_height',
-          name: 'Wave Height & Direction',
-          unit: 'm',
-          source: 'Open-Meteo Marine (MFWAM)',
-          tileUrl: '/api/v1/tiles/waves/{z}/{x}/{y}.png',
-          isEnabled: true,
-        ),
-        const MapLayerEntity(
-          id: 'incois_pfz',
-          name: 'INCOIS PFZ Advisories',
-          unit: 'lines',
-          source: 'INCOIS GeoServer WFS',
-          tileUrl: '/api/v1/tiles/pfz/{z}/{x}/{y}.png',
-          isEnabled: true,
-        ),
-      ]);
+      final layers = await _remoteDataSource.getLayers(
+        lat: AppConfig.defaultLat,
+        lon: AppConfig.defaultLon,
+      );
+      return Result.ok(layers.map((layer) => layer.toEntity()).toList());
+    } catch (error) {
+      return Result.err(AppFailure.unknown(error.toString()));
     }
   }
 }

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
 import '../../../../core/utils/date_formatter.dart';
+import '../../../../core/widgets/orca_navigation.dart';
+import '../../../../core/widgets/orca_ui.dart';
 import '../../domain/advisory_history_item.dart';
 
 final historyItemsProvider = Provider<List<AdvisoryHistoryItem>>((ref) => const <AdvisoryHistoryItem>[]);
@@ -14,22 +16,22 @@ class HistoryScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final history = ref.watch(historyItemsProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'ADVISORY HISTORY',
-          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
-        ),
-        backgroundColor: OrcaTheme.surface,
-      ),
+    return OrcaWorkspaceScaffold(
+      title: 'Advisory history',
+      subtitle: 'Previously issued advisories',
+      locationLabel: 'This device',
+      coordinateLabel: history.isEmpty
+          ? 'No stored advisories'
+          : '${history.length} stored advisor${history.length == 1 ? 'y' : 'ies'}',
       body: history.isEmpty
           ? const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
-                child: Text(
-                  'No advisory history yet.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 15, color: OrcaTheme.textSecondary),
+                child: OrcaUnavailable(
+                  icon: Icons.history_rounded,
+                  title: 'No advisory history on this device',
+                  message:
+                      'ORCA keeps the advisories it has already retrieved for your coordinates. Nothing has been stored yet in this build, and no history is invented to fill the screen.',
                 ),
               ),
             )
@@ -40,7 +42,7 @@ class HistoryScreen extends ConsumerWidget {
                 children: [
                   const Text(
                     'Past Advisory Archive',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: OrcaTheme.textPrimary),
                   ),
                   const SizedBox(height: 4),
                   const Text(
@@ -123,7 +125,7 @@ class HistoryScreen extends ConsumerWidget {
             style: const TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 15,
-              color: Colors.white,
+              color: OrcaTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 4),
@@ -136,7 +138,7 @@ class HistoryScreen extends ConsumerWidget {
             Wrap(
               spacing: 6,
               children: item.majorHazards.map((String h) => Chip(
-                label: Text(h, style: const TextStyle(fontSize: 11, color: Colors.white)),
+                label: Text(h, style: const TextStyle(fontSize: 11, color: OrcaTheme.textPrimary)),
                 backgroundColor: VerdictColors.noGoBg,
                 side: BorderSide(color: VerdictColors.noGo.withAlpha(100)),
                 visualDensity: VisualDensity.compact,

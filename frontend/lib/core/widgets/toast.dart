@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/verdict_colors.dart';
+import '../../core/theme/orca_theme.dart';
 
 /// App notification toast helper.
 class ToastHelper {
@@ -49,7 +50,7 @@ class ToastHelper {
                   Text(
                     message,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: OrcaTheme.textPrimary,
                       fontSize: 12,
                     ),
                     maxLines: 3,

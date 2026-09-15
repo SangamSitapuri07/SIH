@@ -47,8 +47,11 @@ class AdvisoryRepositoryImpl implements AdvisoryRepository {
       // Write-through to cache.
       await _cacheService.put(cacheKey, _dtoToCacheMap(dto));
 
-      final freshStaleness = StalenessInfo.fromDateTime(DateTime.now());
-      return Result.ok(dto.toEntity(freshStaleness));
+      final sourceTime = dto.timestamp;
+      if (sourceTime == null) {
+        return const Result.err(AppFailure.unknown('Advisory source timestamp unavailable.'));
+      }
+      return Result.ok(dto.toEntity(StalenessInfo.fromDateTime(sourceTime, isCached: dto.isCached)));
     } on DioException catch (dioErr) {
       // 3. Network error -> fall back to cache if present with honest staleness.
       if (cached != null) {
@@ -107,6 +110,7 @@ class AdvisoryRepositoryImpl implements AdvisoryRepository {
           'total': dto.totalSources,
           'sources_failed': dto.sourcesFailed,
         },
-        'timestamp': DateTime.now().toIso8601String(),
+        'timestamp': dto.timestamp?.toIso8601String(),
+        'cached': dto.isCached,
       };
 }

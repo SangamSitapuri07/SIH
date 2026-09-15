@@ -24,19 +24,31 @@ class AdvisoryHistoryItem {
   });
 
   factory AdvisoryHistoryItem.fromJson(Map<String, dynamic> json) {
+    final id = json['id']?.toString();
+    final advisoryId = json['advisory_id']?.toString();
+    final lat = (json['latitude'] as num?)?.toDouble();
+    final lon = (json['longitude'] as num?)?.toDouble();
+    final verdict = json['verdict']?.toString();
+    final headline = json['headline']?.toString();
+    final timestampValue = json['timestamp'];
+    final timestamp = timestampValue is num
+        ? DateTime.fromMillisecondsSinceEpoch(timestampValue.toInt() * 1000, isUtc: true)
+        : null;
+    if (id == null || advisoryId == null || lat == null || lon == null ||
+        verdict == null || headline == null || timestamp == null) {
+      throw const FormatException('History item missing verified advisory facts.');
+    }
     return AdvisoryHistoryItem(
-      id: (json['id'] as String?) ?? 'hist-${DateTime.now().millisecondsSinceEpoch}',
-      advisoryId: (json['advisory_id'] as String?) ?? 'adv-001',
-      locationName: (json['location_name'] as String?) ?? 'Veraval Offshore',
-      latitude: (json['latitude'] as num?)?.toDouble() ?? 20.9,
-      longitude: (json['longitude'] as num?)?.toDouble() ?? 70.37,
-      verdict: (json['verdict'] as String?) ?? 'GOOD',
-      headline: (json['headline'] as String?) ?? 'Safe to sail',
+      id: id,
+      advisoryId: advisoryId,
+      locationName: json['location_name']?.toString() ?? 'Coordinates',
+      latitude: lat,
+      longitude: lon,
+      verdict: verdict,
+      headline: headline,
       majorHazards: List<String>.from((json['major_hazards'] as Iterable<dynamic>?) ?? []),
-      timestamp: json['timestamp'] != null
-          ? DateTime.fromMillisecondsSinceEpoch((json['timestamp'] as int) * 1000)
-          : DateTime.now(),
-      freshnessLabel: (json['freshness_label'] as String?) ?? 'Cloud Synced',
+      timestamp: timestamp,
+      freshnessLabel: json['freshness_label']?.toString() ?? 'Freshness unavailable',
     );
   }
 }

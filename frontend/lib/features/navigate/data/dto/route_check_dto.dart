@@ -2,7 +2,7 @@ import '../../domain/entities/route_check.dart';
 
 /// DTO for /api/v1/route-check response.
 class RouteCheckDto {
-  final bool ok;
+  final bool? ok;
   final bool? detour;
   final bool? landHit;
   final String? reason;
@@ -30,16 +30,16 @@ class RouteCheckDto {
     final sourcesList = (json['sources'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList() ??
-        <String>['GLOBE 1km Landmask'];
+        <String>[];
 
     return RouteCheckDto(
-      ok: json['ok'] as bool? ?? true,
-      detour: json['detour'] as bool? ?? false,
-      landHit: json['land_hit'] as bool? ?? false,
-      reason: json['reason'] as String? ?? 'Course verified clear of land.',
-      distanceKm: (json['distance_km'] as num?)?.toDouble() ?? 0.0,
-      distanceNm: (json['distance_nm'] as num?)?.toDouble() ?? 0.0,
-      bearingDeg: (json['bearing_deg'] as num?)?.toDouble() ?? 0.0,
+      ok: json['ok'] as bool?,
+      detour: json['detour'] as bool?,
+      landHit: json['land_hit'] as bool?,
+      reason: json['reason'] as String? ?? 'Route check response unavailable.',
+      distanceKm: (json['distance_km'] as num?)?.toDouble(),
+      distanceNm: (json['distance_nm'] as num?)?.toDouble(),
+      bearingDeg: (json['bearing_deg'] as num?)?.toDouble(),
       legsList: json['legs'] as List<dynamic>?,
       detourWpJson: json['detour_waypoint'] as Map<String, dynamic>?,
       sources: sourcesList,
@@ -58,22 +58,23 @@ class RouteCheckDto {
 
     DetourWaypoint? wp;
     if (detourWpJson != null) {
-      wp = DetourWaypoint(
-        lat: (detourWpJson!['lat'] as num?)?.toDouble() ?? 0.0,
-        lon: (detourWpJson!['lon'] as num?)?.toDouble() ?? 0.0,
-        name: detourWpJson!['name'] as String? ?? 'Detour Waypoint',
-        clearanceKm: (detourWpJson!['clearance_km'] as num?)?.toDouble() ?? 2.0,
-      );
+      final lat = (detourWpJson!['lat'] as num?)?.toDouble();
+      final lon = (detourWpJson!['lon'] as num?)?.toDouble();
+      final name = detourWpJson!['name']?.toString();
+      final clearance = (detourWpJson!['clearance_km'] as num?)?.toDouble();
+      if (lat != null && lon != null && name != null && clearance != null) {
+        wp = DetourWaypoint(lat: lat, lon: lon, name: name, clearanceKm: clearance);
+      }
     }
 
     return RouteCheckEntity(
       ok: ok,
-      detour: detour ?? false,
-      landHit: landHit ?? false,
-      reason: reason ?? 'Course verified clear.',
-      distanceKm: distanceKm ?? 0.0,
-      distanceNm: distanceNm ?? 0.0,
-      bearingDeg: bearingDeg ?? 0.0,
+      detour: detour,
+      landHit: landHit,
+      reason: reason ?? 'Route check response unavailable.',
+      distanceKm: distanceKm,
+      distanceNm: distanceNm,
+      bearingDeg: bearingDeg,
       legs: parsedLegs,
       detourWaypoint: wp,
       sources: sources,
@@ -99,7 +100,7 @@ class RouteAdvisoryDto {
     final sourcesList = (json['sources'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList() ??
-        <String>['Open-Meteo Marine', 'GLOBE 1km'];
+        <String>[];
 
     return RouteAdvisoryDto(
       verdictJson: json['verdict'] as Map<String, dynamic>?,
@@ -110,11 +111,11 @@ class RouteAdvisoryDto {
   }
 
   RouteAdvisoryEntity toEntity() {
-    final level = verdictJson?['level'] as String? ?? 'caution';
-    final known = verdictJson?['points_known'] as int? ?? 4;
-    final total = verdictJson?['total'] as int? ?? 4;
-    final verified = verdictJson?['land_verified'] as bool? ?? true;
-    final headline = verdictJson?['headline'] as String? ?? 'Transit safe with caution.';
+    final level = verdictJson?['level'] as String? ?? 'UNVERIFIED';
+    final known = verdictJson?['points_known'] as int? ?? 0;
+    final total = verdictJson?['total'] as int? ?? 0;
+    final verified = verdictJson?['land_verified'] as bool? ?? false;
+    final headline = verdictJson?['headline'] as String? ?? 'Route safety verdict unavailable.';
 
     final parsedPoints = <TransitPoint>[];
     if (pointsList != null) {
@@ -122,13 +123,13 @@ class RouteAdvisoryDto {
         if (p is Map<String, dynamic>) {
           parsedPoints.add(
             TransitPoint(
-              sailKm: (p['sail_km'] as num?)?.toDouble() ?? 0.0,
-              lat: (p['lat'] as num?)?.toDouble() ?? 0.0,
-              lon: (p['lon'] as num?)?.toDouble() ?? 0.0,
-              waveM: (p['wave_m'] as num?)?.toDouble() ?? 1.5,
-              windKn: (p['wind_kn'] as num?)?.toDouble() ?? 12.0,
-              state: p['state'] as String? ?? 'good',
-              why: p['why'] as String? ?? 'Clear passage.',
+              sailKm: (p['sail_km'] as num?)?.toDouble(),
+              lat: (p['lat'] as num?)?.toDouble(),
+              lon: (p['lon'] as num?)?.toDouble(),
+              waveM: (p['wave_m'] as num?)?.toDouble(),
+              windKn: (p['wind_kn'] as num?)?.toDouble(),
+              state: p['state'] as String? ?? 'unverified',
+              why: p['why'] as String? ?? 'Marine inputs unavailable for this route point.',
             ),
           );
         }
@@ -142,9 +143,9 @@ class RouteAdvisoryDto {
       landVerified: verified,
       headline: headline,
       points: parsedPoints,
-      safeWindowFrom: safeWindowJson?['from'] as String? ?? '06:00 IST',
-      safeWindowTo: safeWindowJson?['to'] as String? ?? '16:00 IST',
-      isSafeStart: safeWindowJson?['is_safe'] as bool? ?? true,
+      safeWindowFrom: safeWindowJson?['from'] as String? ?? '',
+      safeWindowTo: safeWindowJson?['to'] as String? ?? '',
+      isSafeStart: safeWindowJson?['is_safe'] as bool? ?? false,
       sources: sources,
     );
   }

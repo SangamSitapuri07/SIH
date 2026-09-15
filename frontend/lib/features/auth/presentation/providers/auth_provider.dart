@@ -35,6 +35,12 @@ class UserProfileNotifier extends StateNotifier<UserProfile> {
     await _authService.updateProfile(updated);
   }
 
+  Future<void> updateFishingArea(String area) async {
+    final updated = state.copyWith(preferredFishingArea: area);
+    state = updated;
+    await _authService.updateProfile(updated);
+  }
+
   Future<void> updateVessel(String vesselType, String? reg) async {
     final updated = state.copyWith(vesselType: vesselType, vesselRegistration: reg);
     state = updated;

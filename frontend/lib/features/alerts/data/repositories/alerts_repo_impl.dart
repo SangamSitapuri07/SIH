@@ -2,7 +2,6 @@ import 'package:dio/dio.dart';
 import '../../../../core/result/app_failure.dart';
 import '../../../../core/result/result.dart';
 import '../../../../core/cache/cache_service.dart';
-import '../../../../core/cache/staleness.dart';
 import '../dto/alert_dto.dart';
 import '../../domain/entities/alert_item.dart';
 import '../../domain/repositories/alerts_repo.dart';
@@ -41,7 +40,7 @@ class AlertsRepositoryImpl implements AlertsRepository {
       final cached = _cacheService.get('alerts_active');
       if (cached != null) {
         final raw = cached.data['alerts'] as List<dynamic>? ?? <dynamic>[];
-        return Result.ok(raw.map((e) => AlertDto.fromJson(e as Map<String, dynamic>).toEntity()).toList());
+        return Result.ok(raw.map((e) => AlertDto.fromJson(e as Map<String, dynamic>).toEntity(isCached: true, isStale: cached.isExpired)).toList());
       }
       if (dioErr.type == DioExceptionType.connectionTimeout) {
         return const Result.err(AppFailure.timeout());
@@ -52,13 +51,4 @@ class AlertsRepositoryImpl implements AlertsRepository {
     }
   }
 
-  @override
-  Future<Result<AlertItem>> simulateAlert() async {
-    try {
-      final dto = await _remoteDataSource.simulateAlert();
-      return Result.ok(dto.toEntity());
-    } catch (e) {
-      return Result.err(AppFailure.unknown(e.toString()));
-    }
-  }
 }
