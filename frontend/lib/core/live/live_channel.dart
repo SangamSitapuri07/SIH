@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/api_paths.dart';
-import '../config/app_config.dart';
 import '../network/dio_provider.dart';
 import '../network/sse.dart';
+import 'sse_transport.dart';
 
 /// State of the live SSE stream connection.
 enum LiveStreamStatus {
@@ -40,53 +39,38 @@ class LiveChannelNotifier extends StateNotifier<LiveStreamStatus> {
     state = LiveStreamStatus.connecting;
     _reconnectTimer?.cancel();
 
+    var firstEvent = true;
     try {
-      final response = await _dio.get<ResponseBody>(
-        ApiPaths.liveStream,
-        options: Options(
-          responseType: ResponseType.stream,
-          headers: <String, dynamic>{
-            'Accept': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-          },
-          // SSE is intentionally persistent: the backend sends keepalives and
-          // real events can be minutes apart. A receive timeout would kill a
-          // healthy stream, so this endpoint never times out on receive.
-          // Connect/send keep the configured windows so an unreachable box
-          // still fails in bounded time instead of hanging forever.
-          connectTimeout: AppConfig.connectTimeout,
-          sendTimeout: AppConfig.sendTimeout,
-          receiveTimeout: Duration.zero,
-        ),
+      // SSE is intentionally persistent: the backend sends keepalives and
+      // real events can be minutes apart, so it must never time out on
+      // receive. connectSse() picks the right transport per platform: Dio's
+      // genuinely-streaming io adapter (receiveTimeout: Duration.zero, with
+      // connect/send bounded by the shared AppConfig windows) on
+      // mobile/desktop, or the browser's native EventSource on web — Dio's
+      // web adapter buffers the full response before returning anything, so
+      // it can never deliver an infinite stream no matter how timeouts are
+      // tuned. See sse_transport_{io,web}.dart.
+      final stream = connectSse(dio: _dio, url: '$_baseUrl${ApiPaths.liveStream}');
+      _subscription = stream.listen(
+        (event) {
+          if (firstEvent) {
+            firstEvent = false;
+            state = LiveStreamStatus.connected;
+            _retryBackoffSec = 2; // reset backoff
+          }
+          debugPrint('[LiveChannel SSE] Event: ${event.event} -> ${event.data}');
+          _eventController.add(event);
+        },
+        onError: (Object error) {
+          debugPrint('[LiveChannel SSE Error] $error');
+          _scheduleReconnect();
+        },
+        onDone: () {
+          debugPrint('[LiveChannel SSE Closed]');
+          _scheduleReconnect();
+        },
+        cancelOnError: true,
       );
-
-      final stream = response.data?.stream;
-      if (stream != null) {
-        state = LiveStreamStatus.connected;
-        _retryBackoffSec = 2; // reset backoff
-
-        _subscription = stream
-            .cast<List<int>>()
-            .transform(utf8.decoder)
-            .transform(const SseDecoder())
-            .listen(
-          (event) {
-            debugPrint('[LiveChannel SSE] Event: ${event.event} -> ${event.data}');
-            _eventController.add(event);
-          },
-          onError: (Object error) {
-            debugPrint('[LiveChannel SSE Error] $error');
-            _scheduleReconnect();
-          },
-          onDone: () {
-            debugPrint('[LiveChannel SSE Closed]');
-            _scheduleReconnect();
-          },
-          cancelOnError: true,
-        );
-      } else {
-        _scheduleReconnect();
-      }
     } catch (e) {
       debugPrint('[LiveChannel SSE Connect Failed] $e');
       _scheduleReconnect();

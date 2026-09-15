@@ -236,9 +236,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           point: _probedLocation!,
           width: 34,
           height: 34,
-          child: const Semantics(
+          child: Semantics(
             label: 'Inspected point',
-            child: Icon(Icons.place_rounded, color: VerdictColors.noGo, size: 32),
+            child: const Icon(Icons.place_rounded, color: VerdictColors.noGo, size: 32),
           ),
         ),
       ..._fieldMarkers(grid, selected),

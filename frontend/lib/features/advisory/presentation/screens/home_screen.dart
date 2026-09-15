@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/auth/supabase_auth_service.dart';
 import '../../../../core/cache/staleness.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/live/live_channel.dart';

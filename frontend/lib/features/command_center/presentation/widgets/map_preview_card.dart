@@ -37,7 +37,7 @@ class CommandCenterMapPreview extends ConsumerWidget {
     final AsyncValue<List<MapLayerEntity>> catalog =
         ref.watch(mapLayerCatalogProvider(MapCenter(lat, lon)));
     final List<MapLayerEntity> layers = catalog.valueOrNull ?? const <MapLayerEntity>[];
-    final MapLayerEntity? fieldLayer = layers.firstWhere(
+    final MapLayerEntity fieldLayer = layers.firstWhere(
       (MapLayerEntity layer) =>
           layer.isMapRenderable &&
           (layer.visualization == 'vector_grid' || layer.visualization == 'scalar_grid'),

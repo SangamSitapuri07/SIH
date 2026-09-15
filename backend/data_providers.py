@@ -59,7 +59,12 @@ class DataProvidersEngine:
     def _get(self, url: str, **kwargs: Any) -> httpx.Response:
         headers = kwargs.pop("headers", {})
         headers.setdefault("User-Agent", "ORCA-Box/3.0 (SIH26176)")
-        with httpx.Client(timeout=6.0, headers=headers, follow_redirects=True) as client:
+        # 3s: every source using this helper normally responds in under 1.5s
+        # when reachable at all (measured against INCOIS/GDACS/JTWC/IMD) — a
+        # source that's actually unreachable (e.g. NOAA CoastWatch's TLS
+        # handshake never completing on some networks) should fail fast
+        # rather than block every caller (zone probe, map grid) for 6s each.
+        with httpx.Client(timeout=3.0, headers=headers, follow_redirects=True) as client:
             response = client.get(url, **kwargs)
             response.raise_for_status()
             return response
@@ -202,11 +207,16 @@ class DataProvidersEngine:
 
         try:
             started = time.perf_counter()
-            with httpx.Client(timeout=12.0) as client:
-                marine_response = client.get(marine_url, params=marine_params)
-                marine_response.raise_for_status()
-                forecast_response = client.get(forecast_url, params=forecast_params)
-                forecast_response.raise_for_status()
+            # These two calls are independent — running them concurrently
+            # instead of one-after-the-other roughly halves this endpoint's
+            # latency (was ~8.5s serial, now ~= the slower single call).
+            with httpx.Client(timeout=12.0) as client, ThreadPoolExecutor(max_workers=2) as pool:
+                marine_future = pool.submit(client.get, marine_url, params=marine_params)
+                forecast_future = pool.submit(client.get, forecast_url, params=forecast_params)
+                marine_response = marine_future.result()
+                forecast_response = forecast_future.result()
+            marine_response.raise_for_status()
+            forecast_response.raise_for_status()
             marine = marine_response.json().get("current", {})
             forecast_payload = forecast_response.json()
             forecast = forecast_payload.get("current", {})
