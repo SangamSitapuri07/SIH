@@ -1,9 +1,12 @@
 import json
+import logging
 import time
 import threading
 from typing import Dict, Any, List
 
 from ollama_client import ollama
+
+logger = logging.getLogger("orca.agents")
 
 class MultiAgentEngine:
     """
@@ -70,6 +73,64 @@ class MultiAgentEngine:
                 runtime["last_duration_ms"] = finding.get("duration_ms")
                 runtime["last_error"] = None
 
+    @staticmethod
+    def _parse_analytical_response(response: str | None) -> Dict[str, str]:
+        """Normalize valid structured responses from different Ollama versions."""
+        if not response:
+            return {}
+        text = response.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            text = "\n".join(lines[1:-1]).strip()
+        try:
+            value = json.loads(text)
+        except (TypeError, ValueError):
+            # Recover when an older model surrounds the JSON with a sentence.
+            start, end = text.find("{"), text.rfind("}")
+            if start < 0 or end <= start:
+                return {}
+            try:
+                value = json.loads(text[start:end + 1])
+            except (TypeError, ValueError):
+                return {}
+
+        if isinstance(value, dict):
+            for wrapper in ("findings", "results", "agents", "analyses"):
+                nested = value.get(wrapper)
+                if isinstance(nested, (dict, list)):
+                    value = nested
+                    break
+
+        normalized: Dict[str, str] = {}
+        if isinstance(value, list):
+            entries = value
+        elif isinstance(value, dict):
+            entries = [{"agent_id": key, "value": item} for key, item in value.items()]
+        else:
+            return normalized
+
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            agent_id = entry.get("agent_id") or entry.get("id") or entry.get("role")
+            item = entry.get("value", entry)
+            if isinstance(item, str):
+                finding = item
+            elif isinstance(item, dict):
+                finding = next(
+                    (item[key] for key in ("finding", "findings", "summary", "analysis", "message", "text")
+                     if isinstance(item.get(key), str)),
+                    None,
+                )
+            else:
+                finding = None
+            if agent_id and isinstance(finding, str) and finding.strip():
+                normalized_id = str(agent_id).strip().lower().replace("-", "_").replace(" ", "_")
+                if normalized_id.endswith("_agent"):
+                    normalized_id = normalized_id[:-6]
+                normalized[normalized_id] = finding.strip()
+        return normalized
+
     def _analytical_findings(self, jobs: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         """Run every analytical role in one Ollama request.
 
@@ -98,17 +159,26 @@ class MultiAgentEngine:
             temperature=0.1,
             max_tokens=480,
             json_mode=True,
+            json_schema={
+                "type": "object",
+                "properties": {
+                    agent_id: {"type": "string"} for agent_id in jobs
+                },
+                "required": list(jobs.keys()),
+                "additionalProperties": False,
+            },
         )
         elapsed_ms = int((time.monotonic() - started) * 1000)
 
-        parsed: Dict[str, Any] = {}
-        if response:
-            try:
-                parsed_value = json.loads(response)
-                if isinstance(parsed_value, dict):
-                    parsed = parsed_value
-            except (TypeError, ValueError):
-                parsed = {}
+        parsed = self._parse_analytical_response(response)
+        missing_roles = [agent_id for agent_id in jobs if agent_id not in parsed]
+        if response and missing_roles:
+            logger.warning(
+                "[Ollama] Structured response omitted/invalid roles %s; parsed keys=%s; "
+                "missing roles will use deterministic fallback.",
+                ", ".join(missing_roles),
+                ", ".join(parsed) or "none",
+            )
 
         results: Dict[str, Dict[str, Any]] = {}
         for agent_id, job in jobs.items():
@@ -411,14 +481,24 @@ class MultiAgentEngine:
             synoptic_agent, ecology_agent, pfz_agent, anomaly_agent, risk_agent, orchestrator_agent
         ]
 
+        generated_at = int(time.time())
         return {
+            "overall_risk": risk_level,
             "verdict": risk_level,
+            "timestamp": generated_at,
+            "source_timestamp": snapshot.get("timestamp"),
             "headline_en": headline_en,
             "headline_hi": headline_hi,
             "headline_te": headline_te,
             "plain_en": plain_en,
             "plain_hi": plain_hi,
             "plain_te": plain_te,
+            "orchestrator_synthesis": {
+                "headline": headline_en,
+                "recommendation": " ".join(plain_en),
+                "trace_owner": "orchestrator",
+                "timestamp": generated_at,
+            },
             "agents": agents_list,
             "data_coverage": {
                 "known": len(source_names),

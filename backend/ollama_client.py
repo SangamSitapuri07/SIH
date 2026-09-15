@@ -92,6 +92,7 @@ class OllamaClient:
         temperature: float = 0.3,
         max_tokens: int = 512,
         json_mode: bool = False,
+        json_schema: Optional[dict] = None,
     ) -> Optional[str]:
         """
         Call Ollama /api/generate (non-streaming).
@@ -126,7 +127,12 @@ class OllamaClient:
                 "stop": ["</analysis>", "---END---"],
             },
         }
-        if json_mode:
+        if json_schema is not None:
+            # Ollama accepts a JSON Schema as `format`; constrained decoding is
+            # substantially more reliable than merely asking an 8B model for
+            # JSON in prose.
+            payload["format"] = json_schema
+        elif json_mode:
             payload["format"] = "json"
         if system:
             payload["system"] = system
