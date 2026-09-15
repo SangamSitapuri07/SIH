@@ -145,11 +145,22 @@ class OfficialBoundaryStore:
             if (feature.get("geometry") or {}).get("type") not in {"Polygon", "MultiPolygon"}:
                 raise ValueError("only Polygon and MultiPolygon boundary features are accepted")
         self.features = features
-        self._prepared = [
-            (str((feature.get("properties") or {}).get("orca_role", "")).lower(),
-             feature["geometry"], _geometry_bbox(feature["geometry"]))
-            for feature in features
-        ]
+        # Index each MultiPolygon member independently. India EEZ features
+        # contain mainland water plus many distant island polygons; one bbox
+        # around the whole feature forced every point test to scan every ring.
+        # Per-polygon bboxes make the common check touch only nearby geometry.
+        self._prepared = []
+        for feature in features:
+            role = str((feature.get("properties") or {}).get("orca_role", "")).lower()
+            geometry = feature["geometry"]
+            geometries = (
+                [{"type": "Polygon", "coordinates": coordinates}
+                 for coordinates in geometry.get("coordinates", [])]
+                if geometry.get("type") == "MultiPolygon" else [geometry]
+            )
+            self._prepared.extend(
+                (role, item, _geometry_bbox(item)) for item in geometries
+            )
         status = "REFERENCE_AVAILABLE" if reference else "AVAILABLE"
         reason = ("Marine Regions India territorial sea v4 + EEZ v12 reference loaded; coastal-water geometry can be routed, "
                   "but restricted-area and regulatory clearance remain unverified.") if reference else "Authority boundary loaded and validated."
@@ -261,6 +272,18 @@ class MarineRoutePlanner:
             # rechecked at <=1 km spacing before it can be returned.
             count = max(1, math.ceil(haversine(a, b) / spacing_km))
             return all(is_allowed((a[0]+(b[0]-a[0])*i/count, a[1]+(b[1]-a[1])*i/count)) for i in range(count+1))
+        def success(path: list[tuple[float, float]]) -> dict[str, Any]:
+            distance=sum(haversine(a,b) for a,b in zip(path,path[1:]))
+            coords=[[round(lat,5),round(lon,5)] for lat,lon in path]
+            reference = self.boundaries.state.status == "REFERENCE_AVAILABLE"
+            status = "REFERENCE_ROUTE_GEOMETRY" if reference else "ROUTE_GEOMETRY_VERIFIED"
+            reason = ("Path stays inside the Marine Regions India territorial-sea/EEZ reference geometry. Regulatory/restricted-area clearance is not verified."
+                      if reference else "Every route edge is inside authority-declared navigable waters and outside prohibited polygons.")
+            return {"status":status, "verified":True, "regulatory_verified":not reference, "reason":reason, "routes":[{"id":"balanced","label":"Balanced EEZ geometry" if reference else "Balanced verified geometry","coordinates":coords,"distance_km":round(distance,1),"distance_nm":round(distance*.539957,1)}], "boundary":{"metadata":self.boundaries.state.metadata,"sha256":self.boundaries.state.checksum}}
+        # Most fishing legs stay on one side of the coast. Do not run A* when
+        # the complete great-circle approximation already remains in water.
+        if edge_allowed(start, end, 1.0):
+            return success([start, end])
         s,t=key(start),key(end); frontier=[(0.0,s)]; came={s:None}; cost={s:0.0}; max_nodes=60000
         while frontier and len(came)<max_nodes:
             _,cur=heapq.heappop(frontier)
@@ -278,10 +301,4 @@ class MarineRoutePlanner:
         path=list(reversed(path)); path[0]=start; path[-1]=end
         if not all(edge_allowed(a, b, 1.0) for a, b in zip(path, path[1:])):
             return {"status":"NO_SAFE_ROUTE", "verified":True, "reason":"Endpoint connector crosses a prohibited or non-navigable area.", "routes":[]}
-        distance=sum(haversine(a,b) for a,b in zip(path,path[1:]))
-        coords=[[round(lat,5),round(lon,5)] for lat,lon in path]
-        reference = self.boundaries.state.status == "REFERENCE_AVAILABLE"
-        status = "REFERENCE_ROUTE_GEOMETRY" if reference else "ROUTE_GEOMETRY_VERIFIED"
-        reason = ("Path stays inside the Marine Regions India territorial-sea/EEZ reference geometry. Regulatory/restricted-area clearance is not verified."
-                  if reference else "Every route edge is inside authority-declared navigable waters and outside prohibited polygons.")
-        return {"status":status, "verified":True, "regulatory_verified":not reference, "reason":reason, "routes":[{"id":"balanced","label":"Balanced EEZ geometry" if reference else "Balanced verified geometry","coordinates":coords,"distance_km":round(distance,1),"distance_nm":round(distance*.539957,1)}], "boundary":{"metadata":self.boundaries.state.metadata,"sha256":self.boundaries.state.checksum}}
+        return success(path)
