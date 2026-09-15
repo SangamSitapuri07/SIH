@@ -1,8 +1,6 @@
 import os
 import time
 import math
-import csv
-import io
 import threading
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
@@ -58,37 +56,75 @@ class DataProvidersEngine:
 
     def _get(self, url: str, **kwargs: Any) -> httpx.Response:
         headers = kwargs.pop("headers", {})
+        timeout_s = float(kwargs.pop("timeout_s", 3.0))
         headers.setdefault("User-Agent", "ORCA-Box/3.0 (SIH26176)")
-        # 3s: every source using this helper normally responds in under 1.5s
-        # when reachable at all (measured against INCOIS/GDACS/JTWC/IMD) — a
-        # source that's actually unreachable (e.g. NOAA CoastWatch's TLS
-        # handshake never completing on some networks) should fail fast
-        # rather than block every caller (zone probe, map grid) for 6s each.
-        with httpx.Client(timeout=3.0, headers=headers, follow_redirects=True) as client:
+        # Most metadata feeds fail fast. Large griddap services may need a
+        # longer TLS/read window, supplied explicitly by their caller.
+        with httpx.Client(timeout=timeout_s, headers=headers, follow_redirects=True) as client:
             response = client.get(url, **kwargs)
             response.raise_for_status()
             return response
 
     def fetch_noaa_chlorophyll(self, lat: float, lon: float) -> Dict[str, Any]:
-        """Read one real VIIRS chlorophyll value from NOAA ERDDAP."""
-        url = "https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPN20VIIRSDINEOFDaily.csv"
-        query = f"?chlor_a[(last)][(0)][({lat - 0.02}):1:({lat + 0.02})][({lon - 0.02}):1:({lon + 0.02})]"
+        """Read the nearest real VIIRS chlorophyll value from NOAA ERDDAP.
+
+        ERDDAP's `.csv` response has a second units row, which the old parser
+        attempted to convert to float and consequently rejected every valid
+        response. The old ±0.02° range was also narrower than this dataset's
+        ~0.083° grid and used ascending latitude against a descending axis.
+        A coordinate-constrained JSON request lets ERDDAP select the nearest
+        real grid cell and avoids both failure modes.
+        """
+        dataset = "noaacwNPPN20VIIRSDINEOFDaily"
+        url = f"https://coastwatch.noaa.gov/erddap/griddap/{dataset}.json"
+        query = f"?chlor_a[(last)][(0.0)][({lat:.5f})][({lon:.5f})]"
         try:
-            response = self._get(url + query)
-            rows = list(csv.DictReader(io.StringIO(response.text)))
-            values = [float(row["chlor_a"]) for row in rows if row.get("chlor_a") not in (None, "", "NaN")]
+            response = self._get(url + query, timeout_s=15.0)
+            payload = response.json()
+            table = payload.get("table", {})
+            columns = table.get("columnNames", [])
+            rows = table.get("rows", [])
+            chlorophyll_index = columns.index("chlor_a")
+            values = []
+            for row in rows:
+                if not isinstance(row, list) or chlorophyll_index >= len(row):
+                    continue
+                try:
+                    value = float(row[chlorophyll_index])
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(value) and value >= 0:
+                    values.append(value)
             if not values:
-                return {"status": "cloud_masked", "source": "NOAA CoastWatch ERDDAP"}
+                self.provider_status["noaa_erddap"].update(
+                    status="CLOUD_MASKED", latency_ms=None,
+                    reason="Latest grid cell has no valid chlorophyll value",
+                )
+                return {
+                    "status": "cloud_masked",
+                    "source": "NOAA CoastWatch ERDDAP",
+                    "reason": "Latest grid cell has no valid chlorophyll value",
+                }
+            self.provider_status["noaa_erddap"].update(
+                status="OK", latency_ms=None, reason=None,
+            )
             return {
                 "status": "fresh",
                 "value": values[0],
                 "unit": "mg/m3",
                 "source": "NOAA CoastWatch ERDDAP",
-                "dataset": "noaacwNPPN20VIIRSDINEOFDaily",
+                "dataset": dataset,
                 "source_url": url,
             }
-        except (httpx.HTTPError, ValueError, KeyError) as exc:
-            return {"status": "unreachable", "source": "NOAA CoastWatch ERDDAP", "reason": str(exc)}
+        except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
+            self.provider_status["noaa_erddap"].update(
+                status="UNREACHABLE", latency_ms=None, reason=str(exc),
+            )
+            return {
+                "status": "unreachable",
+                "source": "NOAA CoastWatch ERDDAP",
+                "reason": str(exc),
+            }
 
     def fetch_incois_pfz(self) -> Dict[str, Any]:
         """Fetch official INCOIS PFZ lines when the government WFS is available."""
@@ -284,6 +320,7 @@ class DataProvidersEngine:
                 "wave_height_m": wave_height,
                 "wave_period_s": wave_period,
                 "swell_height_m": marine.get("swell_wave_height"),
+                "swell_period_s": marine.get("swell_wave_period"),
                 "wind_speed_kn": wind_speed_kn,
                 "wind_gust_kn": wind_gust_kn,
                 "wind_direction_deg": forecast.get("wind_direction_10m"),
