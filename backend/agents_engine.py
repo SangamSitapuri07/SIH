@@ -318,6 +318,7 @@ class MultiAgentEngine:
             "agent_name": "Ocean Analysis Agent",
             "type": "LLM/Analytical",
             **ocean_llm,
+            "verdict": ocean_verdict,
             "confidence": 0.92,
             "evidence": [f"Wave height = {wave_h:.1f} m", f"Current speed = {current_text}"],
             "warnings": [] if wave_h < 2.5 else [f"Moderate wave height ({wave_h:.1f} m) requires caution for small motor boats."]
@@ -341,6 +342,7 @@ class MultiAgentEngine:
             "agent_name": "Weather Hazard Agent",
             "type": "LLM/Analytical",
             **weather_llm,
+            "verdict": weather_verdict,
             "confidence": 0.95,
             "evidence": [f"Wind speed = {wind_kn:.1f} kn", f"Peak gust = {gust_kn:.1f} kn"],
             "warnings": [] if gust_kn < 28 else [f"Brisk gusts up to {gust_kn:.1f} kn expected near afternoon."]
@@ -401,6 +403,7 @@ class MultiAgentEngine:
             "type": "Deterministic",
             "status": "completed",
             "duration_ms": 10,
+            "verdict": risk_level,
             "findings": f"Worst-case safety fold result: {risk_level}. Primary rationale: {'; '.join(reasons)}",
             "confidence": 1.0,
             "evidence": ["WMO Small Craft Advisory Guidelines", "IMD Marine Weather Risk Matrix"],
@@ -471,6 +474,7 @@ class MultiAgentEngine:
             "agent_name": "Orchestrator Agent",
             "type": "LLM/Analytical",
             **orchestrator_llm,
+            "verdict": risk_level,
             "confidence": 0.96,
             "evidence": ["Consensus across all 10 specialized agents"],
             "warnings": []
