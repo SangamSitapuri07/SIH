@@ -95,6 +95,19 @@ class OfflineNavigationProgress {
 
   bool get isOffRoute => offRouteKm > 2.0;
 
+  /// Along-route completion is meaningful only near the downloaded polyline.
+  /// A nearest-point projection thousands of kilometres away is mathematically
+  /// defined but operationally false, so the UI must suppress it.
+  bool get isNearRoute => offRouteKm <= 25.0;
+
+  /// Starting a voyage has a tighter gate than displaying drift after a valid
+  /// start. This prevents a different nearby coastal route being accepted.
+  bool get isPlausibleStart => offRouteKm <= 5.0;
+
+  bool get hasUsableAccuracy => accuracyM.isFinite && accuracyM >= 0 && accuracyM <= 1000.0;
+
+  bool get isRouteProgressReliable => isNearRoute && hasUsableAccuracy;
+
   /// Projects a GPS fix onto each saved polyline segment using a local
   /// equirectangular plane, then chooses the nearest projection. This is fully
   /// deterministic and requires no network or remote model.
@@ -178,9 +191,10 @@ class OfflineNavigationState {
     bool? tracking,
     String? error,
     bool clearError = false,
+    bool clearProgress = false,
   }) => OfflineNavigationState(
         package: package ?? this.package,
-        progress: progress ?? this.progress,
+        progress: clearProgress ? null : progress ?? this.progress,
         tracking: tracking ?? this.tracking,
         error: clearError ? null : error ?? this.error,
       );
@@ -315,8 +329,57 @@ class OfflineNavigationNotifier extends StateNotifier<OfflineNavigationState> {
     }
 
     await _positionSubscription?.cancel();
-    state = state.copyWith(tracking: true, clearError: true);
+    _positionSubscription = null;
+    state = state.copyWith(
+      tracking: false,
+      clearError: true,
+      clearProgress: true,
+    );
     const settings = LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 50);
+
+    // Validate one real GPS fix before declaring navigation active. Without
+    // this gate, projecting a distant browser/desktop fix onto a coastal route
+    // can falsely display 100% completed when its nearest point is an endpoint.
+    try {
+      final initialPosition = await Geolocator.getCurrentPosition(
+        locationSettings: settings,
+      ).timeout(const Duration(seconds: 20));
+      final initialProgress = OfflineNavigationProgress.calculate(
+        latitude: initialPosition.latitude,
+        longitude: initialPosition.longitude,
+        accuracyM: initialPosition.accuracy,
+        observedAt: initialPosition.timestamp,
+        geometry: package.geometry,
+      );
+      if (!initialProgress.hasUsableAccuracy) {
+        state = state.copyWith(
+          progress: initialProgress,
+          tracking: false,
+          error: 'GPS accuracy is only ±${initialProgress.accuracyM.toStringAsFixed(0)} m. Navigation was not started; move to an open area and wait for a high-accuracy fix.',
+        );
+        return;
+      }
+      if (!initialProgress.isPlausibleStart) {
+        state = state.copyWith(
+          progress: initialProgress,
+          tracking: false,
+          error: 'GPS is ${initialProgress.offRouteKm.toStringAsFixed(1)} km from the saved route. Navigation was not started; select a voyage near the device or start within 5 km of its route.',
+        );
+        return;
+      }
+      state = state.copyWith(
+        progress: initialProgress,
+        tracking: true,
+        clearError: true,
+      );
+    } catch (error) {
+      state = state.copyWith(
+        tracking: false,
+        error: 'A current GPS fix could not be verified: $error',
+      );
+      return;
+    }
+
     _positionSubscription = Geolocator.getPositionStream(locationSettings: settings).listen(
       (position) {
         try {
@@ -342,6 +405,15 @@ class OfflineNavigationNotifier extends StateNotifier<OfflineNavigationState> {
     await _positionSubscription?.cancel();
     _positionSubscription = null;
     state = state.copyWith(tracking: false, clearError: true);
+  }
+
+  /// Remove only the device-resident navigation route. Any separately saved
+  /// trip plan remains available for review or replacement.
+  Future<void> clearSavedRoute() async {
+    await _positionSubscription?.cancel();
+    _positionSubscription = null;
+    await _cache.remove(_cacheKey);
+    state = const OfflineNavigationState();
   }
 
   @override

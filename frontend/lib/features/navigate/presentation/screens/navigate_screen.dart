@@ -920,20 +920,52 @@ class _OfflineNavigationCard extends ConsumerWidget {
           ],
           if (progress != null) ...<Widget>[
             const SizedBox(height: 12),
-            Wrap(spacing: 10, runSpacing: 10, children: <Widget>[
-              _OfflineMetric(label: 'REMAINING', value: '${progress.remainingKm.toStringAsFixed(1)} km'),
-              _OfflineMetric(label: 'COMPLETED', value: '${progress.completedKm.toStringAsFixed(1)} km'),
-              _OfflineMetric(label: 'OFF ROUTE', value: '${progress.offRouteKm.toStringAsFixed(2)} km'),
-              _OfflineMetric(label: 'RETURN TO START', value: '${progress.distanceToDepartureKm.toStringAsFixed(1)} km'),
-              _OfflineMetric(label: 'DESTINATION BEARING', value: '${progress.bearingToDestination.toStringAsFixed(0)}°'),
-              _OfflineMetric(label: 'GPS ACCURACY', value: '±${progress.accuracyM.toStringAsFixed(0)} m'),
-            ]),
-            if (progress.isOffRoute) ...<Widget>[
-              const SizedBox(height: 10),
-              const Text(
-                'OFF-ROUTE WARNING · Vessel is more than 2 km from the downloaded route. Slow down, verify position/chart and return to the saved route only when safe.',
-                style: TextStyle(color: VerdictColors.noGo, fontWeight: FontWeight.w800, fontSize: 11.5, height: 1.4),
+            if (!progress.isRouteProgressReliable) ...<Widget>[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFE9E7),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: VerdictColors.noGo),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                  Text(
+                    progress.isNearRoute
+                        ? 'GPS ACCURACY INSUFFICIENT · PROGRESS UNAVAILABLE'
+                        : 'OUTSIDE SAVED VOYAGE AREA · PROGRESS UNAVAILABLE',
+                    style: const TextStyle(color: VerdictColors.noGo, fontWeight: FontWeight.w900, fontSize: 11.5),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    progress.isNearRoute
+                        ? 'This fix has ±${progress.accuracyM.toStringAsFixed(0)} m reported accuracy. Completed distance, remaining distance, bearing and return guidance are hidden until GPS accuracy improves.'
+                        : 'This GPS fix is ${progress.offRouteKm.toStringAsFixed(1)} km from the downloaded route. Completed distance, remaining distance, destination bearing and return guidance are hidden because projecting this position onto that route would be unsafe and misleading.',
+                    style: OrcaType.caption.copyWith(color: VerdictColors.noGo, fontWeight: FontWeight.w700),
+                  ),
+                ]),
               ),
+              const SizedBox(height: 10),
+              Wrap(spacing: 10, runSpacing: 10, children: <Widget>[
+                _OfflineMetric(label: 'DISTANCE FROM ROUTE', value: '${progress.offRouteKm.toStringAsFixed(1)} km'),
+                _OfflineMetric(label: 'GPS ACCURACY', value: '±${progress.accuracyM.toStringAsFixed(0)} m'),
+              ]),
+            ] else ...<Widget>[
+              Wrap(spacing: 10, runSpacing: 10, children: <Widget>[
+                _OfflineMetric(label: 'REMAINING', value: '${progress.remainingKm.toStringAsFixed(1)} km'),
+                _OfflineMetric(label: 'COMPLETED', value: '${progress.completedKm.toStringAsFixed(1)} km'),
+                _OfflineMetric(label: 'OFF ROUTE', value: '${progress.offRouteKm.toStringAsFixed(2)} km'),
+                _OfflineMetric(label: 'RETURN TO START', value: '${progress.distanceToDepartureKm.toStringAsFixed(1)} km'),
+                _OfflineMetric(label: 'DESTINATION BEARING', value: '${progress.bearingToDestination.toStringAsFixed(0)}°'),
+                _OfflineMetric(label: 'GPS ACCURACY', value: '±${progress.accuracyM.toStringAsFixed(0)} m'),
+              ]),
+              if (progress.isOffRoute) ...<Widget>[
+                const SizedBox(height: 10),
+                const Text(
+                  'OFF-ROUTE WARNING · Vessel is more than 2 km from the downloaded route. Slow down, verify position/chart and return to the saved route only when safe.',
+                  style: TextStyle(color: VerdictColors.noGo, fontWeight: FontWeight.w800, fontSize: 11.5, height: 1.4),
+                ),
+              ],
             ],
           ],
           if (state.error != null) ...<Widget>[
@@ -941,13 +973,43 @@ class _OfflineNavigationCard extends ConsumerWidget {
             Text(state.error!, style: OrcaType.caption.copyWith(color: VerdictColors.noGo)),
           ],
           const SizedBox(height: 12),
-          ElevatedButton.icon(
-            onPressed: state.tracking
-                ? () => ref.read(offlineNavigationProvider.notifier).stopTracking()
-                : () => ref.read(offlineNavigationProvider.notifier).startTracking(),
-            icon: Icon(state.tracking ? Icons.stop_circle_outlined : Icons.gps_fixed_rounded, size: 18),
-            label: Text(state.tracking ? 'Stop offline GPS' : 'Start offline GPS navigation'),
-          ),
+          Wrap(spacing: 9, runSpacing: 9, children: <Widget>[
+            ElevatedButton.icon(
+              onPressed: state.tracking
+                  ? () => ref.read(offlineNavigationProvider.notifier).stopTracking()
+                  : () => ref.read(offlineNavigationProvider.notifier).startTracking(),
+              icon: Icon(state.tracking ? Icons.stop_circle_outlined : Icons.gps_fixed_rounded, size: 18),
+              label: Text(state.tracking ? 'Stop offline GPS' : 'Start offline GPS navigation'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final remove = await showDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    title: const Text('Remove saved route?'),
+                    content: const Text(
+                      'This removes the downloaded GPS route from this device. It does not remove the separately saved voyage details.',
+                    ),
+                    actions: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        child: const Text('Remove route'),
+                      ),
+                    ],
+                  ),
+                );
+                if (remove == true && context.mounted) {
+                  await ref.read(offlineNavigationProvider.notifier).clearSavedRoute();
+                }
+              },
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
+              label: const Text('Remove saved route'),
+            ),
+          ]),
           const SizedBox(height: 8),
           Text(
             'Saved ${_shortUtc(package.savedAt)} · ${package.weatherPoints.length} weather samples · no position is uploaded by this feature.',
