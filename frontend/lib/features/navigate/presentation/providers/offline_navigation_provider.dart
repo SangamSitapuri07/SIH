@@ -341,9 +341,12 @@ class OfflineNavigationNotifier extends StateNotifier<OfflineNavigationState> {
     // this gate, projecting a distant browser/desktop fix onto a coastal route
     // can falsely display 100% completed when its nearest point is an endpoint.
     try {
+      // geolocator 12 exposes desiredAccuracy/timeLimit on the one-shot API;
+      // LocationSettings is supported by getPositionStream, not this method.
       final initialPosition = await Geolocator.getCurrentPosition(
-        locationSettings: settings,
-      ).timeout(const Duration(seconds: 20));
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 20),
+      );
       final initialProgress = OfflineNavigationProgress.calculate(
         latitude: initialPosition.latitude,
         longitude: initialPosition.longitude,
