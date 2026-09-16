@@ -48,6 +48,32 @@ class MosdacProvider:
     def credentials_configured(self) -> bool:
         return bool(self.username and self.password)
 
+    def check_access(self) -> Dict[str, Any]:
+        """Validate MOSDAC credentials without downloading a large product."""
+        if not self.credentials_configured:
+            return {
+                "status": "credential_required",
+                "reason": "MOSDAC_USERNAME and MOSDAC_PASSWORD are not configured.",
+            }
+        token_url = "https://mosdac.gov.in/download_api/gettoken"
+        started = datetime.now(timezone.utc)
+        try:
+            response = httpx.post(
+                token_url,
+                json={"username": self.username, "password": self.password},
+                timeout=float(os.getenv("ORCA_PROVIDER_TIMEOUT_SECONDS", "12")),
+                follow_redirects=True,
+            )
+            if response.status_code in (400, 401, 403):
+                return {"status": "authentication_failed", "reason": "MOSDAC rejected the configured credentials."}
+            response.raise_for_status()
+            if not response.json().get("access_token"):
+                return {"status": "authentication_failed", "reason": "MOSDAC returned no access token."}
+            elapsed = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+            return {"status": "connected", "latency_ms": elapsed, "source_url": token_url}
+        except (httpx.HTTPError, ValueError) as exc:
+            return {"status": "unreachable", "reason": f"MOSDAC access check failed: {type(exc).__name__}: {exc}"}
+
     def cache_key(self, spec: DatasetSpec, request: Dict[str, Any]) -> str:
         digest = hashlib.sha256(repr(sorted(request.items())).encode()).hexdigest()[:16]
         request_json = json.dumps(request, sort_keys=True, separators=(",", ":"), default=str)

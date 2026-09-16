@@ -8,8 +8,10 @@ class AdvisoryDto {
   final String? color;
   final String headline;
   final String? headlineHi;
+  final String? headlineTe;
   final List<String> plainEn;
   final List<String> plainHi;
+  final List<String> plainTe;
   final Map<String, dynamic>? safeWindowJson;
   final Map<String, dynamic>? variablesJson;
   final List<dynamic>? hourlyChartJson;
@@ -25,8 +27,10 @@ class AdvisoryDto {
     this.color,
     required this.headline,
     this.headlineHi,
+    this.headlineTe,
     required this.plainEn,
     required this.plainHi,
+    this.plainTe = const [],
     this.safeWindowJson,
     this.variablesJson,
     this.hourlyChartJson,
@@ -66,6 +70,10 @@ class AdvisoryDto {
             ?.map((e) => e.toString())
             .toList() ??
         <String>[];
+    final plainTeList = (json['plain_te'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        <String>[];
     final sourcesList = _sourceNames(json['sources']);
 
     final coverage = json['data_coverage'] as Map<String, dynamic>?;
@@ -76,8 +84,10 @@ class AdvisoryDto {
       color: json['color'] as String?,
       headline: json['headline'] as String? ?? 'Advisory verdict unavailable.',
       headlineHi: json['headline_hi'] as String?,
+      headlineTe: json['headline_te'] as String?,
       plainEn: plainEnList,
       plainHi: plainHiList,
+      plainTe: plainTeList,
       safeWindowJson: json['safe_window'] as Map<String, dynamic>?,
       variablesJson: json['variables'] as Map<String, dynamic>?,
       hourlyChartJson: json['hourly_chart'] as List<dynamic>?,
@@ -159,8 +169,10 @@ class AdvisoryDto {
       colorHex: color ?? '#94a3b8',
       headline: headline,
       headlineHi: headlineHi,
+      headlineTe: headlineTe,
       plainEn: plainEn,
       plainHi: plainHi,
+      plainTe: plainTe,
       safeWindow: parsedSafeWindow,
       variables: parsedVariables,
       hourlyChart: parsedHourly,

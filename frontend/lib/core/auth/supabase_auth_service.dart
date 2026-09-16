@@ -112,7 +112,7 @@ class SupabaseAuthService {
   void _loadLocalSession() {
     try {
       final cachedJson = _cache.get('auth.profile')?.data;
-      if (cachedJson != null && cachedJson is Map<String, dynamic>) {
+      if (cachedJson != null) {
         _currentProfile = UserProfile.fromJson(cachedJson);
       }
     } catch (e) {

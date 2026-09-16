@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/config/api_paths.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/live/live_channel.dart';
+import '../../../../core/network/dio_provider.dart';
+import '../../../../l10n/app_localizations.dart';
 import '../../../../core/offline/connectivity_watcher.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
@@ -22,8 +25,8 @@ import '../widgets/ask_orca_thread.dart';
 /// Ask ORCA workspace: a conversational surface plus a transparent agent
 /// reasoning panel.
 ///
-/// Replies are assembled from `/api/v1/advisory`, `/api/v1/health` and
-/// `/api/v1/reason` responses and are labelled with the evidence class they
+/// Replies use the evidence-grounded `/api/v1/chat` endpoint, with
+/// `/api/v1/advisory`, `/api/v1/health` and `/api/v1/reason` fallbacks and are labelled with the evidence class they
 /// belong to. Agent names and statuses come from the real `/api/v1/agents`
 /// registry; nothing is reported as ready until the backend says so.
 class AiScreen extends ConsumerStatefulWidget {
@@ -36,6 +39,7 @@ class AiScreen extends ConsumerStatefulWidget {
 class _AiScreenState extends ConsumerState<AiScreen> {
   final TextEditingController _controller = TextEditingController();
   final List<OrcaChatEntry> _entries = <OrcaChatEntry>[];
+  bool _asking = false;
 
   static const List<String> _suggestions = <String>[
     'Can I go out today?',
@@ -67,31 +71,65 @@ class _AiScreenState extends ConsumerState<AiScreen> {
     final AgentReasoningResult? reasoning = reasoningState.valueOrNull;
     final SystemHealthSnapshot? health = healthState.valueOrNull;
 
-    void ask(String rawQuestion) {
+    Future<void> ask(String rawQuestion) async {
       final String question = rawQuestion.trim();
-      if (question.isEmpty) return;
-      final OrcaAnswer answer = _answer(
-        question,
-        advisory: advisory,
-        reasoning: reasoning,
-        health: health,
-        online: online,
-        streamLive: streamLive,
-      );
+      if (question.isEmpty || _asking) return;
+      setState(() {
+        _asking = true;
+        _controller.clear();
+      });
+
+      OrcaAnswer answer;
+      if (online) {
+        try {
+          final response = await ref.read(dioProvider).post<Map<String, dynamic>>(
+            ApiPaths.chat,
+            data: <String, dynamic>{
+              'question': question,
+              'latitude': lat,
+              'longitude': lon,
+            },
+          );
+          final payload = response.data;
+          if (payload == null) throw const FormatException('Empty Ask ORCA response');
+          answer = _remoteAnswer(payload);
+        } catch (_) {
+          answer = _answer(
+            question,
+            advisory: advisory,
+            reasoning: reasoning,
+            health: health,
+            online: online,
+            streamLive: streamLive,
+          );
+        }
+      } else {
+        answer = _answer(
+          question,
+          advisory: advisory,
+          reasoning: reasoning,
+          health: health,
+          online: online,
+          streamLive: streamLive,
+        );
+      }
+      if (!mounted) return;
       setState(() {
         _entries.add(OrcaChatEntry(question: question, answer: answer));
-        _controller.clear();
+        _asking = false;
       });
     }
 
     final Widget conversation = AskOrcaThread(
       entries: _entries,
       subject: advisory == null ? null : GeoUtils.formatCoordinate(lat, lon),
-      loading: reasoningState.isLoading && _entries.isNotEmpty && reasoning == null,
+      loading: _asking,
       composer: _Composer(
         controller: _controller,
         suggestions: _suggestions,
-        onSubmit: ask,
+        onSubmit: (String question) {
+          ask(question);
+        },
       ),
     );
 
@@ -102,11 +140,13 @@ class _AiScreenState extends ConsumerState<AiScreen> {
         ref.invalidate(agentRuntimeStatusProvider);
         ref.read(agentsProvider.notifier).fetch(forceRefresh: true);
       },
-      onAskWhy: () => ask('Why this verdict?'),
+      onAskWhy: () {
+        ask('Why this verdict?');
+      },
     );
 
     return OrcaWorkspaceScaffold(
-      title: 'Ask ORCA',
+      title: AppLocalizations.of(context)?.tabAi ?? 'AI Agents',
       subtitle: 'Reasoning, evidence and service status',
       locationLabel: 'Working location',
       coordinateLabel: GeoUtils.formatCoordinate(lat, lon),
@@ -117,11 +157,13 @@ class _AiScreenState extends ConsumerState<AiScreen> {
               ? 'LIVE CHANNEL OPEN'
               : 'DIRECT REQUESTS',
       onRefresh: () async {
+        // Refresh live evidence without starting a heavyweight Ollama pass.
+        // The explicit Run reasoning button remains the only reasoning trigger.
         await Future.wait(<Future<void>>[
-          ref.read(agentsProvider.notifier).fetch(forceRefresh: true),
           ref.read(advisoryProvider.notifier).fetch(forceRefresh: true),
           ref.read(healthProvider.notifier).checkHealth(),
         ]);
+        ref.invalidate(agentRuntimeStatusProvider);
       },
       body: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
@@ -156,6 +198,39 @@ class _AiScreenState extends ConsumerState<AiScreen> {
           );
         },
       ),
+    );
+  }
+
+  OrcaAnswer _remoteAnswer(Map<String, dynamic> payload) {
+    final facts = (payload['facts'] as List<dynamic>? ?? const <dynamic>[])
+        .map((item) => item.toString())
+        .toList();
+    final sources = (payload['sources'] as List<dynamic>? ?? const <dynamic>[])
+        .map((item) => item is Map<String, dynamic>
+            ? item['name']?.toString()
+            : item.toString())
+        .whereType<String>()
+        .where((name) => name.isNotEmpty)
+        .toList();
+    final explanation = payload['explanation']?.toString().trim();
+    final providerState = payload['provider_state']?.toString() ?? 'UNAVAILABLE';
+    final model = payload['model']?.toString();
+    return OrcaAnswer(
+      kind: explanation != null && explanation.isNotEmpty
+          ? OrcaAnswerKind.reasoning
+          : OrcaAnswerKind.deterministic,
+      title: '${payload['title'] ?? 'ORCA evidence answer'} · ${payload['verdict'] ?? 'UNVERIFIED'}',
+      lines: facts,
+      chips: <String>[
+        providerState.replaceAll('_', ' '),
+        if (model != null && model.isNotEmpty) model,
+      ],
+      optionalExplanation: explanation == null || explanation.isEmpty ? null : explanation,
+      optionalExplanationLabel: 'OPTIONAL OLLAMA EXPLANATION',
+      source: sources.isEmpty
+          ? 'POST /api/v1/chat · deterministic ORCA evidence'
+          : sources.join(' · '),
+      timeLabel: 'Answer generated for the displayed working coordinate',
     );
   }
 
@@ -437,14 +512,14 @@ class _Composer extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Row(
+            const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const Icon(Icons.info_outline_rounded, size: 14, color: VerdictColors.stale),
-                const SizedBox(width: 6),
+                Icon(Icons.info_outline_rounded, size: 14, color: VerdictColors.stale),
+                SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'Replies quote ORCA Box responses and are labelled deterministic result, provider evidence or agent evidence. Free-form generative chat is not enabled on this deployment.',
+                    'Questions go to the ORCA Box. Ollama may explain the live evidence when idle; deterministic marine facts are always returned and remain the safety authority.',
                     style: OrcaType.caption,
                   ),
                 ),

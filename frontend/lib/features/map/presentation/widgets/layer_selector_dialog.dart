@@ -64,7 +64,7 @@ class LayerSelectorDialog extends StatelessWidget {
                   ],
                 ),
                 value: enabled && interactive,
-                activeColor: OrcaTheme.accent,
+                activeThumbColor: OrcaTheme.accent,
                 onChanged: interactive
                     ? (value) {
                         final next = {...selectedIds};

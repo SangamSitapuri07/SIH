@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
 import '../../../../core/widgets/orca_ui.dart';
-import '../../domain/entities/route_advisory.dart';
 import '../../domain/entities/route_check.dart';
 
 /// Route result surface driven strictly by the backend response.
@@ -69,7 +68,6 @@ class RouteVerdictCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String level = advisory.level.toUpperCase();
     final bool verified = advisory.landVerified;
     final OrcaDataState state = verified
         ? (advisory.pointsKnown == 0 ? OrcaDataState.unavailable : OrcaDataState.current)

@@ -6,13 +6,42 @@ from data_providers import DataProvidersEngine
 
 
 class RouteAndForecastTests(unittest.TestCase):
-    def test_land_crossing_does_not_fabricate_detour(self):
-        provider = DataProvidersEngine()
+    def test_long_direct_route_is_weather_sampled_by_distance(self):
+        samples = routes_v1._sample_route_geometry(
+            [[18.92, 72.20], [15.30, 72.20]], max_spacing_km=40.0
+        )
+
+        self.assertGreater(len(samples), 2)
+        self.assertEqual(samples[0][0], [18.92, 72.20])
+        self.assertEqual(samples[-1][0], [15.30, 72.20])
+        gaps = [later[1] - earlier[1] for earlier, later in zip(samples, samples[1:])]
+        self.assertTrue(all(0 < gap <= 40.0001 for gap in gaps))
+        self.assertAlmostEqual(samples[-1][1], 402.5, delta=0.2)
+
+    def test_distance_sampling_follows_multi_leg_geometry(self):
+        samples = routes_v1._sample_route_geometry(
+            [[0.0, 0.0], [0.0, 1.0], [1.0, 1.0]], max_spacing_km=50.0
+        )
+
+        self.assertEqual(samples[0], ([0.0, 0.0], 0.0))
+        self.assertEqual(samples[-1][0], [1.0, 1.0])
+        self.assertTrue(all(
+            later[1] - earlier[1] <= 50.0001
+            for earlier, later in zip(samples, samples[1:])
+        ))
+        # A sample after the corner must continue up the second leg rather
+        # than interpolating directly between route endpoints.
+        self.assertTrue(any(point[1] == 1.0 and point[0] > 0 for point, _ in samples))
+
+    def test_invalid_operator_boundary_fails_closed(self):
+        with patch.dict("os.environ", {"ORCA_BOUNDARY_GEOJSON": "/missing/boundary.geojson"}, clear=True):
+            provider = DataProvidersEngine()
         result = provider.verify_route(22.1, 71.0, 22.2, 71.1)
-        self.assertTrue(result["land_hit"])
-        self.assertIsNone(result["detour"])
-        self.assertEqual(result["legs"], [[22.1, 71.0], [22.2, 71.1]])
-        self.assertIn("No verified marine detour", result["reason"])
+        self.assertIsNone(result["ok"])
+        self.assertIsNone(result["land_hit"])
+        self.assertFalse(result["detour"])
+        self.assertEqual(result["status"], "BOUNDARY_UNVERIFIED")
+        self.assertIn("No such file", result["reason"])
 
     def test_route_advisory_marks_missing_live_point_unverified(self):
         class Provider:
@@ -24,10 +53,13 @@ class RouteAndForecastTests(unittest.TestCase):
                     "distance_nm": 0.5,
                     "bearing_deg": 90.0,
                     "legs": [[from_lat, from_lon], [to_lat, to_lon]],
-                    "detour": None,
+                    "detour": False,
+                    "reason": "Test route geometry verified.",
+                    "status": "ROUTE_GEOMETRY_VERIFIED",
+                    "regulatory_verified": True,
                 }
 
-            def fetch_zone_snapshot(self, lat, lon, include_gfw=False):
+            def fetch_zone_snapshot(self, lat, lon, include_gfw=False, include_secondary=True):
                 return {"error": True, "reason": "upstream unavailable"}
 
         with patch.object(routes_v1, "providers", Provider()):
@@ -65,7 +97,7 @@ class RouteAndForecastTests(unittest.TestCase):
                 }
 
         class Agent:
-            def run_collaborative_reasoning(self, snapshot):
+            def deterministic_advisory(self, snapshot):
                 return {
                     "verdict": "GOOD",
                     "headline_en": "Conditions acceptable",
@@ -73,6 +105,7 @@ class RouteAndForecastTests(unittest.TestCase):
                     "headline_te": "",
                     "plain_en": "",
                     "plain_hi": "",
+                    "plain_te": "",
                     "agents": [],
                     "data_coverage": {},
                 }

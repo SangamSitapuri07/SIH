@@ -25,7 +25,10 @@ class AgentsRepositoryImpl implements AgentsRepository {
     required double lon,
     bool forceRefresh = false,
   }) async {
-    final cacheKey = 'reason_${lat.toStringAsFixed(2)}_${lon.toStringAsFixed(2)}';
+    // v2 invalidates traces produced by the former six-request implementation;
+    // those payloads had incomparable per-agent durations and no synthesis
+    // owner/timestamp.
+    final cacheKey = 'reason_v2_${lat.toStringAsFixed(2)}_${lon.toStringAsFixed(2)}';
     final cached = _cacheService.get(cacheKey);
 
     if (!forceRefresh && cached != null && !cached.isExpired) {

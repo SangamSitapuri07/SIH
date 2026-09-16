@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/live/live_channel.dart';
+import '../../../../l10n/app_localizations.dart';
 import '../../../../core/offline/connectivity_watcher.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
@@ -38,7 +39,7 @@ class MarineAdvisoryScreen extends ConsumerWidget {
     final double lon = coords['lon'] ?? AppConfig.defaultLon;
 
     return OrcaWorkspaceScaffold(
-      title: 'Safety advisory',
+      title: AppLocalizations.of(context)?.canIGoTitle ?? 'Safety advisory',
       subtitle: 'Deterministic verdict and evidence',
       locationLabel: 'Working location',
       coordinateLabel: GeoUtils.formatCoordinate(lat, lon),
@@ -68,7 +69,7 @@ class MarineAdvisoryScreen extends ConsumerWidget {
                     ),
                   ),
                 ...advisoryState.when(
-                  loading: () => <Widget>[_LoadingState()],
+                  loading: () => <Widget>[const _LoadingState()],
                   error: (Object? error, StackTrace? stack) => <Widget>[
                     OrcaUnavailable(
                       icon: Icons.cloud_off_outlined,

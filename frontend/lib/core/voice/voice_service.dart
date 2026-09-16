@@ -20,7 +20,7 @@ class VoiceService {
     debugPrint('[VoiceService] Speaking advisory in [$lang]: $_currentlySpokenText');
 
     // Simulate audio playback duration
-    await Future.delayed(const Duration(seconds: 4));
+    await Future<void>.delayed(const Duration(seconds: 4));
     _isPlaying = false;
     _currentlySpokenText = null;
   }

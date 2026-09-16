@@ -92,7 +92,7 @@ class AdvisoryProvenanceCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
-            Text(
+            const Text(
               'Values these sources own are shown as unavailable — ORCA does not substitute estimates.',
               style: OrcaType.caption,
             ),

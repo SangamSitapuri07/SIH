@@ -47,6 +47,7 @@ class TransitPoint {
   final double? lon;
   final double? waveM;
   final double? windKn;
+  final double? gustKn;
   final String state; // good, caution, danger
   final String why;
 
@@ -56,6 +57,7 @@ class TransitPoint {
     required this.lon,
     required this.waveM,
     required this.windKn,
+    required this.gustKn,
     required this.state,
     required this.why,
   });

@@ -1,5 +1,4 @@
 import '../../../../core/result/result.dart';
-import '../entities/route_advisory.dart';
 import '../entities/route_check.dart';
 
 /// Contract for navigation route checks and transit verdicts (§10).

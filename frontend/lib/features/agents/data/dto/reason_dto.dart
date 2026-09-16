@@ -92,9 +92,9 @@ class ReasonDto {
           final agentClass = rawClass.toUpperCase().contains('LLM')
               ? 'LLM'
               : 'DETERMINISTIC';
-          final rawVerdict = a['verdict'] as String?;
-          final verdict = rawVerdict ??
-              (rawStatus == 'completed' ? 'good' : 'unavailable');
+          // Completion is an execution state, not a safety verdict. Only show
+          // a verdict when that specific agent explicitly returned one.
+          final verdict = a['verdict'] as String?;
 
           parsedAgents.add(
             AgentTraceFinding(
