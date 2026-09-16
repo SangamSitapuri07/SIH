@@ -54,10 +54,12 @@ void main() {
         data: {
           'verdict': 'caution',
           'headline': 'Cached previous advisory',
-          'plain_en': [],
-          'plain_hi': [],
-          'sources': [],
-          'data_coverage': {'known': 3, 'total': 4, 'sources_failed': []},
+          'plain_en': <String>[],
+          'plain_hi': <String>[],
+          'sources': <String>[],
+          'data_coverage': <String, dynamic>{
+            'known': 3, 'total': 4, 'sources_failed': <String>[],
+          },
         },
         fetchedAt: DateTime.now().subtract(const Duration(hours: 4)),
         ttl: const Duration(minutes: 30),

@@ -90,8 +90,8 @@ class AgentReasoningPanel extends ConsumerWidget {
           ],
           data: (AgentReasoningResult data) => <Widget>[
             if (llmFailed)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
                 child: OrcaNotice(
                   icon: Icons.memory_rounded,
                   title: 'Deterministic fallback in use.',

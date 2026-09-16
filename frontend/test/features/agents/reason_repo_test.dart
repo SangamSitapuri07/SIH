@@ -24,7 +24,7 @@ void main() {
             'verdict': 'good',
             'summary': '7 of 8 datasets passed QC gates.',
             'evidence': ['Open-Meteo range: OK'],
-            'warnings': []
+            'warnings': <String>[]
           },
           {
             'agent_id': 'marine_risk',

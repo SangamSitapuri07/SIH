@@ -75,7 +75,7 @@ class InfoScreen extends ConsumerWidget {
                 title: 'Provider health',
                 subtitle: health == null
                     ? 'The ORCA Box health endpoint did not answer'
-                    : 'Status, latency and last observation reported by ${baseUrl}',
+                    : 'Status, latency and last observation reported by $baseUrl',
                 actionLabel: 'Re-check',
                 onAction: () => ref.read(healthProvider.notifier).checkHealth(probe: true),
               ),
@@ -358,7 +358,7 @@ class _LanguageCard extends StatelessWidget {
             const OrcaEyebrow('LANGUAGE', color: OrcaTheme.textMuted),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              value: language,
+              initialValue: language,
               decoration: const InputDecoration(labelText: 'Interface language'),
               items: orcaLanguages
                   .map((OrcaLanguageOption option) => DropdownMenuItem<String>(

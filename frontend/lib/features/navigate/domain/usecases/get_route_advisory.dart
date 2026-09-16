@@ -1,5 +1,4 @@
 import '../../../../core/result/result.dart';
-import '../entities/route_advisory.dart';
 import '../entities/route_check.dart';
 import '../repositories/navigate_repo.dart';
 

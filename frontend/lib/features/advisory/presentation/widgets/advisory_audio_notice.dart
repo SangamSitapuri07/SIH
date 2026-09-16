@@ -33,10 +33,10 @@ class AdvisoryAudioNotice extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
+          const Row(
             children: <Widget>[
-              const Expanded(child: OrcaEyebrow('SPOKEN ADVISORY', color: OrcaTheme.textMuted)),
-              const OrcaStateChip(state: OrcaDataState.unavailable, overrideLabel: 'AUDIO UNAVAILABLE'),
+              Expanded(child: OrcaEyebrow('SPOKEN ADVISORY', color: OrcaTheme.textMuted)),
+              OrcaStateChip(state: OrcaDataState.unavailable, overrideLabel: 'AUDIO UNAVAILABLE'),
             ],
           ),
           const SizedBox(height: 8),

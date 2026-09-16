@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';

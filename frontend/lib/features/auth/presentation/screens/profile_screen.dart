@@ -125,7 +125,7 @@ class ProfileScreen extends ConsumerWidget {
               borderRadius: BorderRadius.circular(12),
               side: const BorderSide(color: OrcaTheme.cardBorder),
             ),
-            activeColor: OrcaTheme.accent,
+            activeThumbColor: OrcaTheme.accent,
           ),
           const SizedBox(height: 8),
           SwitchListTile(
@@ -138,7 +138,7 @@ class ProfileScreen extends ConsumerWidget {
               borderRadius: BorderRadius.circular(12),
               side: const BorderSide(color: OrcaTheme.cardBorder),
             ),
-            activeColor: OrcaTheme.accent,
+            activeThumbColor: OrcaTheme.accent,
           ),
           const SizedBox(height: 20),
           const OrcaSectionHeader(

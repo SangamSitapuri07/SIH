@@ -65,7 +65,9 @@ class AgentRuntimeStatus {
 final agentRuntimeStatusProvider = FutureProvider<List<AgentRuntimeStatus>>((ref) async {
   final response = await ref.watch(dioProvider).get<dynamic>(ApiPaths.agents);
   final data = response.data;
-  final list = data is Map<String, dynamic> ? data['agents'] as List<dynamic>? ?? const [] : const [];
+  final List<dynamic> list = data is Map<String, dynamic>
+      ? data['agents'] as List<dynamic>? ?? const <dynamic>[]
+      : const <dynamic>[];
   return list.whereType<Map<String, dynamic>>().map((agent) {
     final id = agent['id']?.toString();
     if (id == null) throw const FormatException('Agent registry entry missing id.');

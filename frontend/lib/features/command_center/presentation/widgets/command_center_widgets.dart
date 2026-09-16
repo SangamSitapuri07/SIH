@@ -422,7 +422,7 @@ class CommandCenterConditionsCard extends ConsumerWidget {
             isOffline: !online,
             isCached: conditions?.isCached ?? false,
           );
-    final String? caption = switch (tileState) {
+    final String caption = switch (tileState) {
       OrcaDataState.loading => 'Loading…',
       OrcaDataState.offline => 'Offline — cached value unavailable',
       OrcaDataState.unavailable => 'Not provided by any connected source',
@@ -873,7 +873,7 @@ class CommandCenterWindowCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             hasWindow
-                ? '${_clock(window!.from)}–${_clock(window!.to)} IST'
+                ? '${_clock(window.from)}–${_clock(window.to)} IST'
                 : 'No qualifying departure window',
             style: OrcaType.cardTitle.copyWith(fontSize: 19),
           ),
@@ -882,7 +882,7 @@ class CommandCenterWindowCard extends StatelessWidget {
             _subtitle(window, hasWindow, advisory),
             style: OrcaType.body.copyWith(fontSize: 12.5),
           ),
-          if (hasWindow && (window!.maxWaveM != null || window.maxWindKn != null || window.maxGustKn != null)) ...<Widget>[
+          if (hasWindow && (window.maxWaveM != null || window.maxWindKn != null || window.maxGustKn != null)) ...<Widget>[
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -937,7 +937,7 @@ class CommandCenterWindowCard extends StatelessWidget {
     }
     final String quality = window.quality == null ? '' : ' · engine quality ${window.quality}';
     if (window.hoursRemaining != null) {
-      return '${window.hoursRemaining!.toStringAsFixed(0)} hours of usable conditions${quality}.';
+      return '${window.hoursRemaining!.toStringAsFixed(0)} hours of usable conditions$quality.';
     }
     return 'Computed by the deterministic engine from the returned forecast$quality.';
   }

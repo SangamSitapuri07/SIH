@@ -438,11 +438,11 @@ class _Composer extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Row(
+            const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const Icon(Icons.info_outline_rounded, size: 14, color: VerdictColors.stale),
-                const SizedBox(width: 6),
+                Icon(Icons.info_outline_rounded, size: 14, color: VerdictColors.stale),
+                SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     'Replies quote ORCA Box responses and are labelled deterministic result, provider evidence or agent evidence. Free-form generative chat is not enabled on this deployment.',

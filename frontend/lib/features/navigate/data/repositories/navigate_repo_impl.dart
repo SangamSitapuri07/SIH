@@ -1,7 +1,6 @@
 import 'package:dio/dio.dart';
 import '../../../../core/result/app_failure.dart';
 import '../../../../core/result/result.dart';
-import '../../domain/entities/route_advisory.dart';
 import '../../domain/entities/route_check.dart';
 import '../../domain/repositories/navigate_repo.dart';
 import '../datasources/navigate_remote.dart';

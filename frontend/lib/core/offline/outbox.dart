@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,7 +30,7 @@ class OutboxItem {
   factory OutboxItem.fromJson(Map<String, dynamic> json) => OutboxItem(
         id: json['id'] as String,
         path: json['path'] as String,
-        payload: Map<String, dynamic>.from(json['payload'] as Map),
+        payload: Map<String, dynamic>.from(json['payload'] as Map<String, dynamic>),
         createdAt: DateTime.parse(json['created_at'] as String),
       );
 }
@@ -55,9 +54,9 @@ class OutboxNotifier extends StateNotifier<List<OutboxItem>> {
   Future<void> _restore() async {
     final record = _cache.get('outbox.pending');
     final items = record?.data['items'];
-    if (items is List) {
+    if (items is List<dynamic>) {
       state = items
-          .whereType<Map>()
+          .whereType<Map<String, dynamic>>()
           .map((item) => OutboxItem.fromJson(Map<String, dynamic>.from(item)))
           .toList();
     }

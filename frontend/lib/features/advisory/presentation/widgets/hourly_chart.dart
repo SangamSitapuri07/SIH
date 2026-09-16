@@ -40,10 +40,10 @@ class HourlyChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
+          const Row(
             children: <Widget>[
-              const Expanded(child: OrcaEyebrow('FORECAST EVIDENCE', color: OrcaTheme.textMuted)),
-              const OrcaStateChip(state: OrcaDataState.forecast),
+              Expanded(child: OrcaEyebrow('FORECAST EVIDENCE', color: OrcaTheme.textMuted)),
+              OrcaStateChip(state: OrcaDataState.forecast),
             ],
           ),
           const SizedBox(height: 8),
@@ -70,7 +70,7 @@ class HourlyChart extends StatelessWidget {
                         dashArray: <int>[4, 4],
                       );
                     }
-                    return FlLine(color: OrcaTheme.cardBorder, strokeWidth: 1);
+                    return const FlLine(color: OrcaTheme.cardBorder, strokeWidth: 1);
                   },
                 ),
                 titlesData: FlTitlesData(
@@ -146,10 +146,10 @@ class HourlyChart extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          Wrap(
+          const Wrap(
             spacing: 14,
             runSpacing: 6,
-            children: const <Widget>[
+            children: <Widget>[
               _LegendDot(label: 'Wave height (m)', color: VerdictColors.info),
               _LegendDot(label: 'Wind (kn ÷ 10)', color: VerdictColors.caution),
               _LegendDot(label: '2.5 m caution limit', color: VerdictColors.caution),

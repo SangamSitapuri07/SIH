@@ -69,7 +69,7 @@ class MarineAdvisoryScreen extends ConsumerWidget {
                     ),
                   ),
                 ...advisoryState.when(
-                  loading: () => <Widget>[_LoadingState()],
+                  loading: () => <Widget>[const _LoadingState()],
                   error: (Object? error, StackTrace? stack) => <Widget>[
                     OrcaUnavailable(
                       icon: Icons.cloud_off_outlined,

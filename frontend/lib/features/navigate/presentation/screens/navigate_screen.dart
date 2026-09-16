@@ -94,7 +94,7 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
             children: <Widget>[
               const OrcaEyebrow('TRIP PLANNING', color: OrcaTheme.accentDark),
               const SizedBox(height: 6),
-              Text('Know the route before you cast off.', style: OrcaType.displayCompact),
+              const Text('Know the route before you cast off.', style: OrcaType.displayCompact),
               const SizedBox(height: 8),
               Text(
                 'Enter departure and destination coordinates. ORCA samples the real marine inputs along the leg and reports land clearance only when a verified land-mask source answers.',
@@ -721,11 +721,11 @@ class _OfflineTripPlannerState extends ConsumerState<_OfflineTripPlanner> {
         const SizedBox(height: 6),
         const Text('Pre-analyse the full fishing area', style: OrcaType.cardTitle),
         const SizedBox(height: 5),
-        Text('Downloads an hour-by-hour area forecast before departure and saves it on this device.', style: OrcaType.caption),
+        const Text('Downloads an hour-by-hour area forecast before departure and saves it on this device.', style: OrcaType.caption),
         const SizedBox(height: 12),
         Row(children: <Widget>[
           Expanded(child: DropdownButtonFormField<int>(
-            value: _days,
+            initialValue: _days,
             decoration: const InputDecoration(labelText: 'Trip duration'),
             items: const <DropdownMenuItem<int>>[
               DropdownMenuItem(value: 1, child: Text('1 day')),
@@ -739,7 +739,7 @@ class _OfflineTripPlannerState extends ConsumerState<_OfflineTripPlanner> {
         ]),
         const SizedBox(height: 10),
         DropdownButtonFormField<int>(
-          value: _departureOffsetHours,
+          initialValue: _departureOffsetHours,
           decoration: const InputDecoration(labelText: 'Planned departure'),
           items: const <DropdownMenuItem<int>>[
             DropdownMenuItem(value: 0, child: Text('Now')),
@@ -763,7 +763,7 @@ class _OfflineTripPlannerState extends ConsumerState<_OfflineTripPlanner> {
           Expanded(child: TextField(controller: _speed, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Cruise speed (kn)'))),
           const SizedBox(width: 10),
           Expanded(child: DropdownButtonFormField<String>(
-            value: _experience,
+            initialValue: _experience,
             decoration: const InputDecoration(labelText: 'Experience'),
             items: const <DropdownMenuItem<String>>[
               DropdownMenuItem(value: 'unspecified', child: Text('Not specified')),
@@ -811,7 +811,7 @@ class _OfflineTripPlannerState extends ConsumerState<_OfflineTripPlanner> {
         ),
         if (widget.area == null) ...<Widget>[
           const SizedBox(height: 8),
-          Text('Select a planned area on the map first.', style: OrcaType.caption),
+          const Text('Select a planned area on the map first.', style: OrcaType.caption),
         ],
         if (plan != null) ...<Widget>[
           const SizedBox(height: 14),

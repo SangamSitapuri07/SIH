@@ -268,7 +268,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             if (pfz?.valueOrNull != null)
               PolylineLayer(polylines: _pfzPolylines(pfz!.valueOrNull!)),
             MarkerLayer(markers: markers),
-            RichAttributionWidget(
+            const RichAttributionWidget(
               attributions: <SourceAttribution>[
                 TextSourceAttribution('© OpenStreetMap contributors'),
               ],
@@ -993,9 +993,9 @@ class _FieldProvenance extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Row(
+                    const Row(
                       children: <Widget>[
-                        const Expanded(child: OrcaEyebrow('PFZ GEOMETRY', color: OrcaTheme.textMuted)),
+                        Expanded(child: OrcaEyebrow('PFZ GEOMETRY', color: OrcaTheme.textMuted)),
                         OrcaStateChip(state: OrcaDataState.current),
                       ],
                     ),
@@ -1079,7 +1079,7 @@ class _FieldProvenance extends StatelessWidget {
                 OrcaProvenance(timeLabel: field.resolution),
               ],
               const SizedBox(height: 2),
-              OrcaProvenance(timeLabel: 'Wind threshold colouring follows ORCA limits: 20 kn caution, 34 kn danger.'),
+              const OrcaProvenance(timeLabel: 'Wind threshold colouring follows ORCA limits: 20 kn caution, 34 kn danger.'),
             ],
           ),
         );
@@ -1180,11 +1180,11 @@ class _AttributionNote extends StatelessWidget {
   const _AttributionNote();
 
   @override
-  Widget build(BuildContext context) => Row(
+  Widget build(BuildContext context) => const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Icon(Icons.copyright_rounded, size: 13, color: OrcaTheme.textMuted),
-          const SizedBox(width: 6),
+          Icon(Icons.copyright_rounded, size: 13, color: OrcaTheme.textMuted),
+          SizedBox(width: 6),
           Expanded(
             child: Text(
               'Base chart data © OpenStreetMap contributors. Marine values are point-sampled model fields returned by this ORCA Box — never interpolated or substituted.',

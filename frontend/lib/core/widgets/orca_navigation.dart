@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../cache/cache_service.dart';
 import '../live/live_channel.dart';
 import '../localization/language_options.dart';
-import '../network/dio_provider.dart';
 import '../offline/connectivity_watcher.dart';
 import '../theme/orca_theme.dart';
 import '../theme/verdict_colors.dart';
@@ -214,7 +213,6 @@ class OrcaSidebar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bool online = ref.watch(isOnlineProvider);
-    final String baseUrl = ref.watch(baseUrlProvider);
 
     final bool compact = MediaQuery.sizeOf(context).width < OrcaTheme.compactBreakpoint;
     return Container(
@@ -227,13 +225,13 @@ class OrcaSidebar extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 26, 16, 22),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 26, 16, 22),
               child: Row(
                 children: <Widget>[
-                  const OrcaBrandMark(),
-                  const SizedBox(width: 10),
-                  const Text.rich(
+                  OrcaBrandMark(),
+                  SizedBox(width: 10),
+                  Text.rich(
                     TextSpan(
                       text: 'ORCA',
                       children: <InlineSpan>[
@@ -404,7 +402,7 @@ class OrcaMobileNavBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    int selectedIndex = _tabs.indexWhere((OrcaDestination d) => location.startsWith(d.path));
+    final int selectedIndex = _tabs.indexWhere((OrcaDestination d) => location.startsWith(d.path));
     final bool moreSelected = selectedIndex < 0;
 
     return Container(
@@ -716,7 +714,7 @@ class OrcaContextBar extends ConsumerWidget {
           ),
           if (stateLabel != null) ...<Widget>[
             const SizedBox(width: 10),
-            Text('·', style: OrcaType.caption),
+            const Text('·', style: OrcaType.caption),
             const SizedBox(width: 10),
             Text(
               stateLabel!,

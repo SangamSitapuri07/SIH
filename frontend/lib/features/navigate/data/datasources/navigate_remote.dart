@@ -1,7 +1,6 @@
 import 'package:dio/dio.dart';
 import '../../../../core/config/api_paths.dart';
 import '../../../../core/config/app_config.dart';
-import '../dto/route_advisory_dto.dart';
 import '../dto/route_check_dto.dart';
 
 /// Remote datasource for Route navigation endpoints (/api/v1/route-check, /api/v1/route-advisory).

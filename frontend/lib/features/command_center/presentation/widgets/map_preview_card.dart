@@ -125,7 +125,7 @@ class CommandCenterMapPreview extends ConsumerWidget {
                           ),
                         ],
                       ),
-                      RichAttributionWidget(
+                      const RichAttributionWidget(
                         attributions: <SourceAttribution>[
                           TextSourceAttribution('© OpenStreetMap contributors'),
                         ],
@@ -186,7 +186,7 @@ class CommandCenterMapPreview extends ConsumerWidget {
               child: Center(
                 child: Text(
                   '${value.toStringAsFixed(value.abs() < 10 ? 1 : 0)}$unit',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
                     color: OrcaTheme.textPrimary,

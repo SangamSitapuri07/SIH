@@ -130,11 +130,11 @@ class ProbeInspector extends StatelessWidget {
           ),
           if (snapshot.sourcesFailed.isNotEmpty) ...<Widget>[
             const SizedBox(height: 6),
-            Row(
+            const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const Icon(Icons.error_outline_rounded, size: 14, color: VerdictColors.caution),
-                const SizedBox(width: 6),
+                Icon(Icons.error_outline_rounded, size: 14, color: VerdictColors.caution),
+                SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     'Missing values above are not estimates: the provider did not return them.',
