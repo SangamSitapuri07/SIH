@@ -13,7 +13,7 @@ Design rules:
   2. Marine Risk Agent (Agent 10) is ALWAYS deterministic; Ollama NEVER touches safety thresholds.
   3. All prompts are structured and bounded — no open-ended generation.
   4. One bounded request may include model cold-start time. The timeout is
-     configurable via OLLAMA_TIMEOUT_S (default 60 s, minimum 15 s).
+     configurable via OLLAMA_TIMEOUT_S (default 75 s, minimum 15 s).
 """
 
 import os
@@ -29,9 +29,9 @@ logger = logging.getLogger("orca.ollama")
 
 _DEFAULT_HOST = "http://localhost:11434"
 _DEFAULT_MODEL = "qwen3:8b"
-_DEFAULT_TIMEOUT = 60.0  # bounded optional explanation; safety never waits on this
+_DEFAULT_TIMEOUT = 75.0  # CPU-only Qwen3:8b commonly needs about 45 seconds
 _MIN_TIMEOUT = 15.0
-_INTEGRATION_VERSION = "role-lines-v4-no-think"
+_INTEGRATION_VERSION = "role-lines-v5-cpu-bounded"
 
 class OllamaClient:
     """
@@ -225,20 +225,23 @@ class OllamaClient:
                 return response_text if response_text else None
 
             except httpx.TimeoutException:
-                # Do not let several queued requests each consume a full cold-
-                # start timeout. One timeout opens a short circuit-breaker;
-                # deterministic safety output remains immediately available.
-                self._cooldown_until = time.monotonic() + 60.0
+                # A short interactive chat timeout must never poison the next
+                # explicit reasoning pass. Only a queued/heavy reasoning call
+                # opens a brief breaker; non-blocking chat remains independent.
+                cooldown_s = 15 if wait_for_slot else 0
+                if cooldown_s:
+                    self._cooldown_until = time.monotonic() + cooldown_s
                 self._record_generation({
                     "status": "timeout",
                     "timeout_s": effective_timeout,
-                    "cooldown_s": 60,
+                    "cooldown_s": cooldown_s,
                 })
                 logger.warning(
                     "[Ollama] Generation timed out after %.1fs at %s. The server is reachable; "
-                    "use a smaller OLLAMA_MODEL or raise OLLAMA_TIMEOUT_S. A 60s cooldown is active.",
+                    "use a smaller OLLAMA_MODEL or raise the caller timeout. Cooldown=%ss.",
                     effective_timeout,
                     self.host,
+                    cooldown_s,
                 )
                 # A generation timeout does not mean the server disconnected.
                 return None

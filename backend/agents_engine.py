@@ -214,8 +214,8 @@ class MultiAgentEngine:
                     "/no_think\nAnalyse the supplied ORCA evidence for all six roles. Return exactly six "
                     "plain lines in this format: ROLE_ID | short evidence-bound finding. "
                     "Use these ROLE_IDs once each: ocean_analysis, satellite_analysis, "
-                    "weather_hazard, marine_ecology, fisheries_pfz, orchestrator. "
-                    "Do not invent measurements, sources, times, confidence, catch likelihood, "
+                    "weather_hazard, marine_ecology, fisheries_pfz, orchestrator. Keep each "
+                    "finding to at most 16 words. Do not invent measurements, sources, times, confidence, catch likelihood, "
                     "or safety verdicts. Say evidence is insufficient when needed.\n"
                     f"ROLE_EVIDENCE={json.dumps(evidence_payload, ensure_ascii=False)}"
                 ),
@@ -224,8 +224,8 @@ class MultiAgentEngine:
                     "Marine Risk engine owns the verdict and your output cannot change it."
                 ),
                 temperature=0.1,
-                max_tokens=180,
-                timeout_s=60.0,
+                max_tokens=144,
+                timeout_s=75.0,
             )
         elapsed_ms = int((time.monotonic() - started) * 1000)
 
