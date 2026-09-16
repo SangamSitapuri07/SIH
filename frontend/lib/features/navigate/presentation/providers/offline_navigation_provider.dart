@@ -58,7 +58,7 @@ class OfflineRoutePackage {
       boundaryReason: json['boundary_reason']?.toString() ?? 'Boundary evidence unavailable.',
       advisoryLevel: json['advisory_level']?.toString() ?? 'UNVERIFIED',
       weatherPoints: (json['weather_points'] as List<dynamic>? ?? const <dynamic>[])
-          .whereType<Map>()
+          .whereType<Map<String, dynamic>>()
           .map((item) => Map<String, dynamic>.from(item))
           .toList(),
       sources: (json['sources'] as List<dynamic>? ?? const <dynamic>[])
@@ -234,7 +234,7 @@ class OfflineNavigationNotifier extends StateNotifier<OfflineNavigationState> {
 
   Future<void> saveTripPackage(Map<String, dynamic> plan) async {
     final navigation = plan['offline_navigation'];
-    if (navigation is! Map || navigation['ok'] != true) return;
+    if (navigation is! Map<String, dynamic> || navigation['ok'] != true) return;
     final geometry = (navigation['geometry'] as List<dynamic>? ?? const <dynamic>[])
         .whereType<List<dynamic>>()
         .map((point) => point.map((value) => (value as num).toDouble()).toList())

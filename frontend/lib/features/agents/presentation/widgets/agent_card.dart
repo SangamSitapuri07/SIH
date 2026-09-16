@@ -106,7 +106,7 @@ class AgentCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      finding.verdict.toUpperCase(),
+                      finding.verdict?.toUpperCase() ?? 'NO VERDICT',
                       style: TextStyle(
                         color: verdictColor,
                         fontSize: 10,

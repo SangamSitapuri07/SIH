@@ -74,13 +74,13 @@ class TripPlanNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> 
   }
 
   static dynamic _canonicalize(dynamic value) {
-    if (value is Map) {
+    if (value is Map<String, dynamic>) {
       final keys = value.keys.map((key) => key.toString()).toList()..sort();
       return <String, dynamic>{
         for (final key in keys) key: _canonicalize(value[key]),
       };
     }
-    if (value is List) return value.map(_canonicalize).toList();
+    if (value is List<dynamic>) return value.map(_canonicalize).toList();
     return value;
   }
 

@@ -7,6 +7,7 @@ import '../../../../core/config/app_config.dart';
 import '../../../../core/offline/connectivity_watcher.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../../core/theme/orca_theme.dart';
+import '../../../../core/theme/verdict_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/widgets/orca_navigation.dart';
 import '../../../../core/widgets/orca_ui.dart';
@@ -606,13 +607,13 @@ class _OfflineNavigationCard extends ConsumerWidget {
               const SizedBox(height: 10),
               const Text(
                 'OFF-ROUTE WARNING · Vessel is more than 2 km from the downloaded route. Slow down, verify position/chart and return to the saved route only when safe.',
-                style: TextStyle(color: VerdictColors.danger, fontWeight: FontWeight.w800, fontSize: 11.5, height: 1.4),
+                style: TextStyle(color: VerdictColors.noGo, fontWeight: FontWeight.w800, fontSize: 11.5, height: 1.4),
               ),
             ],
           ],
           if (state.error != null) ...<Widget>[
             const SizedBox(height: 9),
-            Text(state.error!, style: OrcaType.caption.copyWith(color: VerdictColors.danger)),
+            Text(state.error!, style: OrcaType.caption.copyWith(color: VerdictColors.noGo)),
           ],
           const SizedBox(height: 12),
           ElevatedButton.icon(
@@ -636,10 +637,10 @@ class _OfflineNavigationCard extends ConsumerWidget {
     DateTime now, Map<String, dynamic>? plan,
   ) {
     final raw = plan?['timeline'];
-    if (raw is! List) return null;
+    if (raw is! List<dynamic>) return null;
     Map<String, dynamic>? firstFuture;
     Map<String, dynamic>? latestPast;
-    for (final item in raw.whereType<Map>()) {
+    for (final item in raw.whereType<Map<String, dynamic>>()) {
       final mapped = Map<String, dynamic>.from(item);
       final validAt = DateTime.tryParse(mapped['valid_at']?.toString() ?? '')?.toUtc();
       if (validAt == null) continue;
@@ -830,12 +831,20 @@ class _TripPlanSummary extends StatelessWidget {
     final verdict = plan['verdict']?.toString() ?? 'UNVERIFIED';
     final timeline = plan['timeline'] as List<dynamic>? ?? const <dynamic>[];
     final alerts = plan['alerts'] as List<dynamic>? ?? const <dynamic>[];
-    final coverage = plan['coverage'] as Map? ?? const <dynamic, dynamic>{};
-    final target = plan['targets'] as Map? ?? const <dynamic, dynamic>{};
-    final navigation = plan['offline_navigation'] as Map?;
-    final engine = plan['decision_engine'] as Map? ?? const <dynamic, dynamic>{};
-    final travel = plan['travel_assessment'] as Map? ?? const <dynamic, dynamic>{};
-    final fuel = plan['fuel_assessment'] as Map? ?? const <dynamic, dynamic>{};
+    final coverage = plan['coverage'] is Map<String, dynamic>
+        ? plan['coverage'] as Map<String, dynamic> : const <String, dynamic>{};
+    final target = plan['targets'] is Map<String, dynamic>
+        ? plan['targets'] as Map<String, dynamic> : const <String, dynamic>{};
+    final navigation = plan['offline_navigation'] is Map<String, dynamic>
+        ? plan['offline_navigation'] as Map<String, dynamic> : null;
+    final engine = plan['decision_engine'] is Map<String, dynamic>
+        ? plan['decision_engine'] as Map<String, dynamic> : const <String, dynamic>{};
+    final travel = plan['travel_assessment'] is Map<String, dynamic>
+        ? plan['travel_assessment'] as Map<String, dynamic> : const <String, dynamic>{};
+    final fuel = plan['fuel_assessment'] is Map<String, dynamic>
+        ? plan['fuel_assessment'] as Map<String, dynamic> : const <String, dynamic>{};
+    final returnDecision = plan['return_decision'] is Map<String, dynamic>
+        ? plan['return_decision'] as Map<String, dynamic> : const <String, dynamic>{};
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: OrcaTheme.surfaceElevated, borderRadius: BorderRadius.circular(12)),
@@ -864,7 +873,7 @@ class _TripPlanSummary extends StatelessWidget {
         const SizedBox(height: 5),
         Text('Fuel: ${fuel['status'] ?? 'UNVERIFIED'}${fuel['estimated_direct_round_trip_liters'] == null ? '' : ' · direct return ${fuel['estimated_direct_round_trip_liters']} L'}', style: OrcaType.caption),
         const SizedBox(height: 5),
-        Text(plan['return_decision'] is Map ? ((plan['return_decision'] as Map)['reason']?.toString() ?? '') : '', style: OrcaType.caption),
+        Text(returnDecision['reason']?.toString() ?? '', style: OrcaType.caption),
         const SizedBox(height: 5),
         Text(target['reason']?.toString() ?? '', style: OrcaType.caption),
         const SizedBox(height: 7),
