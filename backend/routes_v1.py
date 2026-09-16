@@ -370,7 +370,7 @@ def create_trip_plan(request: TripPlanRequest):
 @router.post("/route-boundaries/refresh")
 def refresh_route_boundaries():
     """Download/retry the public Marine Regions India EEZ reference cache."""
-    providers.boundaries.ensure_ready()
+    providers.boundaries.ensure_ready(force=True)
     state = providers.boundaries.state
     providers.provider_status["official_navigation_boundaries"].update(
         status=state.status, reason=state.reason, checked_at=int(time.time())

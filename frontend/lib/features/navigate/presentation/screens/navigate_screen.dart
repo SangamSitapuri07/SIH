@@ -186,9 +186,13 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
                 const SizedBox(height: 16),
                 OrcaUnavailable(
                   icon: Icons.cloud_off_outlined,
-                  title: 'Online route refresh unavailable',
-                  message: 'The saved offline route remains usable. Live route inputs could not be refreshed. $error',
-                  actionLabel: 'Retry when connected',
+                  title: offlineNavigation.package == null
+                      ? 'Route check unavailable'
+                      : 'Online route refresh unavailable',
+                  message: offlineNavigation.package == null
+                      ? 'No route was saved. $error If marine reference geometry is still preparing, wait briefly and retry; the API no longer blocks behind that download.'
+                      : 'The saved offline route remains usable. Live route inputs could not be refreshed. $error',
+                  actionLabel: 'Retry route check',
                   onAction: _checkRoute,
                 ),
               ],
@@ -560,8 +564,78 @@ class _OfflineNavigationCard extends ConsumerWidget {
     final progress = state.progress;
     final weatherUsable = package != null && !package.weatherExpired;
     final timelineNow = _timelineAt(DateTime.now().toUtc(), tripPlan);
+    final profile = tripPlan?['trip_profile'] is Map<String, dynamic>
+        ? tripPlan!['trip_profile'] as Map<String, dynamic>
+        : const <String, dynamic>{};
+    final navigation = tripPlan?['offline_navigation'] is Map<String, dynamic>
+        ? tripPlan!['offline_navigation'] as Map<String, dynamic>
+        : null;
+    final area = tripPlan?['area'] is Map<String, dynamic>
+        ? tripPlan!['area'] as Map<String, dynamic>
+        : const <String, dynamic>{};
+    final center = area['center'] is Map<String, dynamic>
+        ? area['center'] as Map<String, dynamic>
+        : const <String, dynamic>{};
+    final departure = navigation?['departure'] is Map<String, dynamic>
+        ? navigation!['departure'] as Map<String, dynamic>
+        : const <String, dynamic>{};
+    final destination = navigation?['destination'] is Map<String, dynamic>
+        ? navigation!['destination'] as Map<String, dynamic>
+        : center;
     return OrcaCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        if (tripPlan != null) ...<Widget>[
+          Row(children: <Widget>[
+            const Expanded(child: OrcaEyebrow('SAVED OFFLINE VOYAGE', color: OrcaTheme.accentDark)),
+            OrcaInfoPill(
+              icon: Icons.offline_pin_outlined,
+              label: tripPlan?['verdict']?.toString() ?? 'UNVERIFIED',
+            ),
+          ]),
+          const SizedBox(height: 7),
+          Text(
+            profile['trip_name']?.toString().trim().isNotEmpty == true
+                ? profile['trip_name'].toString()
+                : 'Voyage ${tripPlan?['trip_id'] ?? ''}',
+            style: OrcaType.cardTitle,
+          ),
+          const SizedBox(height: 5),
+          Text(
+            '${_pointLabel(departure)}  →  ${_pointLabel(destination)}  →  ${_pointLabel(departure)}',
+            style: OrcaType.body.copyWith(fontSize: 12.5, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Departure ${_dateLabel(tripPlan?['departure_at'])} · expected return ${_dateLabel(profile['expected_return_at'])} · ${profile['duration_days'] ?? '?'} day trip · ${profile['crew_size'] ?? '?'} crew',
+            style: OrcaType.caption,
+          ),
+          if (navigation == null || navigation['ok'] != true) ...<Widget>[
+            const SizedBox(height: 6),
+            Text(
+              'Voyage forecast is saved, but verified route geometry was not bundled. Re-run the route after boundary preparation completes.',
+              style: OrcaType.caption.copyWith(color: VerdictColors.caution, fontWeight: FontWeight.w800),
+            ),
+          ],
+          const SizedBox(height: 9),
+          OutlinedButton.icon(
+            onPressed: () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              builder: (sheetContext) => SafeArea(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: _TripPlanSummary(plan: tripPlan!),
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.visibility_outlined, size: 17),
+            label: const Text('View saved voyage details'),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 13),
+            child: Divider(height: 1, color: OrcaTheme.cardBorder),
+          ),
+        ],
         Row(children: <Widget>[
           const Expanded(child: OrcaEyebrow('OFFLINE GPS NAVIGATION', color: OrcaTheme.accentDark)),
           OrcaInfoPill(
@@ -653,6 +727,20 @@ class _OfflineNavigationCard extends ConsumerWidget {
         ],
       ]),
     );
+  }
+
+  static String _pointLabel(Map<String, dynamic> point) {
+    final lat = (point['lat'] as num?)?.toDouble();
+    final lon = (point['lon'] as num?)?.toDouble();
+    if (lat == null || lon == null) return 'location unavailable';
+    return '${lat.toStringAsFixed(3)}°, ${lon.toStringAsFixed(3)}°';
+  }
+
+  static String _dateLabel(dynamic raw) {
+    final value = DateTime.tryParse(raw?.toString() ?? '')?.toLocal();
+    if (value == null) return 'unavailable';
+    return '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')} '
+        '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
   }
 
   static Map<String, dynamic>? _timelineAt(

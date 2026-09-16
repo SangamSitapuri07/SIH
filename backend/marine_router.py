@@ -12,6 +12,8 @@ import heapq
 import json
 import math
 import os
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -54,24 +56,22 @@ def _inside_ring(lat: float, lon: float, ring: list[list[float]]) -> bool:
 
 
 def _simplify_ring(ring: list[list[float]], tolerance: float = 0.0025) -> list[list[float]]:
-    """Douglas-Peucker simplification (~250 m) for tractable reference routing."""
+    """Linear radial simplification (~125 m spacing) for reference routing."""
     if len(ring) <= 4: return ring
-    def distance(point: list[float], start: list[float], end: list[float]) -> float:
-        dx, dy = end[0]-start[0], end[1]-start[1]
-        if dx == dy == 0: return math.hypot(point[0]-start[0], point[1]-start[1])
-        t = max(0.0, min(1.0, ((point[0]-start[0])*dx+(point[1]-start[1])*dy)/(dx*dx+dy*dy)))
-        return math.hypot(point[0]-(start[0]+t*dx), point[1]-(start[1]+t*dy))
-    def rdp(points: list[list[float]]) -> list[list[float]]:
-        index, maximum = 0, 0.0
-        for i in range(1, len(points)-1):
-            value = distance(points[i], points[0], points[-1])
-            if value > maximum: index, maximum = i, value
-        if maximum > tolerance:
-            left, right = rdp(points[:index+1]), rdp(points[index:])
-            return left[:-1] + right
-        return [points[0], points[-1]]
     closed = ring[0] == ring[-1]
-    simplified = rdp(ring[:-1] if closed else ring)
+    source = ring[:-1] if closed else ring
+    # WFS coastlines can contain hundreds of thousands of near-identical
+    # vertices. A bounded linear radial pass avoids freezing the first route
+    # request while retaining sub-tolerance detail for reference-only geometry.
+    radial = [source[0]]
+    radial_tolerance = tolerance * 0.5
+    for candidate in source[1:-1]:
+        previous = radial[-1]
+        if math.hypot(candidate[0] - previous[0], candidate[1] - previous[1]) >= radial_tolerance:
+            radial.append(candidate)
+    if len(source) > 1:
+        radial.append(source[-1])
+    simplified = radial
     if closed and simplified[0] != simplified[-1]: simplified.append(simplified[0])
     return simplified if len(simplified) >= 4 else ring
 
@@ -127,6 +127,8 @@ class OfficialBoundaryStore:
         self.cache_path = Path(os.getenv("ORCA_EEZ_CACHE_PATH", str(Path.home() / ".orca" / "india_marine_regions_v12_v4.geojson")))
         self.features: list[dict[str, Any]] = []
         self._prepared: list[tuple[str, dict[str, Any], tuple[float, float, float, float]]] = []
+        self._download_lock = threading.Lock()
+        self._last_download_attempt = 0.0
         self.state = self._load()
 
     def _validate(self, raw: bytes, *, reference: bool = False) -> BoundaryState:
@@ -177,9 +179,32 @@ class OfficialBoundaryStore:
         except Exception as exc:
             return BoundaryState(False, "BOUNDARY_INVALID", str(exc), {})
 
-    def ensure_ready(self) -> None:
+    def ensure_ready(self, *, force: bool = False) -> None:
         if self.state.ready or self.path:
             return
+        if (
+            not force and self.state.status == "REFERENCE_UNREACHABLE"
+            and time.monotonic() - self._last_download_attempt < 300
+        ):
+            return
+        # Startup warms this cache in a daemon thread. Route requests arriving
+        # during that warm-up must return REFERENCE_LOADING immediately rather
+        # than queue behind a slow WFS download and hit the client's timeout.
+        if not self._download_lock.acquire(blocking=False):
+            return
+        self._last_download_attempt = time.monotonic()
+        self.state = BoundaryState(
+            False,
+            "REFERENCE_LOADING",
+            "India marine reference geometry is downloading in the background. Retry shortly.",
+            {},
+        )
+        try:
+            self._download_reference()
+        finally:
+            self._download_lock.release()
+
+    def _download_reference(self) -> None:
         try:
             def fetch_source(source: tuple[str, str]) -> list[dict[str, Any]]:
                 layer, name = source
@@ -260,6 +285,8 @@ class MarineRoutePlanner:
     def __init__(self, boundaries: OfficialBoundaryStore): self.boundaries = boundaries
 
     def plan(self, start: tuple[float,float], end: tuple[float,float], grid_km: float = 5.0) -> dict[str, Any]:
+        started = time.monotonic()
+        max_planning_seconds = max(2.0, float(os.getenv("ORCA_ROUTE_PLANNING_MAX_S", "12")))
         self.boundaries.ensure_ready()
         if not self.boundaries.state.ready:
             return {"status":"BOUNDARY_UNVERIFIED", "verified":False, "reason":self.boundaries.state.reason, "routes":[]}
@@ -271,7 +298,11 @@ class MarineRoutePlanner:
         # around the Indian peninsula, but a 5 km global grid exceeds the
         # client's 45-second request window. Preserve fine coastal routing for
         # short legs and use a bounded coarse planning grid for long legs.
-        grid_km = max(grid_km, 20.0 if direct_km > 700 else 10.0 if direct_km > 250 else 5.0)
+        grid_km = max(
+            grid_km,
+            30.0 if direct_km > 1000 else 20.0 if direct_km > 400
+            else 10.0 if direct_km > 250 else 5.0,
+        )
         midlat=(start[0]+end[0])/2; dlat=grid_km/111.0; dlon=grid_km/(111.0*max(.2, math.cos(math.radians(midlat))))
         margin_km = min(1100.0, max(40.0, direct_km * (1.05 if direct_km > 500 else 0.45)))
         margin=max(4, math.ceil(margin_km/grid_km)); minlat=min(start[0],end[0])-margin*dlat; minlon=min(start[1],end[1])-margin*dlon
@@ -302,6 +333,16 @@ class MarineRoutePlanner:
             return success([start, end])
         s,t=key(start),key(end); frontier=[(0.0,s)]; came={s:None}; cost={s:0.0}; max_nodes=60000
         while frontier and len(came)<max_nodes:
+            if time.monotonic() - started > max_planning_seconds:
+                return {
+                    "status": "ROUTE_PLANNING_TIMEOUT",
+                    "verified": False,
+                    "reason": (
+                        f"Boundary search exceeded {max_planning_seconds:.0f}s. "
+                        "No route verdict was inferred; try closer waypoints."
+                    ),
+                    "routes": [],
+                }
             _,cur=heapq.heappop(frontier)
             if cur==t: break
             for di,dj in ((-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)):

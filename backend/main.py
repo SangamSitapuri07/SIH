@@ -1,5 +1,6 @@
 import asyncio
 import json
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -30,6 +31,13 @@ async def lifespan(app: FastAPI):
     # still mention six 25-second requests, an older checkout/process is being
     # run rather than this integration.
     ollama.log_configuration()
+    # Boundary WFS download/parsing can be slow on a fresh installation. Warm
+    # it before the UI asks for a route, without blocking API startup.
+    threading.Thread(
+        target=providers.boundaries.ensure_ready,
+        name="orca-boundary-warmup",
+        daemon=True,
+    ).start()
     ingestion_daemon = IngestionDaemon(
         providers_engine=providers,
         agents_engine=agents_engine,

@@ -64,6 +64,12 @@ class TripPlannerTests(unittest.TestCase):
         ))
         self.assertEqual(plan['offline_navigation']['distance_km'], 400.0)
         self.assertEqual(len(plan['offline_navigation']['geometry']), 2)
+        self.assertEqual(
+            plan['offline_navigation']['return_geometry'],
+            list(reversed(plan['offline_navigation']['outbound_geometry'])),
+        )
+        self.assertEqual(plan['offline_navigation']['return_destination'], {'lat': 18.92, 'lon': 72.2})
+        self.assertEqual(plan['offline_navigation']['round_trip_distance_km'], 800.0)
         self.assertEqual(plan['fuel_assessment']['route_one_way_km'], 400.0)
         self.assertEqual(plan['fuel_assessment']['status'], 'INSUFFICIENT')
         self.assertEqual(plan['travel_assessment']['status'], 'FEASIBLE_DIRECT_OUT_AND_BACK')
