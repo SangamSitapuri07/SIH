@@ -14,6 +14,7 @@ from mosdac_datasets import registry_status
 from safe_window import find_safe_departure_window
 from ollama_client import ollama
 from trip_planner import TripPlanningEngine
+from marine_router import haversine
 
 router = APIRouter(prefix="/api/v1")
 providers = DataProvidersEngine()
@@ -383,9 +384,72 @@ def check_route(from_lat: float = Query(20.9), from_lon: float = Query(70.37), t
     """Fail-closed A* planner over configured official navigation boundaries."""
     return providers.verify_route(from_lat, from_lon, to_lat, to_lon)
 
+ROUTE_WEATHER_SPACING_KM = 40.0
+
+
+def _sample_route_geometry(
+    coordinates: List[List[float]], max_spacing_km: float = ROUTE_WEATHER_SPACING_KM,
+) -> List[Tuple[List[float], float]]:
+    """Return distance-spaced weather points along the complete route polyline.
+
+    Route geometry is intentionally sparse for a verified direct leg, so
+    vertex-count sampling can reduce a several-hundred-kilometre passage to
+    only its endpoints. Sampling by sailed distance keeps every weather gap at
+    or below ``max_spacing_km`` while retaining the exact start and endpoint.
+    """
+    if not coordinates:
+        return []
+    if len(coordinates) == 1:
+        return [(list(coordinates[0]), 0.0)]
+    if max_spacing_km <= 0:
+        raise ValueError("max_spacing_km must be positive")
+
+    segment_lengths = [
+        haversine((start[0], start[1]), (end[0], end[1]))
+        for start, end in zip(coordinates, coordinates[1:])
+    ]
+    total_km = sum(segment_lengths)
+    if total_km <= 0:
+        return [(list(coordinates[0]), 0.0)]
+
+    targets = [0.0]
+    next_km = max_spacing_km
+    while next_km < total_km:
+        targets.append(next_km)
+        next_km += max_spacing_km
+    targets.append(total_km)
+
+    samples: List[Tuple[List[float], float]] = []
+    segment_index = 0
+    segment_start_km = 0.0
+    for target_km in targets:
+        while (
+            segment_index < len(segment_lengths) - 1
+            and target_km > segment_start_km + segment_lengths[segment_index]
+        ):
+            segment_start_km += segment_lengths[segment_index]
+            segment_index += 1
+        segment_km = segment_lengths[segment_index]
+        fraction = 0.0 if segment_km <= 0 else min(
+            1.0, max(0.0, (target_km - segment_start_km) / segment_km)
+        )
+        start, end = coordinates[segment_index], coordinates[segment_index + 1]
+        point = [
+            round(start[0] + (end[0] - start[0]) * fraction, 5),
+            round(start[1] + (end[1] - start[1]) * fraction, 5),
+        ]
+        samples.append((point, target_km))
+
+    # Avoid interpolation/rounding drift in the two operationally important
+    # coordinates while preserving true along-route distances for every point.
+    samples[0] = (list(coordinates[0]), 0.0)
+    samples[-1] = (list(coordinates[-1]), total_km)
+    return samples
+
+
 @router.get("/route-advisory")
 def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37), to_lat: float = Query(20.75), to_lon: float = Query(70.2)):
-    """Transit verdict along route points."""
+    """Transit verdict at bounded distance intervals along verified geometry."""
     route_info = providers.verify_route(from_lat, from_lon, to_lat, to_lon)
     full_legs = route_info["legs"]
     if route_info.get("ok") is not True:
@@ -403,12 +467,12 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
             "points": [],
             "sources": route_info.get("sources", []),
         }
-    # Bound upstream calls while preserving the full planned geometry in
-    # route-check. Route weather samples are distributed across the path.
-    stride = max(1, ((len(full_legs) - 1) + 9) // 10)
-    legs = full_legs[::stride]
-    if legs[-1] != full_legs[-1]:
-        legs.append(full_legs[-1])
+    # Geometry vertices describe turns, not weather coverage. A valid direct
+    # route has only two vertices even when hundreds of kilometres long, so
+    # resample the full polyline by sailed distance before the batched fetch.
+    route_samples = _sample_route_geometry(full_legs)
+    legs = [point for point, _distance_km in route_samples]
+    sailed_distances = [distance_km for _point, distance_km in route_samples]
 
     points = []
     worst_level = "GOOD"
@@ -424,7 +488,19 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
                 lambda pt: providers.fetch_zone_snapshot(pt[0], pt[1], include_secondary=False),
                 legs,
             ))
+    # Never silently reduce coverage if an upstream/provider implementation
+    # returns fewer entries than requested. Missing entries become UNVERIFIED.
+    snapshots = list(snapshots[:len(legs)])
+    snapshots.extend(
+        {"error": True, "reason": "Route weather response omitted this point"}
+        for _ in range(len(legs) - len(snapshots))
+    )
 
+    source_names = sorted({
+        source.get("name", "unknown")
+        for snapshot in snapshots
+        for source in snapshot.get("sources_used", [])
+    })
     for idx, (pt, snap) in enumerate(zip(legs, snapshots)):
         if snap.get("error"):
             unknown_inputs = True
@@ -432,7 +508,7 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
                 "point_index": idx,
                 "lat": pt[0],
                 "lon": pt[1],
-                "sail_km": round(route_info["distance_km"] * idx / max(1, len(legs) - 1), 1),
+                "sail_km": round(sailed_distances[idx], 1),
                 "wave_m": None,
                 "wind_kn": None,
                 "gust_kn": None,
@@ -450,7 +526,7 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
                 "point_index": idx,
                 "lat": pt[0],
                 "lon": pt[1],
-                "sail_km": round(route_info["distance_km"] * idx / max(1, len(legs) - 1), 1),
+                "sail_km": round(sailed_distances[idx], 1),
                 "wave_m": wave,
                 "wind_kn": wind,
                 "gust_kn": gust,
@@ -471,7 +547,7 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
             "point_index": idx,
             "lat": pt[0],
             "lon": pt[1],
-            "sail_km": round(route_info["distance_km"] * idx / max(1, len(legs) - 1), 1),
+            "sail_km": round(sailed_distances[idx], 1),
             "wave_m": wave,
             "wind_kn": wind,
             "gust_kn": gust,
@@ -496,8 +572,9 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
         "distance_km": route_info["distance_km"],
         "distance_nm": route_info["distance_nm"],
         "detour": route_info["detour"],
+        "weather_sample_max_spacing_km": ROUTE_WEATHER_SPACING_KM,
         "points": points,
-        "sources": [source.get("name", "unknown") for source in snap.get("sources_used", [])]
+        "sources": source_names,
     }
 
 @router.post("/ingestion/test-alert")
