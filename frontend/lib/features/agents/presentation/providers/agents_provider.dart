@@ -94,7 +94,7 @@ class AgentsNotifier extends StateNotifier<AsyncValue<AgentReasoningResult>> {
   final GetAgentReasoningUseCase _useCase;
 
   AgentsNotifier(this._ref, this._useCase)
-      : super(AsyncValue.error(
+      : super(const AsyncValue.error(
           'Reasoning has not been run for this session. Use Run reasoning pass when needed.',
           StackTrace.empty,
         ));

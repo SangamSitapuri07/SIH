@@ -828,7 +828,7 @@ class _OfflineTripPlannerState extends ConsumerState<_OfflineTripPlanner> {
               Icon(
                 geometryReady ? Icons.verified_outlined : Icons.route_outlined,
                 size: 16,
-                color: geometryReady ? VerdictColors.good : VerdictColors.caution,
+                color: geometryReady ? VerdictColors.go : VerdictColors.caution,
               ),
               const SizedBox(width: 7),
               Expanded(child: Text(
@@ -836,7 +836,7 @@ class _OfflineTripPlannerState extends ConsumerState<_OfflineTripPlanner> {
                     ? 'Verified online geometry is ready for this outbound route.'
                     : 'Online geometry is not ready for these endpoints; package build will verify it before download.',
                 style: OrcaType.caption.copyWith(
-                  color: geometryReady ? VerdictColors.good : VerdictColors.caution,
+                  color: geometryReady ? VerdictColors.go : VerdictColors.caution,
                   fontWeight: FontWeight.w700,
                 ),
               )),
