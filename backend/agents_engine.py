@@ -11,19 +11,19 @@ logger = logging.getLogger("orca.agents")
 class MultiAgentEngine:
     """
     11 Collaborative Agents Architecture for ORCA Box backend.
-    Enforces strict structured communication (AgentMessage format), worst-case safety fold,
-    WMO/IMD thresholds, and evidence-backed synthesis.
+    Enforces strict structured communication (AgentMessage format), a configured-limit
+    worst-case safety fold, and evidence-backed synthesis.
     """
 
     AGENT_REGISTRY = [
         {"id": "data_validation", "name": "Data Validation Agent", "type": "Deterministic", "role": "Validate incoming provider observations and freshness"},
-        {"id": "gis_spatial", "name": "GIS Spatial Agent", "type": "Deterministic", "role": "Spatial reasoning & land mask verification"},
+        {"id": "gis_spatial", "name": "GIS Spatial Agent", "type": "Deterministic", "role": "Coordinate context; route clearance remains a separate check"},
         {"id": "ocean_analysis", "name": "Ocean Analysis Agent", "type": "LLM/Analytical", "role": "Interpret ocean dynamics, wave height, swell & currents"},
         {"id": "satellite_analysis", "name": "Satellite Analysis Agent", "type": "LLM/Analytical", "role": "Interpret satellite chlorophyll-a & SST granules"},
-        {"id": "weather_hazard", "name": "Weather Hazard Agent", "type": "LLM/Analytical", "role": "Evaluate WMO/IMD wind, gust & monsoon gale thresholds"},
+        {"id": "weather_hazard", "name": "Weather Hazard Agent", "type": "LLM/Analytical", "role": "Explain wind/gust evidence without owning the safety verdict"},
         {"id": "map_synoptic", "name": "Map Synoptic Agent", "type": "Deterministic", "role": "Prepare synoptic grid & spatial overlays"},
         {"id": "marine_ecology", "name": "Marine Ecology Agent", "type": "LLM/Analytical", "role": "Ecological interpretation & fish habitat quality"},
-        {"id": "fisheries_pfz", "name": "Fisheries / PFZ Agent", "type": "LLM/Analytical", "role": "Identify Potential Fishing Zones & catch likelihood"},
+        {"id": "fisheries_pfz", "name": "Fisheries / PFZ Agent", "type": "LLM/Analytical", "role": "Interpret official PFZ evidence and habitat suitability only"},
         {"id": "anomaly_detection", "name": "Anomaly Detection Agent", "type": "Deterministic", "role": "Detect unusual historical baseline deviations"},
         {"id": "marine_risk", "name": "Marine Risk Agent", "type": "Deterministic", "role": "Calculate marine safety risk via worst-case fold"},
         {"id": "orchestrator", "name": "Orchestrator Agent", "type": "LLM/Analytical", "role": "Synthesize agent findings into plain bilingual safety lines"}
@@ -35,6 +35,10 @@ class MultiAgentEngine:
         self._runtime = {
             agent["id"]: {
                 "status": "IDLE",
+                "provider_state": (
+                    "OLLAMA_NOT_RUN" if agent["type"] == "LLM/Analytical"
+                    else "DETERMINISTIC"
+                ),
                 "last_duration_ms": None,
                 "last_error": None,
             }
@@ -50,9 +54,21 @@ class MultiAgentEngine:
             ]
 
     def _set_all_runtime(self, status: str, error: str | None = None) -> None:
+        llm_ids = {
+            agent["id"] for agent in self.AGENT_REGISTRY
+            if agent["type"] == "LLM/Analytical"
+        }
         with self._runtime_lock:
-            for runtime in self._runtime.values():
+            for agent_id, runtime in self._runtime.items():
                 runtime["status"] = status
+                if status == "PROCESSING":
+                    runtime["provider_state"] = (
+                        "OLLAMA_RUNNING" if agent_id in llm_ids else "DETERMINISTIC"
+                    )
+                elif status == "FAILED":
+                    runtime["provider_state"] = (
+                        "OLLAMA_REQUEST_FAILED" if agent_id in llm_ids else "DETERMINISTIC"
+                    )
                 runtime["last_error"] = error
 
     def _record_runtime_results(self, result: Dict[str, Any]) -> None:
@@ -70,6 +86,11 @@ class MultiAgentEngine:
                     continue
                 status = str(finding.get("status", "completed")).upper()
                 runtime["status"] = status
+                runtime["provider_state"] = (
+                    "OLLAMA_OUTPUT_USED" if finding.get("llm_invoked") is True
+                    else "OLLAMA_NO_VALID_OUTPUT" if finding.get("llm_attempted") is True
+                    else "DETERMINISTIC"
+                )
                 runtime["last_duration_ms"] = finding.get("duration_ms")
                 runtime["last_error"] = None
 
@@ -186,7 +207,10 @@ class MultiAgentEngine:
             valid = isinstance(finding, str) and bool(finding.strip())
             results[agent_id] = {
                 "findings": finding.strip() if valid else job["fallback"],
-                "status": "completed" if valid else "degraded",
+                # The specialist still returns a deterministic evidence-bound
+                # result when optional Ollama text is absent. FALLBACK is not a
+                # failed safety agent and must not be presented as DEGRADED.
+                "status": "completed" if valid else "fallback",
                 "duration_ms": elapsed_ms,
                 "llm_attempted": True,
                 "llm_invoked": valid,
@@ -250,7 +274,7 @@ class MultiAgentEngine:
             if wind_kn >= 20.0: reasons.append(f"Brisk wind ({wind_kn:.1f} kn >= 20 kn threshold)")
         else:
             risk_level = "GOOD"
-            reasons.append("Waves and wind are within safe small-craft limits.")
+            reasons.append("Waves and wind are below the configured point-advisory limits.")
 
         analytical = self._analytical_findings({
             "ocean_analysis": {
@@ -275,7 +299,7 @@ class MultiAgentEngine:
             },
             "orchestrator": {
                 "evidence": [f"deterministic risk level {risk_level}", *reasons, f"wave height {wave_h:.1f} m", f"wind gust {gust_kn:.1f} kn"],
-                "fallback": f"Deterministic Marine Risk result is {risk_level}. Follow the stated safety advice.",
+                "fallback": f"Deterministic Marine Risk result is {risk_level}. Follow the deterministic result and official instructions.",
             },
         })
         ocean_llm = analytical["ocean_analysis"]
@@ -292,8 +316,7 @@ class MultiAgentEngine:
             "type": "Deterministic",
             "status": "completed",
             "duration_ms": 12,
-            "findings": "All 6 required parameters validated cleanly. Freshness check PASSED.",
-            "confidence": 0.98,
+            "findings": "Required wave, wind and gust inputs are present. Provider timestamps and source details remain attached to the advisory.",
             "evidence": source_names,
             "warnings": []
         }
@@ -305,21 +328,19 @@ class MultiAgentEngine:
             "type": "Deterministic",
             "status": "completed",
             "duration_ms": 15,
-            "findings": f"Coordinates ({lat:.2f}, {lon:.2f}) verified inside marine zone. 18.2 km offshore from Veraval Harbour.",
-            "confidence": 1.0,
-            "evidence": ["GLOBE 1km land mask: Marine Water", "Depth: 42 meters"],
+            "findings": f"Coordinate ({lat:.2f}, {lon:.2f}) was accepted for point-forecast analysis. Land, restricted-area and regulatory clearance require separate route evidence.",
+            "evidence": source_names,
             "warnings": []
         }
 
         # Agent 3: Ocean Analysis
-        ocean_verdict = "SAFE" if wave_h < 2.5 else ("CAUTION" if wave_h < 4.0 else "DANGER")
+        ocean_verdict = "GOOD" if wave_h < 2.5 else ("CAUTION" if wave_h < 4.0 else "DANGER")
         ocean_agent = {
             "agent_id": "ocean_analysis",
             "agent_name": "Ocean Analysis Agent",
             "type": "LLM/Analytical",
             **ocean_llm,
             "verdict": ocean_verdict,
-            "confidence": 0.92,
             "evidence": [f"Wave height = {wave_h:.1f} m", f"Current speed = {current_text}"],
             "warnings": [] if wave_h < 2.5 else [f"Moderate wave height ({wave_h:.1f} m) requires caution for small motor boats."]
         }
@@ -330,20 +351,18 @@ class MultiAgentEngine:
             "agent_name": "Satellite Analysis Agent",
             "type": "LLM/Analytical",
             **satellite_llm,
-            "confidence": 0.89,
             "evidence": source_names,
             "warnings": []
         }
 
         # Agent 5: Weather Hazard
-        weather_verdict = "SAFE" if gust_kn < 34 and wind_kn < 20 else ("CAUTION" if wind_kn < 34 else "DANGER")
+        weather_verdict = "GOOD" if gust_kn < 34 and wind_kn < 20 else ("CAUTION" if wind_kn < 34 else "DANGER")
         weather_agent = {
             "agent_id": "weather_hazard",
             "agent_name": "Weather Hazard Agent",
             "type": "LLM/Analytical",
             **weather_llm,
             "verdict": weather_verdict,
-            "confidence": 0.95,
             "evidence": [f"Wind speed = {wind_kn:.1f} kn", f"Peak gust = {gust_kn:.1f} kn"],
             "warnings": [] if gust_kn < 28 else [f"Brisk gusts up to {gust_kn:.1f} kn expected near afternoon."]
         }
@@ -356,7 +375,6 @@ class MultiAgentEngine:
             "status": "completed",
             "duration_ms": 18,
             "findings": "Prepared map context from the requested live coordinate.",
-            "confidence": 0.99,
             "evidence": source_names,
             "warnings": []
         }
@@ -367,7 +385,6 @@ class MultiAgentEngine:
             "agent_name": "Marine Ecology Agent",
             "type": "LLM/Analytical",
             **ecology_llm,
-            "confidence": 0.88,
             "evidence": source_names,
             "warnings": []
         }
@@ -378,7 +395,6 @@ class MultiAgentEngine:
             "agent_name": "Fisheries / PFZ Agent",
             "type": "LLM/Analytical",
             **pfz_llm,
-            "confidence": 0.91,
             "evidence": source_names,
             "warnings": []
         }
@@ -388,10 +404,9 @@ class MultiAgentEngine:
             "agent_id": "anomaly_detection",
             "agent_name": "Anomaly Detection Agent",
             "type": "Deterministic",
-            "status": "completed",
-            "duration_ms": 25,
-            "findings": "SST is +0.4°C relative to 10-year historical baseline for September. Within normal seasonal bounds.",
-            "confidence": 0.94,
+            "status": "unavailable",
+            "duration_ms": 0,
+            "findings": "Historical anomaly detection is unavailable because no validated historical baseline was supplied.",
             "evidence": [],
             "warnings": []
         }
@@ -405,28 +420,27 @@ class MultiAgentEngine:
             "duration_ms": 10,
             "verdict": risk_level,
             "findings": f"Worst-case safety fold result: {risk_level}. Primary rationale: {'; '.join(reasons)}",
-            "confidence": 1.0,
-            "evidence": ["WMO Small Craft Advisory Guidelines", "IMD Marine Weather Risk Matrix"],
+            "evidence": ["ORCA configured wave/wind/gust limits", *source_names],
             "warnings": [] if risk_level == "GOOD" else reasons
         }
 
         # Agent 11: Orchestrator Agent (Bilingual Plain Synthesis)
         if risk_level == "GOOD":
-            headline_en = "SAFE TO SAIL TODAY"
-            headline_hi = "आज समुद्र में जाना सुरक्षित है"
-            headline_te = "ఈ రోజు వేటకు వెళ్లడం సురక్షితం"
+            headline_en = "CONDITIONS BELOW CONFIGURED LIMITS"
+            headline_hi = "मौसम मान कॉन्फ़िगर की गई सीमाओं से कम हैं"
+            headline_te = "వాతావరణ విలువలు కాన్ఫిగర్ చేసిన పరిమితుల కంటే తక్కువగా ఉన్నాయి"
             plain_en = [
-                "Sea conditions are calm and safe for fishing.",
+                "Downloaded wave and wind values are below the configured limits at this sampled location.",
                 f"Waves are low ({wave_h:.1f} m) and wind is gentle ({wind_kn:.1f} kn).",
                 pfz_text
             ]
             plain_hi = [
-                "समुद्र की स्थिति शांत और मछली पकड़ने के लिए सुरक्षित है।",
+                "डाउनलोड किए गए लहर और हवा के मान कॉन्फ़िगर की गई सीमाओं से कम हैं।",
                 f"लहरें कम हैं ({wave_h:.1f} मीटर) और हवा हल्की है ({wind_kn:.1f} समुद्री मील)।",
                 "आधिकारिक PFZ geometry उपलब्ध होने पर ही मत्स्य क्षेत्र दिखाया जाएगा।"
             ]
             plain_te = [
-                "సముద్ర పరిస్థితులు ప్రశాంతంగా ఉన్నాయి; చేపల వేటకు సురక్షితం.",
+                "డౌన్‌లోడ్ చేసిన అలలు మరియు గాలి విలువలు కాన్ఫిగర్ చేసిన పరిమితుల కంటే తక్కువగా ఉన్నాయి.",
                 f"అలలు {wave_h:.1f} మీటర్లు, గాలి {wind_kn:.1f} నాట్లు.",
                 "అధికారిక PFZ సమాచారం అందుబాటులో ఉన్నప్పుడు మాత్రమే చూపబడుతుంది."
             ]
@@ -475,8 +489,7 @@ class MultiAgentEngine:
             "type": "LLM/Analytical",
             **orchestrator_llm,
             "verdict": risk_level,
-            "confidence": 0.96,
-            "evidence": ["Consensus across all 10 specialized agents"],
+            "evidence": ["Deterministic Marine Risk result plus available specialist traces"],
             "warnings": []
         }
 

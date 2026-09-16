@@ -13,6 +13,9 @@ import 'offline_navigation_provider.dart';
 class TripPlanInput {
   final double areaLat;
   final double areaLon;
+  final String? tripName;
+  final String? vesselName;
+  final String? shoreContact;
   final double? departureLat;
   final double? departureLon;
   final DateTime? departureAt;
@@ -31,6 +34,7 @@ class TripPlanInput {
 
   const TripPlanInput({
     required this.areaLat, required this.areaLon,
+    this.tripName, this.vesselName, this.shoreContact,
     this.departureLat, this.departureLon, this.departureAt,
     this.durationDays = 3, this.radiusKm = 75,
     this.targetFish = const <String>[], this.crewSize = 4,
@@ -42,6 +46,8 @@ class TripPlanInput {
 
   Map<String, dynamic> toJson() => <String, dynamic>{
     'area_lat': areaLat, 'area_lon': areaLon,
+    'trip_name': tripName, 'vessel_name': vesselName,
+    'shore_contact': shoreContact,
     'departure_lat': departureLat, 'departure_lon': departureLon,
     'departure_at': departureAt?.toUtc().toIso8601String(),
     'duration_days': durationDays, 'area_radius_km': radiusKm,

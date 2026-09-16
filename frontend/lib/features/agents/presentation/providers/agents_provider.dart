@@ -36,7 +36,7 @@ final getAgentReasoningUseCaseProvider = Provider<GetAgentReasoningUseCase>((ref
 /// Runtime entry advertised by the actual `/api/v1/agents` backend registry.
 ///
 /// The registry reports IDLE until a reasoning request runs, and PROCESSING,
-/// DEGRADED or FAILED while and after one does. IDLE therefore means "not
+/// FALLBACK or FAILED while and after one does. IDLE therefore means "not
 /// currently running", not "healthy" — the UI must not present it as readiness.
 class AgentRuntimeStatus {
   final String id;
@@ -44,6 +44,7 @@ class AgentRuntimeStatus {
   final String name;
   final String type;
   final String? role;
+  final String? providerState;
 
   const AgentRuntimeStatus({
     required this.id,
@@ -51,6 +52,7 @@ class AgentRuntimeStatus {
     required this.name,
     required this.type,
     this.role,
+    this.providerState,
   });
 
   bool get isRunning => status.toUpperCase() == 'PROCESSING';
@@ -60,6 +62,10 @@ class AgentRuntimeStatus {
   }
 
   bool get isIdle => status.toUpperCase() == 'IDLE';
+  bool get isFallback => status.toUpperCase() == 'FALLBACK';
+  String? get providerLabel => providerState
+      ?.replaceFirst('OLLAMA_', 'OLLAMA ')
+      .replaceAll('_', ' ');
 }
 
 final agentRuntimeStatusProvider = FutureProvider<List<AgentRuntimeStatus>>((ref) async {
@@ -77,6 +83,7 @@ final agentRuntimeStatusProvider = FutureProvider<List<AgentRuntimeStatus>>((ref
       name: agent['name']?.toString() ?? id,
       type: agent['type']?.toString() ?? 'Unspecified',
       role: agent['role']?.toString(),
+      providerState: agent['provider_state']?.toString(),
     );
   }).toList();
 });
@@ -86,10 +93,11 @@ class AgentsNotifier extends StateNotifier<AsyncValue<AgentReasoningResult>> {
   final Ref _ref;
   final GetAgentReasoningUseCase _useCase;
 
-  AgentsNotifier(this._ref, this._useCase) : super(const AsyncValue.loading()) {
-    fetch();
-
-  }
+  AgentsNotifier(this._ref, this._useCase)
+      : super(AsyncValue.error(
+          'Reasoning has not been run for this session. Use Run reasoning pass when needed.',
+          StackTrace.empty,
+        ));
 
   Future<void> fetch({bool forceRefresh = false}) async {
     state = const AsyncValue.loading();

@@ -53,6 +53,13 @@ class OllamaClient:
         self.timeout = max(_MIN_TIMEOUT, configured_timeout)
         self._available: Optional[bool] = None  # lazily determined
         self._installed_models: list[str] = []
+        # Keep capacity for FastAPI routing/weather while local inference runs.
+        # Operators can override this for GPU-backed or dedicated Ollama hosts.
+        default_threads = max(1, (os.cpu_count() or 4) - 2)
+        try:
+            self.num_threads = max(1, int(os.getenv("OLLAMA_NUM_THREADS", str(default_threads))))
+        except (TypeError, ValueError):
+            self.num_threads = default_threads
         # Ollama generally executes one heavyweight local model efficiently at
         # a time. Serialize generation even when advisory, reasoning and the
         # ingestion daemon arrive together.
@@ -124,6 +131,7 @@ class OllamaClient:
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
+                "num_thread": self.num_threads,
                 "stop": ["</analysis>", "---END---"],
             },
         }
@@ -234,6 +242,7 @@ class OllamaClient:
             "configured_timeout_s": self.configured_timeout,
             "effective_timeout_s": self.timeout,
             "generation_serialized": True,
+            "num_threads": self.num_threads,
             "cooldown_remaining_s": max(0, int(self._cooldown_until - time.monotonic())),
             "last_generation": dict(self._last_generation),
         }

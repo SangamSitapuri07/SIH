@@ -12,6 +12,7 @@ import heapq
 import json
 import math
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -180,26 +181,37 @@ class OfficialBoundaryStore:
         if self.state.ready or self.path:
             return
         try:
-            features: list[dict[str, Any]] = []
-            for layer, name in self._SOURCES:
+            def fetch_source(source: tuple[str, str]) -> list[dict[str, Any]]:
+                layer, name = source
                 params = {
                     "service": "WFS", "version": "1.0.0", "request": "GetFeature",
                     "typeName": layer, "outputFormat": "application/json",
                     "CQL_FILTER": f"geoname='{name}'",
                 }
-                request = Request(self._WFS + "?" + urlencode(params), headers={"User-Agent": "ORCA-Box/3.0", "Accept": "application/json"})
+                request = Request(
+                    self._WFS + "?" + urlencode(params),
+                    headers={"User-Agent": "ORCA-Box/3.0", "Accept": "application/json"},
+                )
                 last_error: Exception | None = None
-                payload = None
-                for _attempt in range(3):
+                for _attempt in range(2):
                     try:
-                        with urlopen(request, timeout=60) as response:
+                        with urlopen(request, timeout=20) as response:
                             payload = json.load(response)
-                        break
+                        return payload.get("features", [])
                     except Exception as exc:
                         last_error = exc
-                if payload is None:
-                    raise last_error or RuntimeError("empty WFS response")
-                for feature in payload.get("features", []):
+                raise last_error or RuntimeError(f"empty WFS response for {name}")
+
+            # The four mainland/island territorial-sea/EEZ features are
+            # independent. Sequential 3×60s retries could block a first route
+            # request for many minutes; bounded parallel downloads complete or
+            # fail explicitly in roughly one provider timeout window.
+            with ThreadPoolExecutor(max_workers=len(self._SOURCES)) as pool:
+                source_features = list(pool.map(fetch_source, self._SOURCES))
+
+            features: list[dict[str, Any]] = []
+            for feature_group in source_features:
+                for feature in feature_group:
                     props = dict(feature.get("properties") or {})
                     props.update(orca_role="navigable", boundary_tier="reference")
                     feature["properties"] = props

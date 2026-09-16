@@ -62,6 +62,9 @@ class SyncPayload(BaseModel):
 
 class TripPlanRequest(BaseModel):
     departure_at: Optional[str] = None
+    trip_name: Optional[str] = Field(default=None, max_length=100)
+    vessel_name: Optional[str] = Field(default=None, max_length=100)
+    shore_contact: Optional[str] = Field(default=None, max_length=200)
     duration_days: int = Field(default=3, ge=1, le=3)
     area_lat: float = Field(ge=-90, le=90)
     area_lon: float = Field(ge=-180, le=180)

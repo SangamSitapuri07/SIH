@@ -127,7 +127,7 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
               const SizedBox(height: 14),
               _OfflineTripPlanner(
                 departure: _coordinate(_fromLat, _fromLon),
-                area: _coordinate(_toLat, _toLon) ?? _coordinate(_fromLat, _fromLon),
+                area: _coordinate(_toLat, _toLon),
               ),
               const SizedBox(height: 14),
               const _TimeContractNote(),
@@ -141,7 +141,29 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
                 _OfflineNavigationCard(state: offlineNavigation, isOnline: isOnline, tripPlan: offlineTripPlan),
                 const SizedBox(height: 16),
                 if (data.advisory == null)
-                  (data.check == null ? const _RouteEmpty() : const _RouteLoading())
+                  if (data.check == null)
+                    const _RouteEmpty()
+                  else if (data.check?.ok != true)
+                    OrcaUnavailable(
+                      icon: Icons.route_outlined,
+                      title: data.check?.ok == false
+                          ? 'Route rejected'
+                          : 'Route verification unavailable',
+                      message: data.check?.reason ??
+                          'No verified transit geometry was returned. Weather scoring was not attempted.',
+                      actionLabel: 'Retry route',
+                      onAction: _checkRoute,
+                    )
+                  else if (data.advisoryLoading)
+                    const _RouteLoading()
+                  else
+                    OrcaUnavailable(
+                      icon: Icons.cloud_off_outlined,
+                      title: 'Route geometry ready · weather unverified',
+                      message: '${data.advisoryError ?? 'Live route weather is unavailable.'} The verified geometry is saved for offline GPS; refresh weather before departure.',
+                      actionLabel: 'Retry weather',
+                      onAction: _checkRoute,
+                    )
                 else ...<Widget>[
                   const OrcaEyebrow('ROUTE SAFETY RESULT', color: OrcaTheme.textMuted),
                   const SizedBox(height: 10),
@@ -680,6 +702,38 @@ class _OfflineMetric extends StatelessWidget {
       );
 }
 
+class _VoyageCoordinate extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final LatLng? point;
+
+  const _VoyageCoordinate({required this.icon, required this.label, required this.point});
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: <Widget>[
+          Icon(icon, size: 18, color: point == null ? VerdictColors.caution : OrcaTheme.accentDark),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+              Text(label, style: OrcaType.caption.copyWith(fontSize: 9.5, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 2),
+              Text(
+                point == null
+                    ? 'Not selected — required before package generation'
+                    : GeoUtils.formatCoordinate(point!.latitude, point!.longitude),
+                style: OrcaType.body.copyWith(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: point == null ? VerdictColors.caution : OrcaTheme.textPrimary,
+                ),
+              ),
+            ]),
+          ),
+        ],
+      );
+}
+
 class _OfflineTripPlanner extends ConsumerStatefulWidget {
   final LatLng? departure;
   final LatLng? area;
@@ -692,6 +746,9 @@ class _OfflineTripPlanner extends ConsumerStatefulWidget {
 class _OfflineTripPlannerState extends ConsumerState<_OfflineTripPlanner> {
   int _days = 3;
   int _departureOffsetHours = 0;
+  final _tripName = TextEditingController();
+  final _vesselName = TextEditingController();
+  final _shoreContact = TextEditingController();
   final _radius = TextEditingController(text: '75');
   final _fish = TextEditingController();
   final _fuel = TextEditingController(text: '200');
@@ -703,6 +760,7 @@ class _OfflineTripPlannerState extends ConsumerState<_OfflineTripPlanner> {
 
   @override
   void dispose() {
+    _tripName.dispose(); _vesselName.dispose(); _shoreContact.dispose();
     _radius.dispose(); _fish.dispose(); _fuel.dispose(); _burn.dispose();
     _crew.dispose(); _capacity.dispose(); _speed.dispose();
     super.dispose();
@@ -715,14 +773,94 @@ class _OfflineTripPlannerState extends ConsumerState<_OfflineTripPlanner> {
   Widget build(BuildContext context) {
     final state = ref.watch(tripPlanProvider);
     final plan = state.valueOrNull;
+    final routeCheck = ref.watch(navigateProvider).valueOrNull?.check;
+    final bool voyageReady = widget.departure != null && widget.area != null &&
+        GeoUtils.distanceKm(
+          widget.departure!.latitude, widget.departure!.longitude,
+          widget.area!.latitude, widget.area!.longitude,
+        ) >= 1;
+    final bool geometryReady = voyageReady && routeCheck != null && routeCheck.ok == true &&
+        routeCheck.legs.length >= 2 &&
+        (routeCheck.legs.first[0] - widget.departure!.latitude).abs() < 0.00001 &&
+        (routeCheck.legs.first[1] - widget.departure!.longitude).abs() < 0.00001 &&
+        (routeCheck.legs.last[0] - widget.area!.latitude).abs() < 0.00001 &&
+        (routeCheck.legs.last[1] - widget.area!.longitude).abs() < 0.00001;
     return OrcaCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         const OrcaEyebrow('OFFLINE TRIP PACKAGE', color: OrcaTheme.accentDark),
         const SizedBox(height: 6),
         const Text('Pre-analyse the full fishing area', style: OrcaType.cardTitle),
         const SizedBox(height: 5),
-        const Text('Downloads an hour-by-hour area forecast before departure and saves it on this device.', style: OrcaType.caption),
+        const Text('Downloads the complete outbound/return voyage, hour-by-hour area forecast and safety rules to this device.', style: OrcaType.caption),
         const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: OrcaTheme.surfaceElevated,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: OrcaTheme.cardBorder),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            const OrcaEyebrow('VOYAGE ROUTE', color: OrcaTheme.textMuted),
+            const SizedBox(height: 8),
+            _VoyageCoordinate(
+              icon: Icons.home_work_outlined,
+              label: 'HOME / RETURN PORT',
+              point: widget.departure,
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Divider(height: 1, color: OrcaTheme.cardBorder),
+            ),
+            _VoyageCoordinate(
+              icon: Icons.flag_outlined,
+              label: 'FISHING DESTINATION',
+              point: widget.area,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Return policy: return to the same departure point. Change departure/destination in the route form or by tapping the map above.',
+              style: OrcaType.caption,
+            ),
+            const SizedBox(height: 8),
+            Row(children: <Widget>[
+              Icon(
+                geometryReady ? Icons.verified_outlined : Icons.route_outlined,
+                size: 16,
+                color: geometryReady ? VerdictColors.good : VerdictColors.caution,
+              ),
+              const SizedBox(width: 7),
+              Expanded(child: Text(
+                geometryReady
+                    ? 'Verified online geometry is ready for this outbound route.'
+                    : 'Online geometry is not ready for these endpoints; package build will verify it before download.',
+                style: OrcaType.caption.copyWith(
+                  color: geometryReady ? VerdictColors.good : VerdictColors.caution,
+                  fontWeight: FontWeight.w700,
+                ),
+              )),
+            ]),
+          ]),
+        ),
+        const SizedBox(height: 12),
+        Row(children: <Widget>[
+          Expanded(child: TextField(
+            controller: _tripName,
+            decoration: const InputDecoration(labelText: 'Voyage name (optional)'),
+          )),
+          const SizedBox(width: 10),
+          Expanded(child: TextField(
+            controller: _vesselName,
+            decoration: const InputDecoration(labelText: 'Vessel name / ID'),
+          )),
+        ]),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _shoreContact,
+          decoration: const InputDecoration(labelText: 'Shore contact / float-plan recipient'),
+        ),
+        const SizedBox(height: 10),
         Row(children: <Widget>[
           Expanded(child: DropdownButtonFormField<int>(
             initialValue: _days,
@@ -782,7 +920,7 @@ class _OfflineTripPlannerState extends ConsumerState<_OfflineTripPlanner> {
         ]),
         const SizedBox(height: 12),
         ElevatedButton.icon(
-          onPressed: state.isLoading || widget.area == null ? null : () {
+          onPressed: state.isLoading || !voyageReady ? null : () {
             final radius = _value(_radius), fuel = _value(_fuel), burn = _value(_burn);
             final crew = int.tryParse(_crew.text.trim());
             final capacity = _value(_capacity), speed = _value(_speed);
@@ -795,6 +933,9 @@ class _OfflineTripPlannerState extends ConsumerState<_OfflineTripPlanner> {
             }
             ref.read(tripPlanProvider.notifier).generate(TripPlanInput(
               areaLat: widget.area!.latitude, areaLon: widget.area!.longitude,
+              tripName: _tripName.text.trim().isEmpty ? null : _tripName.text.trim(),
+              vesselName: _vesselName.text.trim().isEmpty ? null : _vesselName.text.trim(),
+              shoreContact: _shoreContact.text.trim().isEmpty ? null : _shoreContact.text.trim(),
               departureLat: widget.departure?.latitude,
               departureLon: widget.departure?.longitude,
               departureAt: DateTime.now().toUtc().add(Duration(hours: _departureOffsetHours)),
@@ -807,11 +948,14 @@ class _OfflineTripPlannerState extends ConsumerState<_OfflineTripPlanner> {
           icon: state.isLoading
               ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.offline_pin_outlined),
-          label: Text(state.isLoading ? 'Analysing 7-day data…' : 'Build offline trip package'),
+          label: Text(state.isLoading ? 'Analysing voyage data…' : 'Build offline trip package'),
         ),
-        if (widget.area == null) ...<Widget>[
+        if (!voyageReady) ...<Widget>[
           const SizedBox(height: 8),
-          const Text('Select a planned area on the map first.', style: OrcaType.caption),
+          const Text(
+            'Select a destination at least 1 km from the home/return port before building the offline voyage.',
+            style: TextStyle(color: VerdictColors.caution, fontSize: 11.5, fontWeight: FontWeight.w700),
+          ),
         ],
         if (plan != null) ...<Widget>[
           const SizedBox(height: 14),

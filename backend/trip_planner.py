@@ -280,7 +280,16 @@ class TripPlanningEngine:
             ),
             "verdict": verdict, "coverage": {"known": known, "total": total, "ratio": round(known/total, 3) if total else 0},
             "area": {"center": {"lat": request.area_lat, "lon": request.area_lon}, "radius_km": request.area_radius_km, "sample_points": [{"lat": a, "lon": b} for a,b in points]},
-            "trip_profile": {"duration_days": request.duration_days, "crew_size": request.crew_size, "boat_capacity_kg": request.boat_capacity_kg, "experience_level": request.experience_level, "cruise_speed_kn": request.cruise_speed_kn},
+            "trip_profile": {
+                "trip_name": getattr(request, "trip_name", None),
+                "vessel_name": getattr(request, "vessel_name", None),
+                "shore_contact": getattr(request, "shore_contact", None),
+                "duration_days": request.duration_days, "crew_size": request.crew_size,
+                "boat_capacity_kg": request.boat_capacity_kg,
+                "experience_level": request.experience_level,
+                "cruise_speed_kn": request.cruise_speed_kn,
+                "expected_return_at": _iso(start + timedelta(hours=duration_hours)),
+            },
             "vessel_limits": limits, "timeline": timeline, "alerts": alerts,
             "offline_navigation": navigation,
             "cyclone_watch": {

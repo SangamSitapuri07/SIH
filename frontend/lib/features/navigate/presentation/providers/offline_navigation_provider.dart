@@ -202,6 +202,40 @@ class OfflineNavigationNotifier extends StateNotifier<OfflineNavigationState> {
     }
   }
 
+  static bool _samePoint(List<double> a, List<double> b) =>
+      a.length >= 2 && b.length >= 2 &&
+      (a[0] - b[0]).abs() < 0.00001 && (a[1] - b[1]).abs() < 0.00001;
+
+  Future<void> saveVerifiedGeometry(RouteCheckEntity check) async {
+    if (check.ok != true || check.legs.length < 2) return;
+    final now = DateTime.now().toUtc();
+    final existing = state.package;
+    if (existing != null &&
+        existing.geometry.length >= 2 &&
+        existing.weatherPoints.isNotEmpty &&
+        existing.weatherValidUntil.isAfter(now) &&
+        _samePoint(existing.geometry.first, check.legs.first) &&
+        _samePoint(existing.geometry.last, check.legs.last)) {
+      // Do not downgrade a still-valid weather-backed package while refreshing
+      // the exact same route's advisory.
+      return;
+    }
+    final package = OfflineRoutePackage(
+      geometry: check.legs.map((point) => List<double>.from(point)).toList(),
+      distanceKm: check.distanceKm ?? 0,
+      boundaryReason: check.reason,
+      advisoryLevel: 'WEATHER_UNVERIFIED',
+      weatherPoints: const <Map<String, dynamic>>[],
+      sources: List<String>.from(check.sources),
+      savedAt: now,
+      weatherValidUntil: now,
+    );
+    await _positionSubscription?.cancel();
+    _positionSubscription = null;
+    await _cache.put(_cacheKey, package.toJson(), ttl: const Duration(days: 30));
+    state = OfflineNavigationState(package: package);
+  }
+
   Future<void> saveRoute(RouteCheckEntity check, RouteAdvisoryEntity advisory) async {
     if (check.ok != true || check.legs.length < 2) return;
     final now = DateTime.now().toUtc();

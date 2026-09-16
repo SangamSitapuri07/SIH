@@ -28,6 +28,8 @@ class DataProvidersEngine:
         self.route_planner = MarineRoutePlanner(self.boundaries)
         self._route_cache: Dict[tuple[float, float, float, float], tuple[float, Dict[str, Any]]] = {}
         self._route_cache_lock = threading.Lock()
+        self._route_weather_cache: Dict[tuple[tuple[float, float], ...], tuple[float, List[Dict[str, Any]]]] = {}
+        self._route_weather_cache_lock = threading.Lock()
         # TTL cache for zone snapshots: identical coordinates within the TTL
         # return instantly instead of re-hitting every upstream provider.
         self._snapshot_cache: Dict[str, Dict[str, Any]] = {}
@@ -358,6 +360,12 @@ class DataProvidersEngine:
         """
         if not points:
             return []
+        cache_key = tuple((round(point[0], 5), round(point[1], 5)) for point in points)
+        with self._route_weather_cache_lock:
+            cached = self._route_weather_cache.get(cache_key)
+        if cached and time.time() - cached[0] < 600:
+            return [dict(snapshot) for snapshot in cached[1]]
+
         latitudes = ",".join(f"{point[0]:.5f}" for point in points)
         longitudes = ",".join(f"{point[1]:.5f}" for point in points)
         marine_url = "https://marine-api.open-meteo.com/v1/marine"
@@ -405,6 +413,11 @@ class DataProvidersEngine:
                                   observed_at=(marine_items[0].get("current", {}) or {}).get("time"))
             self._record_provider("open_meteo_forecast", "FRESH", latency_ms=latency_ms,
                                   observed_at=(forecast_items[0].get("current", {}) or {}).get("time"))
+            with self._route_weather_cache_lock:
+                self._route_weather_cache[cache_key] = (time.time(), results)
+                if len(self._route_weather_cache) > 128:
+                    oldest = min(self._route_weather_cache, key=lambda key: self._route_weather_cache[key][0])
+                    self._route_weather_cache.pop(oldest, None)
             return results
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             latency_ms = round((time.perf_counter() - started) * 1000)
