@@ -16,6 +16,7 @@ from safe_window import find_safe_departure_window
 from ollama_client import ollama
 from trip_planner import TripPlanningEngine
 from marine_router import haversine
+from fishing_zones import recommend as recommend_fishing_zones
 
 router = APIRouter(prefix="/api/v1")
 providers = DataProvidersEngine()
@@ -199,6 +200,19 @@ def get_pfz():
         "fetched_at": int(time.time()),
         "features": result.get("features", []),
     }
+
+
+@router.get("/fishing-zones")
+def get_fishing_zones(
+    lat: float = Query(ge=-90, le=90),
+    lon: float = Query(ge=-180, le=180),
+    max_km: float = Query(default=250, ge=25, le=500),
+    limit: int = Query(default=4, ge=1, le=4),
+):
+    """Latest official PFZ candidates near a selected point, weather-gated."""
+    return recommend_fishing_zones(
+        providers, lat, lon, max_km=max_km, limit=limit,
+    )
 
 @router.get("/layers")
 def get_layers():

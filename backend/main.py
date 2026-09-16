@@ -38,6 +38,11 @@ async def lifespan(app: FastAPI):
         name="orca-boundary-warmup",
         daemon=True,
     ).start()
+    threading.Thread(
+        target=providers.fetch_incois_pfz,
+        name="orca-pfz-warmup",
+        daemon=True,
+    ).start()
     ingestion_daemon = IngestionDaemon(
         providers_engine=providers,
         agents_engine=agents_engine,

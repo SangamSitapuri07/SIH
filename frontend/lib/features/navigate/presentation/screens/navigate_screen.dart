@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../../core/config/api_paths.dart';
 import '../../../../core/config/app_config.dart';
+import '../../../../core/network/dio_provider.dart';
 import '../../../../core/offline/connectivity_watcher.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../../core/theme/orca_theme.dart';
@@ -19,6 +21,37 @@ import '../providers/offline_navigation_provider.dart';
 import '../providers/trip_plan_provider.dart';
 import '../widgets/route_verdict_card.dart';
 import '../widgets/transit_points_strip.dart';
+
+class _FishingZoneCandidate {
+  final double lat;
+  final double lon;
+  final double distanceKm;
+  final double bearingDeg;
+  final String weatherState;
+  final String weatherEvidence;
+  final String advisoryEdition;
+
+  const _FishingZoneCandidate({
+    required this.lat,
+    required this.lon,
+    required this.distanceKm,
+    required this.bearingDeg,
+    required this.weatherState,
+    required this.weatherEvidence,
+    required this.advisoryEdition,
+  });
+
+  factory _FishingZoneCandidate.fromJson(Map<String, dynamic> json) =>
+      _FishingZoneCandidate(
+        lat: (json['lat'] as num).toDouble(),
+        lon: (json['lon'] as num).toDouble(),
+        distanceKm: (json['distance_km'] as num?)?.toDouble() ?? 0,
+        bearingDeg: (json['bearing_deg'] as num?)?.toDouble() ?? 0,
+        weatherState: json['weather_state']?.toString() ?? 'UNVERIFIED',
+        weatherEvidence: json['weather_evidence']?.toString() ?? 'Weather evidence unavailable',
+        advisoryEdition: 'Year ${json['year'] ?? '?'} · day ${json['julian_day'] ?? '?'}',
+      );
+}
 
 /// Route planner and transit verifier.
 ///
@@ -40,6 +73,9 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
   final TextEditingController _toLat = TextEditingController();
   final TextEditingController _toLon = TextEditingController();
   String? _formMessage;
+  List<_FishingZoneCandidate> _fishingZones = const <_FishingZoneCandidate>[];
+  bool _zonesLoading = false;
+  String? _zonesMessage;
 
   @override
   void initState() {
@@ -110,7 +146,16 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
                     ? null
                     : LatLng(offlineNavigation.progress!.latitude, offlineNavigation.progress!.longitude),
                 isOnline: isOnline,
+                fishingZones: _fishingZones,
                 onPointPicked: _setPickedPoint,
+                onFishingZonePicked: _selectFishingZone,
+              ),
+              const SizedBox(height: 10),
+              _FishingZoneSuggestions(
+                zones: _fishingZones,
+                loading: _zonesLoading,
+                message: _zonesMessage,
+                onSelected: _selectFishingZone,
               ),
               const SizedBox(height: 14),
               _RouteForm(
@@ -122,6 +167,7 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
                 message: _formMessage,
                 onUseWorkingLocation: _useWorkingLocation,
                 onPickSaved: _pickSavedLocation,
+                onFindFishingZones: _findForCurrentDestination,
                 onCheck: _checkRoute,
               ),
               const SizedBox(height: 14),
@@ -287,6 +333,9 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
       }
       _formMessage = null;
     });
+    if (!asDeparture) {
+      _loadFishingZones(LatLng(picked.latitude, picked.longitude));
+    }
   }
 
   LatLng? _coordinate(TextEditingController lat, TextEditingController lon) {
@@ -295,20 +344,82 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
     return latitude == null || longitude == null ? null : LatLng(latitude, longitude);
   }
 
+  Future<void> _loadFishingZones(LatLng point) async {
+    setState(() {
+      _zonesLoading = true;
+      _zonesMessage = null;
+      _fishingZones = const <_FishingZoneCandidate>[];
+    });
+    try {
+      final response = await ref.read(dioProvider).get<Map<String, dynamic>>(
+        ApiPaths.fishingZones,
+        queryParameters: <String, dynamic>{
+          'lat': point.latitude,
+          'lon': point.longitude,
+          'max_km': 250,
+          'limit': 4,
+        },
+      );
+      final payload = response.data ?? const <String, dynamic>{};
+      final zones = (payload['recommendations'] as List<dynamic>? ?? const <dynamic>[])
+          .whereType<Map<String, dynamic>>()
+          .map(_FishingZoneCandidate.fromJson)
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _fishingZones = zones;
+        _zonesLoading = false;
+        _zonesMessage = payload['reason']?.toString() ??
+            (zones.isEmpty ? 'No current official PFZ line was found nearby.' : null);
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _zonesLoading = false;
+        _zonesMessage = 'Official PFZ suggestions unavailable: $error';
+      });
+    }
+  }
+
+  void _selectFishingZone(_FishingZoneCandidate zone) {
+    setState(() {
+      _toLat.text = zone.lat.toStringAsFixed(5);
+      _toLon.text = zone.lon.toStringAsFixed(5);
+      _formMessage = 'Official PFZ candidate selected. Verifying and saving its route…';
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkRoute();
+    });
+  }
+
   void _setPickedPoint(LatLng point) {
+    var selectedDestination = false;
     setState(() {
       if (_coordinate(_fromLat, _fromLon) == null || _coordinate(_toLat, _toLon) != null) {
         _fromLat.text = point.latitude.toStringAsFixed(5);
         _fromLon.text = point.longitude.toStringAsFixed(5);
         _toLat.clear();
         _toLon.clear();
+        _fishingZones = const <_FishingZoneCandidate>[];
+        _zonesMessage = null;
         _formMessage = 'Departure selected. Tap the map again for destination.';
       } else {
         _toLat.text = point.latitude.toStringAsFixed(5);
         _toLon.text = point.longitude.toStringAsFixed(5);
-        _formMessage = 'Destination selected. Check route to run verified planning.';
+        _formMessage = 'Destination selected. Finding nearby official PFZ candidates…';
+        selectedDestination = true;
       }
     });
+    if (selectedDestination) _loadFishingZones(point);
+  }
+
+  void _findForCurrentDestination() {
+    final destination = _coordinate(_toLat, _toLon);
+    if (destination == null) {
+      setState(() => _formMessage = 'Enter or tap a destination before finding nearby PFZ candidates.');
+      return;
+    }
+    _loadFishingZones(destination);
   }
 
   void _checkRoute() {
@@ -329,7 +440,9 @@ class _RoutePickerMap extends StatelessWidget {
   final List<List<double>> route;
   final LatLng? vesselPosition;
   final bool isOnline;
+  final List<_FishingZoneCandidate> fishingZones;
   final ValueChanged<LatLng> onPointPicked;
+  final ValueChanged<_FishingZoneCandidate> onFishingZonePicked;
 
   const _RoutePickerMap({
     required this.departure,
@@ -337,8 +450,17 @@ class _RoutePickerMap extends StatelessWidget {
     required this.route,
     required this.vesselPosition,
     required this.isOnline,
+    required this.fishingZones,
     required this.onPointPicked,
+    required this.onFishingZonePicked,
   });
+
+  static Color _zoneColor(String state) => switch (state.toUpperCase()) {
+        'GOOD' => VerdictColors.go,
+        'CAUTION' => VerdictColors.caution,
+        'DANGER' => VerdictColors.noGo,
+        _ => VerdictColors.stale,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -387,6 +509,19 @@ class _RoutePickerMap extends StatelessWidget {
                     height: 42,
                     child: const OrcaIconBadge(icon: Icons.flag_rounded),
                   ),
+                for (final zone in fishingZones)
+                  Marker(
+                    point: LatLng(zone.lat, zone.lon),
+                    width: 44,
+                    height: 44,
+                    child: GestureDetector(
+                      onTap: () => onFishingZonePicked(zone),
+                      child: OrcaIconBadge(
+                        icon: Icons.phishing_rounded,
+                        color: _zoneColor(zone.weatherState),
+                      ),
+                    ),
+                  ),
                 if (vesselPosition != null)
                   Marker(
                     point: vesselPosition!,
@@ -419,6 +554,92 @@ class _RoutePickerMap extends StatelessWidget {
   }
 }
 
+class _FishingZoneSuggestions extends StatelessWidget {
+  final List<_FishingZoneCandidate> zones;
+  final bool loading;
+  final String? message;
+  final ValueChanged<_FishingZoneCandidate> onSelected;
+
+  const _FishingZoneSuggestions({
+    required this.zones,
+    required this.loading,
+    required this.message,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!loading && zones.isEmpty && message == null) {
+      return const SizedBox.shrink();
+    }
+    return OrcaCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        const OrcaEyebrow('NEARBY OFFICIAL PFZ CANDIDATES', color: OrcaTheme.accentDark),
+        const SizedBox(height: 6),
+        const Text(
+          'Latest INCOIS PFZ line points, ranked by measured weather state and distance—not catch probability.',
+          style: OrcaType.caption,
+        ),
+        if (loading) ...<Widget>[
+          const SizedBox(height: 12),
+          const LinearProgressIndicator(minHeight: 3),
+          const SizedBox(height: 7),
+          const Text('Checking official PFZ geometry and weather at nearby points…', style: OrcaType.caption),
+        ] else ...<Widget>[
+          if (message != null) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(message!, style: OrcaType.caption),
+          ],
+          for (var index = 0; index < zones.length; index++) ...<Widget>[
+            const SizedBox(height: 9),
+            InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => onSelected(zones[index]),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: OrcaTheme.surfaceElevated,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: OrcaTheme.cardBorder),
+                ),
+                child: Row(children: <Widget>[
+                  OrcaIconBadge(
+                    icon: Icons.phishing_rounded,
+                    color: _color(zones[index].weatherState),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'PFZ ${index + 1} · ${zones[index].weatherState} · ${zones[index].distanceKm.toStringAsFixed(1)} km',
+                        style: OrcaType.body.copyWith(fontSize: 12, fontWeight: FontWeight.w800),
+                      ),
+                      Text(zones[index].weatherEvidence, style: OrcaType.caption),
+                      Text(
+                        '${GeoUtils.formatCoordinate(zones[index].lat, zones[index].lon)} · bearing ${zones[index].bearingDeg.toStringAsFixed(0)}° · ${zones[index].advisoryEdition}',
+                        style: OrcaType.caption.copyWith(fontSize: 10.5),
+                      ),
+                    ],
+                  )),
+                  const Icon(Icons.chevron_right_rounded, color: OrcaTheme.textMuted),
+                ]),
+              ),
+            ),
+          ],
+        ],
+      ]),
+    );
+  }
+
+  static Color _color(String state) => switch (state.toUpperCase()) {
+        'GOOD' => VerdictColors.go,
+        'CAUTION' => VerdictColors.caution,
+        'DANGER' => VerdictColors.noGo,
+        _ => VerdictColors.stale,
+      };
+}
+
 class _RouteForm extends StatelessWidget {
   final GlobalKey<FormState> formKey;
   final TextEditingController fromLat;
@@ -428,6 +649,7 @@ class _RouteForm extends StatelessWidget {
   final String? message;
   final VoidCallback onUseWorkingLocation;
   final void Function({required bool asDeparture}) onPickSaved;
+  final VoidCallback onFindFishingZones;
   final VoidCallback onCheck;
 
   const _RouteForm({
@@ -439,6 +661,7 @@ class _RouteForm extends StatelessWidget {
     required this.message,
     required this.onUseWorkingLocation,
     required this.onPickSaved,
+    required this.onFindFishingZones,
     required this.onCheck,
   });
 
@@ -484,6 +707,12 @@ class _RouteForm extends StatelessWidget {
                   onPressed: () => onPickSaved(asDeparture: false),
                   icon: const Icon(Icons.bookmark_border_rounded, size: 15),
                   label: const Text('Saved place'),
+                  style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+                ),
+                TextButton.icon(
+                  onPressed: onFindFishingZones,
+                  icon: const Icon(Icons.phishing_rounded, size: 15),
+                  label: const Text('Find official PFZ'),
                   style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
                 ),
               ],

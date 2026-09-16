@@ -2,11 +2,30 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from marine_router import MarineRoutePlanner, OfficialBoundaryStore
 
 
 class MarineRoutePlannerTests(unittest.TestCase):
+    def test_local_globe_mask_routes_without_remote_eez_download(self):
+        class Globe:
+            @staticmethod
+            def is_land(lat, lon):
+                return False
+
+        with tempfile.TemporaryDirectory() as directory, patch(
+            'marine_router._globe_land', Globe(),
+        ), patch.dict('os.environ', {
+            'ORCA_EEZ_CACHE_PATH': str(Path(directory) / 'missing.geojson'),
+        }):
+            store = OfficialBoundaryStore()
+            result = MarineRoutePlanner(store).plan((18.9, 72.2), (18.5, 72.4))
+
+        self.assertEqual(store.state.status, 'LAND_MASK_AVAILABLE')
+        self.assertEqual(result['status'], 'LAND_MASK_ROUTE_GEOMETRY')
+        self.assertFalse(result['regulatory_verified'])
+
     def test_cross_coast_route_uses_bounded_coarse_detour(self):
         # Synthetic authority geometry: navigable sea rectangle with a tall
         # land/prohibited-shaped hole. The east-west route must go around its

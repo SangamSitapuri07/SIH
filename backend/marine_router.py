@@ -22,6 +22,11 @@ from typing import Any, Iterable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+try:
+    from global_land_mask import globe as _globe_land
+except Exception:  # optional until requirements are installed
+    _globe_land = None
+
 
 REQUIRED_METADATA = ("authority", "dataset", "version", "published_at")
 
@@ -175,6 +180,19 @@ class OfficialBoundaryStore:
                 return self._validate(Path(self.path).read_bytes())
             if self.cache_path.exists():
                 return self._validate(self.cache_path.read_bytes(), reference=True)
+            if _globe_land is not None:
+                return BoundaryState(
+                    True,
+                    "LAND_MASK_AVAILABLE",
+                    "GLOBE 1 km land/sea mask loaded locally. Land-crossing checks are available; EEZ, restricted-area and regulatory clearance remain unverified.",
+                    {
+                        "authority": "NOAA NGDC GLOBE via global-land-mask",
+                        "dataset": "GLOBE 1 km land/sea mask",
+                        "version": "global-land-mask package dataset",
+                        "published_at": "1999-01-01T00:00:00Z",
+                        "verification_tier": "land_mask_only",
+                    },
+                )
             return BoundaryState(False, "REFERENCE_DOWNLOAD_REQUIRED", "India EEZ reference will download automatically on the first route request.", {})
         except Exception as exc:
             return BoundaryState(False, "BOUNDARY_INVALID", str(exc), {})
@@ -265,6 +283,18 @@ class OfficialBoundaryStore:
 
     def classify(self, lat: float, lon: float) -> tuple[bool | None, str]:
         if not self.state.ready: return None, self.state.reason
+        if self.state.status == "LAND_MASK_AVAILABLE":
+            if _globe_land is None:
+                return None, "GLOBE land mask became unavailable"
+            try:
+                is_land = bool(_globe_land.is_land(lat, lon))
+            except Exception as exc:
+                return None, f"GLOBE land-mask lookup failed: {exc}"
+            return (
+                (False, "on land according to the local GLOBE 1 km mask")
+                if is_land else
+                (True, "water according to the local GLOBE 1 km mask")
+            )
         def contains(role: str) -> bool:
             return any(
                 min_lat <= lat <= max_lat and min_lon <= lon <= max_lon and
@@ -322,11 +352,27 @@ class MarineRoutePlanner:
         def success(path: list[tuple[float, float]]) -> dict[str, Any]:
             distance=sum(haversine(a,b) for a,b in zip(path,path[1:]))
             coords=[[round(lat,5),round(lon,5)] for lat,lon in path]
-            reference = self.boundaries.state.status == "REFERENCE_AVAILABLE"
-            status = "REFERENCE_ROUTE_GEOMETRY" if reference else "ROUTE_GEOMETRY_VERIFIED"
-            reason = ("Path stays inside the Marine Regions India territorial-sea/EEZ reference geometry. Regulatory/restricted-area clearance is not verified."
-                      if reference else "Every route edge is inside authority-declared navigable waters and outside prohibited polygons.")
-            return {"status":status, "verified":True, "regulatory_verified":not reference, "reason":reason, "routes":[{"id":"balanced","label":"Balanced EEZ geometry" if reference else "Balanced verified geometry","coordinates":coords,"distance_km":round(distance,1),"distance_nm":round(distance*.539957,1)}], "boundary":{"metadata":self.boundaries.state.metadata,"sha256":self.boundaries.state.checksum}}
+            reference = self.boundaries.state.status != "AVAILABLE"
+            status = (
+                "LAND_MASK_ROUTE_GEOMETRY"
+                if self.boundaries.state.status == "LAND_MASK_AVAILABLE"
+                else "REFERENCE_ROUTE_GEOMETRY" if reference
+                else "ROUTE_GEOMETRY_VERIFIED"
+            )
+            reason = (
+                "Every route edge was checked as water against the local GLOBE 1 km land mask. EEZ, charted hazards, depth, restricted-area and regulatory clearance remain unverified."
+                if self.boundaries.state.status == "LAND_MASK_AVAILABLE"
+                else "Path stays inside the Marine Regions India territorial-sea/EEZ reference geometry. Regulatory/restricted-area clearance is not verified."
+                if reference else
+                "Every route edge is inside authority-declared navigable waters and outside prohibited polygons."
+            )
+            label = (
+                "Balanced water-only geometry"
+                if self.boundaries.state.status == "LAND_MASK_AVAILABLE"
+                else "Balanced EEZ geometry" if reference
+                else "Balanced verified geometry"
+            )
+            return {"status":status, "verified":True, "regulatory_verified":not reference, "reason":reason, "routes":[{"id":"balanced","label":label,"coordinates":coords,"distance_km":round(distance,1),"distance_nm":round(distance*.539957,1)}], "boundary":{"metadata":self.boundaries.state.metadata,"sha256":self.boundaries.state.checksum}}
         # Most fishing legs stay on one side of the coast. Do not run A* when
         # the complete great-circle approximation already remains in water.
         if edge_allowed(start, end, 1.0):

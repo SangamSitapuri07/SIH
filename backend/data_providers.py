@@ -30,6 +30,8 @@ class DataProvidersEngine:
         self._route_cache_lock = threading.Lock()
         self._route_weather_cache: Dict[tuple[tuple[float, float], ...], tuple[float, List[Dict[str, Any]]]] = {}
         self._route_weather_cache_lock = threading.Lock()
+        self._pfz_cache: tuple[float, Dict[str, Any]] | None = None
+        self._pfz_cache_lock = threading.Lock()
         # TTL cache for zone snapshots: identical coordinates within the TTL
         # return instantly instead of re-hitting every upstream provider.
         self._snapshot_cache: Dict[str, Dict[str, Any]] = {}
@@ -252,7 +254,11 @@ class DataProvidersEngine:
             }
 
     def fetch_incois_pfz(self) -> Dict[str, Any]:
-        """Fetch official INCOIS PFZ lines when the government WFS is available."""
+        """Fetch official INCOIS PFZ lines with a six-hour advisory cache."""
+        with self._pfz_cache_lock:
+            cached = self._pfz_cache
+        if cached and time.time() - cached[0] < 6 * 3600:
+            return cached[1]
         url = "https://incois.gov.in/geoserver/PFZ_Automation/ows"
         params = {
             "service": "WFS",
@@ -269,13 +275,16 @@ class DataProvidersEngine:
                 "incois_pfz", "FRESH",
                 latency_ms=round((time.perf_counter() - started) * 1000),
             )
-            return {
+            result = {
                 "status": "fresh",
                 "source": "INCOIS PFZ GeoServer",
                 "dataset": "PFZ_Automation:pfzlines",
                 "source_url": url,
                 "features": payload.get("features", []),
             }
+            with self._pfz_cache_lock:
+                self._pfz_cache = (time.time(), result)
+            return result
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             self._record_provider(
                 "incois_pfz", "UNREACHABLE",
