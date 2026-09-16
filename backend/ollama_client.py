@@ -4,7 +4,7 @@ ORCA Box — Ollama Local LLM Client
 Thin HTTP client for the locally-running Ollama server (default: http://localhost:11434).
 
 Architecture note:
-  • Flutter APK  →  ORCA Box FastAPI  →  Ollama (Qwen3:8b)
+  • Flutter APK  →  ORCA Box FastAPI  →  Ollama (Qwen3:1.7b edge default)
   Flutter is completely unaware of Ollama.
 
 Design rules:
@@ -13,7 +13,7 @@ Design rules:
   2. Marine Risk Agent (Agent 10) is ALWAYS deterministic; Ollama NEVER touches safety thresholds.
   3. All prompts are structured and bounded — no open-ended generation.
   4. One bounded request may include model cold-start time. The timeout is
-     configurable via OLLAMA_TIMEOUT_S (default 75 s, minimum 15 s).
+     configurable via OLLAMA_TIMEOUT_S (default 30 s, minimum 10 s).
 """
 
 import os
@@ -28,10 +28,10 @@ import httpx
 logger = logging.getLogger("orca.ollama")
 
 _DEFAULT_HOST = "http://localhost:11434"
-_DEFAULT_MODEL = "qwen3:8b"
-_DEFAULT_TIMEOUT = 75.0  # CPU-only Qwen3:8b commonly needs about 45 seconds
-_MIN_TIMEOUT = 15.0
-_INTEGRATION_VERSION = "role-lines-v5-cpu-bounded"
+_DEFAULT_MODEL = "qwen3:1.7b"
+_DEFAULT_TIMEOUT = 30.0  # interactive edge budget; deterministic output is immediate
+_MIN_TIMEOUT = 10.0
+_INTEGRATION_VERSION = "role-lines-v6-edge-model"
 
 class OllamaClient:
     """
@@ -42,7 +42,7 @@ class OllamaClient:
 
     def __init__(self):
         self.host = os.getenv("OLLAMA_HOST", _DEFAULT_HOST).rstrip("/")
-        self.model = os.getenv("OLLAMA_MODEL", _DEFAULT_MODEL).strip()
+        self.model = os.getenv("OLLAMA_MODEL", _DEFAULT_MODEL).strip() or _DEFAULT_MODEL
         try:
             configured_timeout = float(os.getenv("OLLAMA_TIMEOUT_S", str(_DEFAULT_TIMEOUT)))
         except (TypeError, ValueError):

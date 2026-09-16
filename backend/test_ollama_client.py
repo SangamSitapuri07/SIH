@@ -24,6 +24,14 @@ class OllamaClientPolicyTests(unittest.TestCase):
         client._installed_models = [client.model]
         return client
 
+    def test_edge_default_uses_cpu_suitable_model(self):
+        with patch.dict(os.environ, {
+            "OLLAMA_MODEL": "",
+            "OLLAMA_NUM_THREADS": "",
+        }):
+            client = OllamaClient()
+        self.assertEqual(client.model, "qwen3:1.7b")
+
     def test_default_request_lets_ollama_choose_threads(self):
         client = self.client()
         with patch("ollama_client.httpx.post", return_value=_Response()) as post:
