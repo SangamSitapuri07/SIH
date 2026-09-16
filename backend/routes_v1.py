@@ -321,7 +321,7 @@ def ask_orca(request: AskOrcaRequest):
     )
     provider_state = (
         "OLLAMA_OUTPUT_USED" if explanation
-        else "OLLAMA_BUSY_OR_NO_VALID_OUTPUT"
+        else f"OLLAMA_{ollama.last_generation_status.upper()}"
     )
     return {
         "question": request.question,

@@ -31,7 +31,7 @@ _DEFAULT_HOST = "http://localhost:11434"
 _DEFAULT_MODEL = "qwen3:8b"
 _DEFAULT_TIMEOUT = 120.0  # includes first-run model loading on CPU-only devices
 _MIN_TIMEOUT = 120.0
-_INTEGRATION_VERSION = "batched-v2"
+_INTEGRATION_VERSION = "role-lines-v3"
 
 class OllamaClient:
     """
@@ -55,7 +55,7 @@ class OllamaClient:
         self._installed_models: list[str] = []
         # Keep capacity for FastAPI routing/weather while local inference runs.
         # Operators can override this for GPU-backed or dedicated Ollama hosts.
-        default_threads = max(1, (os.cpu_count() or 4) - 2)
+        default_threads = max(1, (os.cpu_count() or 4) - 1)
         try:
             self.num_threads = max(1, int(os.getenv("OLLAMA_NUM_THREADS", str(default_threads))))
         except (TypeError, ValueError):
@@ -134,7 +134,7 @@ class OllamaClient:
                 "temperature": temperature,
                 "num_predict": max_tokens,
                 "num_thread": self.num_threads,
-                "stop": ["</analysis>", "---END---"],
+                "num_ctx": 4096,
             },
         }
         if json_schema is not None:
@@ -225,6 +225,10 @@ class OllamaClient:
                 return None
         finally:
             self._generation_lock.release()
+
+    @property
+    def last_generation_status(self) -> str:
+        return str(self._last_generation.get("status", "unknown"))
 
     def log_configuration(self) -> None:
         """Emit an unmistakable startup signature for stale-server diagnosis."""

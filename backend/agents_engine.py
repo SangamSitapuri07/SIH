@@ -86,9 +86,10 @@ class MultiAgentEngine:
                     continue
                 status = str(finding.get("status", "completed")).upper()
                 runtime["status"] = status
+                provider_detail = str(finding.get("llm_provider_state", "unknown")).upper()
                 runtime["provider_state"] = (
                     "OLLAMA_OUTPUT_USED" if finding.get("llm_invoked") is True
-                    else "OLLAMA_NO_VALID_OUTPUT" if finding.get("llm_attempted") is True
+                    else f"OLLAMA_{provider_detail}" if finding.get("llm_attempted") is True
                     else "DETERMINISTIC"
                 )
                 runtime["last_duration_ms"] = finding.get("duration_ms")
@@ -96,24 +97,44 @@ class MultiAgentEngine:
 
     @staticmethod
     def _parse_analytical_response(response: str | None) -> Dict[str, str]:
-        """Normalize valid structured responses from different Ollama versions."""
+        """Normalize JSON or role-delimited output across Ollama/Qwen versions."""
         if not response:
             return {}
         text = response.strip()
         if text.startswith("```"):
             lines = text.splitlines()
             text = "\n".join(lines[1:-1]).strip()
+
+        def role_lines(raw: str) -> Dict[str, str]:
+            parsed: Dict[str, str] = {}
+            for line in raw.splitlines():
+                cleaned = line.strip().lstrip("-*0123456789. ")
+                separator = next((token for token in ("\t", "|", ":") if token in cleaned), None)
+                if separator is None:
+                    continue
+                role, finding = cleaned.split(separator, 1)
+                normalized = role.strip("*`_ ").lower().replace("-", "_").replace(" ", "_")
+                if normalized.endswith("_agent"):
+                    normalized = normalized[:-6]
+                if normalized in {
+                    "ocean_analysis", "satellite_analysis", "weather_hazard",
+                    "marine_ecology", "fisheries_pfz", "orchestrator",
+                } and finding.strip():
+                    parsed[normalized] = finding.strip()
+            return parsed
+
         try:
             value = json.loads(text)
         except (TypeError, ValueError):
-            # Recover when an older model surrounds the JSON with a sentence.
+            # Recover JSON surrounded by prose, then fall back to a compact
+            # ROLE_ID | finding contract supported by older Ollama builds.
             start, end = text.find("{"), text.rfind("}")
             if start < 0 or end <= start:
-                return {}
+                return role_lines(text)
             try:
                 value = json.loads(text[start:end + 1])
             except (TypeError, ValueError):
-                return {}
+                return role_lines(text)
 
         if isinstance(value, dict):
             for wrapper in ("findings", "results", "agents", "analyses"):
@@ -170,28 +191,20 @@ class MultiAgentEngine:
         if use_llm:
             response = ollama.generate(
                 prompt=(
-                    "Analyse the following ORCA evidence for six specialist roles. "
-                    "Return ONLY one valid JSON object whose keys exactly match the supplied role IDs "
-                    "and whose values are short fisherman-friendly strings. Use only supplied evidence. "
-                    "Do not invent measurements, sources, times, confidence, or safety verdicts. "
-                    "If evidence is insufficient, say so for that role.\n"
+                    "Analyse the supplied ORCA evidence for all six roles. Return exactly six "
+                    "plain lines in this format: ROLE_ID | short evidence-bound finding. "
+                    "Use these ROLE_IDs once each: ocean_analysis, satellite_analysis, "
+                    "weather_hazard, marine_ecology, fisheries_pfz, orchestrator. "
+                    "Do not invent measurements, sources, times, confidence, catch likelihood, "
+                    "or safety verdicts. Say evidence is insufficient when needed.\n"
                     f"ROLE_EVIDENCE={json.dumps(evidence_payload, ensure_ascii=False)}"
                 ),
                 system=(
-                    "You are ORCA's analytical explanation layer. The deterministic Marine Risk "
-                    "engine owns the safety verdict; never change or create a verdict."
+                    "You are ORCA's optional analytical explanation layer. The deterministic "
+                    "Marine Risk engine owns the verdict and your output cannot change it."
                 ),
                 temperature=0.1,
-                max_tokens=480,
-                json_mode=True,
-                json_schema={
-                    "type": "object",
-                    "properties": {
-                        agent_id: {"type": "string"} for agent_id in jobs
-                    },
-                    "required": list(jobs.keys()),
-                    "additionalProperties": False,
-                },
+                max_tokens=240,
             )
         elapsed_ms = int((time.monotonic() - started) * 1000)
 
@@ -219,6 +232,7 @@ class MultiAgentEngine:
                 "llm_attempted": use_llm,
                 "llm_invoked": valid,
                 "llm_model": ollama.model,
+                "llm_provider_state": "success" if valid else ollama.last_generation_status,
                 "fallback_used": not valid,
             }
         return results

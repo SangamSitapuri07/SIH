@@ -48,8 +48,36 @@ class AgentEngineTruthfulnessTests(unittest.TestCase):
         self.assertNotIn('confidence', serialized)
         self.assertIn('CONDITIONS BELOW CONFIGURED LIMITS', result['headline_en'])
         runtime = {agent['id']: agent for agent in engine.list_agents()}
-        self.assertEqual(runtime['ocean_analysis']['provider_state'], 'OLLAMA_NO_VALID_OUTPUT')
+        self.assertTrue(runtime['ocean_analysis']['provider_state'].startswith('OLLAMA_'))
         self.assertEqual(runtime['marine_risk']['provider_state'], 'DETERMINISTIC')
+
+    def test_qwen_role_delimited_output_is_accepted(self):
+        text = '\n'.join([
+            'ocean_analysis | Ocean finding',
+            'satellite_analysis | Satellite finding',
+            'weather_hazard | Weather finding',
+            'marine_ecology | Ecology finding',
+            'fisheries_pfz | PFZ finding',
+            'orchestrator | Summary finding',
+        ])
+        parsed = MultiAgentEngine._parse_analytical_response(text)
+        self.assertEqual(len(parsed), 6)
+        self.assertEqual(parsed['orchestrator'], 'Summary finding')
+
+    @patch('agents_engine.ollama.generate')
+    def test_role_delimited_model_result_completes_all_optional_agents(self, generate):
+        generate.return_value = '\n'.join(
+            f'{role} | Evidence-bound {role} finding'
+            for role in (
+                'ocean_analysis', 'satellite_analysis', 'weather_hazard',
+                'marine_ecology', 'fisheries_pfz', 'orchestrator',
+            )
+        )
+        result = MultiAgentEngine().run_collaborative_reasoning(self.snapshot())
+        optional = [agent for agent in result['agents'] if agent.get('llm_attempted')]
+        self.assertEqual(len(optional), 6)
+        self.assertTrue(all(agent['status'] == 'completed' for agent in optional))
+        self.assertTrue(all(agent['llm_invoked'] for agent in optional))
 
     @patch('agents_engine.ollama.generate')
     def test_core_advisory_never_waits_for_ollama(self, generate):

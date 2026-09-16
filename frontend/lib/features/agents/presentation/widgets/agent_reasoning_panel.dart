@@ -143,6 +143,11 @@ class _RegistryCard extends ConsumerWidget {
     final int running = agents.where((AgentRuntimeStatus agent) => agent.isRunning).length;
     final int problems = agents.where((AgentRuntimeStatus agent) => agent.hasProblem).length;
     final int fallbacks = agents.where((AgentRuntimeStatus agent) => agent.isFallback).length;
+    final Set<String> llmProviderStates = agents
+        .where((agent) => agent.type == 'LLM/Analytical')
+        .map((agent) => agent.providerLabel)
+        .whereType<String>()
+        .toSet();
     final String headline = agents.isEmpty
         ? 'UNKNOWN'
         : '$running RUNNING'
@@ -232,26 +237,24 @@ class _RegistryCard extends ConsumerWidget {
                             color: OrcaTheme.textMuted,
                           ),
                         ),
-                        if (agent.type == 'LLM/Analytical' && agent.providerLabel != null) ...<Widget>[
-                          const SizedBox(width: 4),
-                          Text(
-                            '· ${agent.providerLabel}',
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
-                              fontSize: 8.5,
-                              fontWeight: FontWeight.w700,
-                              color: OrcaTheme.textFaint,
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),
               ],
             ),
+            if (llmProviderStates.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 10),
+              Text(
+                'OLLAMA PROVIDER · ${llmProviderStates.join(' · ')}',
+                style: OrcaType.caption.copyWith(
+                  color: fallbacks > 0 ? VerdictColors.caution : OrcaTheme.accentDark,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
             Text(
-              'IDLE means not currently running. Each language-model role shows whether Ollama was not run, produced usable output, or produced no valid output. FALLBACK means an evidence-bound deterministic explanation was returned instead; it is not a failed safety calculation. Language-model roles: ${agents.where((AgentRuntimeStatus agent) => agent.type.toUpperCase().contains('LLM')).length} of ${agents.length}.',
+              'IDLE means not currently running. FALLBACK means the optional model did not produce an attributable role finding, so evidence-bound deterministic wording was used. Language-model roles: ${agents.where((AgentRuntimeStatus agent) => agent.type.toUpperCase().contains('LLM')).length} of ${agents.length}.',
               style: OrcaType.caption,
             ),
           ],
