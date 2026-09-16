@@ -5,6 +5,7 @@ import '../../../../core/cache/cache_service.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/config/api_paths.dart';
 import '../../../../core/network/dio_provider.dart';
+import '../../../advisory/presentation/providers/advisory_provider.dart';
 import '../../data/datasources/agents_remote.dart';
 import '../../data/repositories/agents_repo_impl.dart';
 import '../../domain/entities/agent_reasoning.dart';
@@ -99,6 +100,13 @@ class AgentsNotifier extends StateNotifier<AsyncValue<AgentReasoningResult>> {
           StackTrace.empty,
         ));
 
+  void resetForLocationChange() {
+    state = const AsyncValue.error(
+      'Reasoning has not been run for this working location.',
+      StackTrace.empty,
+    );
+  }
+
   Future<void> fetch({bool forceRefresh = false}) async {
     state = const AsyncValue.loading();
     // `/reason` and `/agents` are independent requests. Refresh the registry
@@ -107,9 +115,10 @@ class AgentsNotifier extends StateNotifier<AsyncValue<AgentReasoningResult>> {
     Timer(const Duration(milliseconds: 500), () {
       if (mounted) _ref.invalidate(agentRuntimeStatusProvider);
     });
+    final coordinates = _ref.read(advisoryLocationProvider);
     final result = await _useCase.execute(
-      lat: AppConfig.defaultLat,
-      lon: AppConfig.defaultLon,
+      lat: coordinates['lat'] ?? AppConfig.defaultLat,
+      lon: coordinates['lon'] ?? AppConfig.defaultLon,
       forceRefresh: forceRefresh,
     );
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,6 +11,7 @@ import '../../../../l10n/app_localizations.dart';
 import '../../../../core/offline/connectivity_watcher.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
+import '../../../../core/utils/coordinate_parser.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/widgets/orca_navigation.dart';
@@ -74,10 +77,26 @@ class _AiScreenState extends ConsumerState<AiScreen> {
     Future<void> ask(String rawQuestion) async {
       final String question = rawQuestion.trim();
       if (question.isEmpty || _asking) return;
+      final ParsedCoordinate? requested = parseCoordinateFromText(question);
+      final double queryLat = requested?.latitude ?? lat;
+      final double queryLon = requested?.longitude ?? lon;
       setState(() {
         _asking = true;
         _controller.clear();
       });
+
+      if (requested != null &&
+          ((queryLat - lat).abs() > 0.000001 || (queryLon - lon).abs() > 0.000001)) {
+        // An explicitly typed coordinate becomes the working location before
+        // any request is sent. Refresh dependent evidence and discard the old
+        // location's reasoning trace instead of silently mixing coordinates.
+        ref.read(advisoryLocationProvider.notifier).state = <String, double>{
+          'lat': queryLat,
+          'lon': queryLon,
+        };
+        ref.read(agentsProvider.notifier).resetForLocationChange();
+        unawaited(ref.read(advisoryProvider.notifier).fetch(forceRefresh: true));
+      }
 
       OrcaAnswer answer;
       if (online) {
@@ -86,8 +105,8 @@ class _AiScreenState extends ConsumerState<AiScreen> {
             ApiPaths.chat,
             data: <String, dynamic>{
               'question': question,
-              'latitude': lat,
-              'longitude': lon,
+              'latitude': queryLat,
+              'longitude': queryLon,
             },
           );
           final payload = response.data;
@@ -96,8 +115,8 @@ class _AiScreenState extends ConsumerState<AiScreen> {
         } catch (_) {
           answer = _answer(
             question,
-            advisory: advisory,
-            reasoning: reasoning,
+            advisory: requested == null ? advisory : null,
+            reasoning: requested == null ? reasoning : null,
             health: health,
             online: online,
             streamLive: streamLive,
@@ -106,8 +125,8 @@ class _AiScreenState extends ConsumerState<AiScreen> {
       } else {
         answer = _answer(
           question,
-          advisory: advisory,
-          reasoning: reasoning,
+          advisory: requested == null ? advisory : null,
+          reasoning: requested == null ? reasoning : null,
           health: health,
           online: online,
           streamLive: streamLive,
@@ -215,6 +234,14 @@ class _AiScreenState extends ConsumerState<AiScreen> {
     final explanation = payload['explanation']?.toString().trim();
     final providerState = payload['provider_state']?.toString() ?? 'UNAVAILABLE';
     final model = payload['model']?.toString();
+    final coordinate = payload['coordinate'] is Map<String, dynamic>
+        ? payload['coordinate'] as Map<String, dynamic>
+        : const <String, dynamic>{};
+    final responseLat = (coordinate['lat'] as num?)?.toDouble();
+    final responseLon = (coordinate['lon'] as num?)?.toDouble();
+    final coordinateLabel = responseLat == null || responseLon == null
+        ? 'the requested coordinate'
+        : GeoUtils.formatCoordinate(responseLat, responseLon);
     return OrcaAnswer(
       kind: explanation != null && explanation.isNotEmpty
           ? OrcaAnswerKind.reasoning
@@ -224,13 +251,14 @@ class _AiScreenState extends ConsumerState<AiScreen> {
       chips: <String>[
         providerState.replaceAll('_', ' '),
         if (model != null && model.isNotEmpty) model,
+        coordinateLabel,
       ],
       optionalExplanation: explanation == null || explanation.isEmpty ? null : explanation,
       optionalExplanationLabel: 'OPTIONAL OLLAMA EXPLANATION',
       source: sources.isEmpty
           ? 'POST /api/v1/chat · deterministic ORCA evidence'
           : sources.join(' · '),
-      timeLabel: 'Answer generated for the displayed working coordinate',
+      timeLabel: 'Answer generated for $coordinateLabel',
     );
   }
 
