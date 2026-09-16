@@ -152,7 +152,9 @@ class MultiAgentEngine:
                 normalized[normalized_id] = finding.strip()
         return normalized
 
-    def _analytical_findings(self, jobs: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    def _analytical_findings(
+        self, jobs: Dict[str, Dict[str, Any]], *, use_llm: bool = True,
+    ) -> Dict[str, Dict[str, Any]]:
         """Run every analytical role in one Ollama request.
 
         Ollama serializes work on most laptops. Sending six simultaneous Qwen
@@ -164,31 +166,33 @@ class MultiAgentEngine:
             agent_id: job["evidence"] for agent_id, job in jobs.items()
         }
         started = time.monotonic()
-        response = ollama.generate(
-            prompt=(
-                "Analyse the following ORCA evidence for six specialist roles. "
-                "Return ONLY one valid JSON object whose keys exactly match the supplied role IDs "
-                "and whose values are short fisherman-friendly strings. Use only supplied evidence. "
-                "Do not invent measurements, sources, times, confidence, or safety verdicts. "
-                "If evidence is insufficient, say so for that role.\n"
-                f"ROLE_EVIDENCE={json.dumps(evidence_payload, ensure_ascii=False)}"
-            ),
-            system=(
-                "You are ORCA's analytical explanation layer. The deterministic Marine Risk "
-                "engine owns the safety verdict; never change or create a verdict."
-            ),
-            temperature=0.1,
-            max_tokens=480,
-            json_mode=True,
-            json_schema={
-                "type": "object",
-                "properties": {
-                    agent_id: {"type": "string"} for agent_id in jobs
+        response = None
+        if use_llm:
+            response = ollama.generate(
+                prompt=(
+                    "Analyse the following ORCA evidence for six specialist roles. "
+                    "Return ONLY one valid JSON object whose keys exactly match the supplied role IDs "
+                    "and whose values are short fisherman-friendly strings. Use only supplied evidence. "
+                    "Do not invent measurements, sources, times, confidence, or safety verdicts. "
+                    "If evidence is insufficient, say so for that role.\n"
+                    f"ROLE_EVIDENCE={json.dumps(evidence_payload, ensure_ascii=False)}"
+                ),
+                system=(
+                    "You are ORCA's analytical explanation layer. The deterministic Marine Risk "
+                    "engine owns the safety verdict; never change or create a verdict."
+                ),
+                temperature=0.1,
+                max_tokens=480,
+                json_mode=True,
+                json_schema={
+                    "type": "object",
+                    "properties": {
+                        agent_id: {"type": "string"} for agent_id in jobs
+                    },
+                    "required": list(jobs.keys()),
+                    "additionalProperties": False,
                 },
-                "required": list(jobs.keys()),
-                "additionalProperties": False,
-            },
-        )
+            )
         elapsed_ms = int((time.monotonic() - started) * 1000)
 
         parsed = self._parse_analytical_response(response)
@@ -212,7 +216,7 @@ class MultiAgentEngine:
                 # failed safety agent and must not be presented as DEGRADED.
                 "status": "completed" if valid else "fallback",
                 "duration_ms": elapsed_ms,
-                "llm_attempted": True,
+                "llm_attempted": use_llm,
                 "llm_invoked": valid,
                 "llm_model": ollama.model,
                 "fallback_used": not valid,
@@ -224,14 +228,20 @@ class MultiAgentEngine:
         with self._run_lock:
             self._set_all_runtime("PROCESSING")
             try:
-                result = self._run_collaborative_reasoning(snapshot)
+                result = self._run_collaborative_reasoning(snapshot, use_llm=True)
             except Exception as exc:
                 self._set_all_runtime("FAILED", str(exc))
                 raise
             self._record_runtime_results(result)
             return result
 
-    def _run_collaborative_reasoning(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    def deterministic_advisory(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
+        """Return safety arithmetic immediately without touching Ollama/runtime state."""
+        return self._run_collaborative_reasoning(snapshot, use_llm=False)
+
+    def _run_collaborative_reasoning(
+        self, snapshot: Dict[str, Any], *, use_llm: bool,
+    ) -> Dict[str, Any]:
         """Build the complete 11-agent reasoning trace.
 
         LLM/Analytical roles share one structured Ollama inference so local
@@ -301,7 +311,7 @@ class MultiAgentEngine:
                 "evidence": [f"deterministic risk level {risk_level}", *reasons, f"wave height {wave_h:.1f} m", f"wind gust {gust_kn:.1f} kn"],
                 "fallback": f"Deterministic Marine Risk result is {risk_level}. Follow the deterministic result and official instructions.",
             },
-        })
+        }, use_llm=use_llm)
         ocean_llm = analytical["ocean_analysis"]
         satellite_llm = analytical["satellite_analysis"]
         weather_llm = analytical["weather_hazard"]

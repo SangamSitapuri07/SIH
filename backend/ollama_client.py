@@ -100,6 +100,8 @@ class OllamaClient:
         max_tokens: int = 512,
         json_mode: bool = False,
         json_schema: Optional[dict] = None,
+        wait_for_slot: bool = True,
+        timeout_s: Optional[float] = None,
     ) -> Optional[str]:
         """
         Call Ollama /api/generate (non-streaming).
@@ -154,18 +156,24 @@ class OllamaClient:
             )
             return None
 
-        # Re-check cooldown after acquiring the lock: another request may have
-        # timed out while this request was waiting.
-        with self._generation_lock:
+        # Interactive chat must not queue behind a long specialist reasoning
+        # pass. Callers can request a non-blocking slot and immediately use
+        # deterministic evidence when Ollama is busy.
+        acquired = self._generation_lock.acquire(blocking=wait_for_slot)
+        if not acquired:
+            self._last_generation = {"status": "busy"}
+            return None
+        try:
             now = time.monotonic()
             if now < self._cooldown_until:
                 return None
             try:
                 t0 = time.monotonic()
+                effective_timeout = self.timeout if timeout_s is None else max(5.0, timeout_s)
                 resp = httpx.post(
                     f"{self.host}/api/generate",
                     json=payload,
-                    timeout=self.timeout,
+                    timeout=effective_timeout,
                 )
                 elapsed_ms = int((time.monotonic() - t0) * 1000)
 
@@ -200,13 +208,13 @@ class OllamaClient:
                 self._cooldown_until = time.monotonic() + 60.0
                 self._last_generation = {
                     "status": "timeout",
-                    "timeout_s": self.timeout,
+                    "timeout_s": effective_timeout,
                     "cooldown_s": 60,
                 }
                 logger.warning(
                     "[Ollama] Generation timed out after %.1fs at %s. The server is reachable; "
                     "use a smaller OLLAMA_MODEL or raise OLLAMA_TIMEOUT_S. A 60s cooldown is active.",
-                    self.timeout,
+                    effective_timeout,
                     self.host,
                 )
                 # A generation timeout does not mean the server disconnected.
@@ -215,6 +223,8 @@ class OllamaClient:
                 self._last_generation = {"status": "error", "detail": str(e)}
                 logger.exception("[Ollama] Unexpected generation error")
                 return None
+        finally:
+            self._generation_lock.release()
 
     def log_configuration(self) -> None:
         """Emit an unmistakable startup signature for stale-server diagnosis."""

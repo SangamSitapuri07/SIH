@@ -51,6 +51,16 @@ class AgentEngineTruthfulnessTests(unittest.TestCase):
         self.assertEqual(runtime['ocean_analysis']['provider_state'], 'OLLAMA_NO_VALID_OUTPUT')
         self.assertEqual(runtime['marine_risk']['provider_state'], 'DETERMINISTIC')
 
+    @patch('agents_engine.ollama.generate')
+    def test_core_advisory_never_waits_for_ollama(self, generate):
+        result = MultiAgentEngine().deterministic_advisory(self.snapshot())
+        generate.assert_not_called()
+        self.assertEqual(result['verdict'], 'GOOD')
+        self.assertTrue(all(
+            not agent.get('llm_attempted', False)
+            for agent in result['agents']
+        ))
+
 
 if __name__ == '__main__':
     unittest.main()

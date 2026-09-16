@@ -97,7 +97,7 @@ class RouteAndForecastTests(unittest.TestCase):
                 }
 
         class Agent:
-            def run_collaborative_reasoning(self, snapshot):
+            def deterministic_advisory(self, snapshot):
                 return {
                     "verdict": "GOOD",
                     "headline_en": "Conditions acceptable",
