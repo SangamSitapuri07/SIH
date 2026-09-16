@@ -30,6 +30,8 @@ class InfoScreen extends ConsumerWidget {
     'alerts.latest',
     'reasoning.latest',
     'health.latest',
+    'trip_plan.latest',
+    'navigation.offline_route',
     'settings.locale',
     'alerts.reviewed',
     'profile',

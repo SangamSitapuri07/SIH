@@ -65,6 +65,8 @@ class TripPlanRequest(BaseModel):
     duration_days: int = Field(default=3, ge=1, le=3)
     area_lat: float = Field(ge=-90, le=90)
     area_lon: float = Field(ge=-180, le=180)
+    departure_lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    departure_lon: Optional[float] = Field(default=None, ge=-180, le=180)
     area_radius_km: float = Field(default=75, ge=5, le=200)
     target_fish: List[str] = Field(default_factory=list, max_length=10)
     boat_capacity_kg: float = Field(default=500, gt=0, le=100000)

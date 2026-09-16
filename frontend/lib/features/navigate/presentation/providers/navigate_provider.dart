@@ -5,6 +5,7 @@ import '../../data/repositories/navigate_repo_impl.dart';
 import '../../domain/entities/route_check.dart';
 import '../../domain/repositories/navigate_repo.dart';
 import '../../domain/usecases/get_route_advisory.dart';
+import 'offline_navigation_provider.dart';
 
 /// Provider for NavigateRemoteDataSource.
 final navigateRemoteDataSourceProvider = Provider<NavigateRemoteDataSource>((ref) {
@@ -68,12 +69,14 @@ class NavigateNotifier extends StateNotifier<AsyncValue<RouteAnalysisState>> {
     );
 
     if (checkResult.isOk && advisoryResult.isOk) {
-      state = AsyncValue.data(
-        RouteAnalysisState(
-          check: checkResult.valueOrNull,
-          advisory: advisoryResult.valueOrNull,
-        ),
-      );
+      final check = checkResult.valueOrNull;
+      final advisory = advisoryResult.valueOrNull;
+      state = AsyncValue.data(RouteAnalysisState(check: check, advisory: advisory));
+      if (check != null && advisory != null && check.ok == true) {
+        // Persist verified geometry and its explicitly expiring weather
+        // evidence. GPS progress can then run with no server connection.
+        await _ref.read(offlineNavigationProvider.notifier).saveRoute(check, advisory);
+      }
     } else {
       final failureMsg = checkResult.failureOrNull?.message ??
           advisoryResult.failureOrNull?.message ??

@@ -75,6 +75,16 @@ class TripPlanningEngine:
         start = _parse_time(request.departure_at)
         duration_hours = request.duration_days * 24
         points = self._area_points(request.area_lat, request.area_lon, request.area_radius_km)
+        departure_lat = getattr(request, "departure_lat", None)
+        departure_lon = getattr(request, "departure_lon", None)
+        if (departure_lat is None) != (departure_lon is None):
+            raise ValueError("Both departure_lat and departure_lon are required for offline navigation")
+        route_info = None
+        if departure_lat is not None and departure_lon is not None:
+            route_info = self.providers.verify_route(
+                departure_lat, departure_lon, request.area_lat, request.area_lon
+            )
+
         with ThreadPoolExecutor(max_workers=6) as pool:
             snapshots = list(pool.map(
                 lambda p: self.providers.fetch_zone_snapshot(p[0], p[1], include_secondary=False),
@@ -163,7 +173,15 @@ class TripPlanningEngine:
         else: verdict = "GOOD"
 
         speed_kmh = request.cruise_speed_kn * 1.852
-        round_trip_hours = (2 * request.area_radius_km / speed_kmh) if speed_kmh > 0 else None
+        # When a departure is supplied, fuel/return calculations use the
+        # verified port-to-area route—not the fishing-area radius. The radius
+        # fallback remains only for older API clients that did not send a port.
+        one_way_km = (
+            float(route_info["distance_km"])
+            if route_info is not None and route_info.get("ok") is True
+            else request.area_radius_km
+        )
+        round_trip_hours = (2 * one_way_km / speed_kmh) if speed_kmh > 0 else None
         required_fuel = round_trip_hours * request.fuel_burn_lph if round_trip_hours is not None else None
         usable_fuel = request.fuel_liters * (1 - request.fuel_reserve_percent / 100)
         return_deadline = None
@@ -173,27 +191,106 @@ class TripPlanningEngine:
         fuel = {
             "status": "UNVERIFIED" if request.fuel_burn_lph <= 0 else ("INSUFFICIENT" if required_fuel > usable_fuel else "SUFFICIENT_FOR_DIRECT_OUT_AND_BACK"),
             "available_liters": request.fuel_liters, "reserve_percent": request.fuel_reserve_percent,
+            "route_one_way_km": round(one_way_km, 1),
             "estimated_direct_round_trip_liters": round(required_fuel, 1) if required_fuel is not None and request.fuel_burn_lph > 0 else None,
             "note": "Fishing/search/idle fuel is not estimated; operator must add it." if request.fuel_burn_lph > 0 else "Fuel burn rate was not provided.",
+        }
+        travel = {
+            "status": (
+                "ROUTE_UNVERIFIED" if route_info is not None and route_info.get("ok") is not True
+                else "EXCEEDS_TRIP_DURATION" if round_trip_hours is not None and round_trip_hours > duration_hours
+                else "FEASIBLE_DIRECT_OUT_AND_BACK"
+            ),
+            "one_way_hours": round(round_trip_hours / 2, 1) if round_trip_hours is not None else None,
+            "direct_round_trip_hours": round(round_trip_hours, 1) if round_trip_hours is not None else None,
+            "trip_duration_hours": duration_hours,
+            "time_remaining_after_direct_travel_hours": round(max(0, duration_hours - round_trip_hours), 1) if round_trip_hours is not None else None,
+            "note": "Travel estimate excludes fishing/search/idle time and weather/current speed effects.",
+        }
+        if route_info is not None and route_info.get("ok") is not True:
+            verdict = "UNVERIFIED"
+            alerts.append({
+                "valid_at": _iso(start), "severity": "DANGER", "state": "ROUTE_UNVERIFIED",
+                "evidence": [route_info.get("reason", "Offline route geometry is unavailable")],
+            })
+        else:
+            if travel["status"] == "EXCEEDS_TRIP_DURATION":
+                verdict = "NO_GO"
+                alerts.append({
+                    "valid_at": _iso(start), "severity": "DANGER", "state": "TRIP_TIME_INFEASIBLE",
+                    "evidence": [
+                        f"Direct return travel needs {travel['direct_round_trip_hours']:.1f} h, exceeding the {duration_hours} h trip duration before fishing time"
+                    ],
+                })
+            if fuel["status"] == "INSUFFICIENT":
+                verdict = "NO_GO"
+                alerts.append({
+                    "valid_at": _iso(start), "severity": "DANGER", "state": "FUEL_INSUFFICIENT",
+                    "evidence": [
+                        f"Direct out-and-back requires {fuel['estimated_direct_round_trip_liters']:.1f} L before fishing/search/idle allowance; only {usable_fuel:.1f} L is usable after reserve"
+                    ],
+                })
+            elif fuel["status"] == "UNVERIFIED" and verdict != "NO_GO":
+                verdict = "UNVERIFIED"
+            if route_info is not None and route_info.get("regulatory_verified") is not True and verdict == "GOOD":
+                verdict = "CAUTION"
+
+        if route_info is not None and route_info.get("ok") is not True:
+            return_reason = "Return route geometry is unverified; do not depart on this package."
+        elif travel["status"] == "EXCEEDS_TRIP_DURATION":
+            return_reason = "Direct out-and-back travel exceeds the selected trip duration before fishing time."
+        elif fuel["status"] == "INSUFFICIENT":
+            return_reason = "Available fuel after reserve is insufficient even for direct out-and-back travel."
+        elif first_unsafe:
+            return_reason = "Deadline includes estimated one-way travel from the planned area plus a 2-hour buffer."
+        else:
+            return_reason = "No NO_GO weather hour in downloaded horizon; forecast expiry is not a safety guarantee."
+
+        navigation = None if route_info is None else {
+            "status": route_info.get("status"), "ok": route_info.get("ok"),
+            "geometry": route_info.get("legs", []),
+            "distance_km": route_info.get("distance_km"),
+            "distance_nm": route_info.get("distance_nm"),
+            "departure": {"lat": departure_lat, "lon": departure_lon},
+            "destination": {"lat": request.area_lat, "lon": request.area_lon},
+            "boundary_reason": route_info.get("reason"),
+            "regulatory_verified": route_info.get("regulatory_verified", False),
+            "sources": route_info.get("sources", []),
+            "offline_rules": {
+                "off_route_warning_km": 2.0,
+                "method": "Local GPS projection onto downloaded route polyline",
+                "requires_internet": False,
+            },
         }
 
         generated = datetime.now(timezone.utc)
         package = {
             "schema_version": "1.0", "trip_id": f"trip-{generated.strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}",
             "generated_at": _iso(generated), "departure_at": _iso(start),
+            "decision_engine": {
+                "name": "ORCA Deterministic Offline Safety Engine", "version": "1.1",
+                "type": "RULE_BASED_NOT_ML",
+                "method": "Worst-case area forecast samples compared with operator-configured vessel limits",
+                "forecast_inputs": ["Open-Meteo Marine", "Open-Meteo Forecast"],
+                "not_predicted": ["catch probability", "expected catch weight", "profit", "storm probability"],
+            },
             "forecast_valid_until": timeline[-1]["valid_at"] if timeline else None,
-            "offline_ready": bool(timeline) and known > 0,
+            "offline_ready": bool(timeline) and known > 0 and (
+                route_info is None or route_info.get("ok") is True
+            ),
             "verdict": verdict, "coverage": {"known": known, "total": total, "ratio": round(known/total, 3) if total else 0},
             "area": {"center": {"lat": request.area_lat, "lon": request.area_lon}, "radius_km": request.area_radius_km, "sample_points": [{"lat": a, "lon": b} for a,b in points]},
             "trip_profile": {"duration_days": request.duration_days, "crew_size": request.crew_size, "boat_capacity_kg": request.boat_capacity_kg, "experience_level": request.experience_level, "cruise_speed_kn": request.cruise_speed_kn},
             "vessel_limits": limits, "timeline": timeline, "alerts": alerts,
+            "offline_navigation": navigation,
             "cyclone_watch": {
                 "gdacs_events": cyclone_events,
                 "jtwc_headlines": cyclone_payload.get("jtwc", []),
                 "sources_failed": cyclone_payload.get("sources_failed", []),
                 "spatial_note": "GDACS point distances are informational; JTWC RSS headlines have no machine-readable track geometry in this integration.",
             },
-            "return_decision": {"first_unsafe_at": first_unsafe["valid_at"] if first_unsafe else None, "return_before": return_deadline, "travel_buffer_hours": round((round_trip_hours / 2) + 2, 1) if round_trip_hours is not None else None, "reason": "Deadline includes estimated one-way travel from area edge plus a 2-hour buffer." if first_unsafe else "No NO_GO hour in downloaded horizon; forecast expiry is not a safety guarantee."},
+            "return_decision": {"first_unsafe_at": first_unsafe["valid_at"] if first_unsafe else None, "return_before": return_deadline, "travel_buffer_hours": round((round_trip_hours / 2) + 2, 1) if round_trip_hours is not None else None, "reason": return_reason},
+            "travel_assessment": travel,
             "fuel_assessment": fuel,
             "targets": {"species": request.target_fish, "fish_activity_status": "NOT_MODELLED", "reason": "No validated species-occurrence/catch model is installed; ORCA will not fabricate activity scores or expected catch."},
             "pre_departure_checklist": [
@@ -215,6 +312,9 @@ class TripPlanningEngine:
             "sources": ["Open-Meteo Marine hourly forecast", "Open-Meteo Forecast hourly wind/gust", "GDACS tropical cyclone events", "JTWC RSS headlines"],
             "operational_note": "Decision support only. Re-check forecasts before departure and follow official warnings, charts, VTS and Coast Guard instructions.",
         }
-        canonical = json.dumps(package, sort_keys=True, separators=(",", ":")).encode()
+        # UTF-8 canonical JSON contract is shared with the Flutter verifier.
+        canonical = json.dumps(
+            package, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
         package["package_sha256"] = hashlib.sha256(canonical).hexdigest()
         return package
