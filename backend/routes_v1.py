@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query, HTTPException, Body
 from pydantic import BaseModel, Field
 
 from data_providers import DataProvidersEngine
-from agents_engine import MultiAgentEngine
+from agents_engine import MultiAgentEngine, ReasoningBusyError
 from supabase_service import SupabaseService
 from mosdac_datasets import registry_status
 from safe_window import find_safe_departure_window
@@ -256,7 +256,10 @@ def get_reasoning(lat: float = Query(20.9), lon: float = Query(70.37), include_g
     snap = providers.fetch_zone_snapshot(lat, lon, include_gfw=include_gfw)
     if snap.get("error"):
         raise HTTPException(status_code=400, detail=snap["reason"])
-    return agents_engine.run_collaborative_reasoning(snap)
+    try:
+        return agents_engine.run_collaborative_reasoning(snap)
+    except ReasoningBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/chat")
@@ -298,7 +301,7 @@ def ask_orca(request: AskOrcaRequest):
 
     explanation = ollama.generate(
         prompt=(
-            "UNTRUSTED_USER_QUESTION:\n" + request.question +
+            "/no_think\nUNTRUSTED_USER_QUESTION:\n" + request.question +
             "\nEND_QUESTION\nEVIDENCE_JSON:\n" + json.dumps({
                 "coordinate": {"lat": request.latitude, "lon": request.longitude},
                 "facts": facts,

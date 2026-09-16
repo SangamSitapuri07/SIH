@@ -13,7 +13,7 @@ Design rules:
   2. Marine Risk Agent (Agent 10) is ALWAYS deterministic; Ollama NEVER touches safety thresholds.
   3. All prompts are structured and bounded — no open-ended generation.
   4. One bounded request may include model cold-start time. The timeout is
-     configurable via OLLAMA_TIMEOUT_S (default/minimum 120 s).
+     configurable via OLLAMA_TIMEOUT_S (default 60 s, minimum 15 s).
 """
 
 import os
@@ -29,9 +29,9 @@ logger = logging.getLogger("orca.ollama")
 
 _DEFAULT_HOST = "http://localhost:11434"
 _DEFAULT_MODEL = "qwen3:8b"
-_DEFAULT_TIMEOUT = 120.0  # includes first-run model loading on CPU-only devices
-_MIN_TIMEOUT = 120.0
-_INTEGRATION_VERSION = "role-lines-v3"
+_DEFAULT_TIMEOUT = 60.0  # bounded optional explanation; safety never waits on this
+_MIN_TIMEOUT = 15.0
+_INTEGRATION_VERSION = "role-lines-v4-no-think"
 
 class OllamaClient:
     """
@@ -47,19 +47,23 @@ class OllamaClient:
             configured_timeout = float(os.getenv("OLLAMA_TIMEOUT_S", str(_DEFAULT_TIMEOUT)))
         except (TypeError, ValueError):
             configured_timeout = _DEFAULT_TIMEOUT
-        # Older ORCA .env files used 25s. That is shorter than a Qwen3:8b cold
-        # start on CPU and caused a false "not connected" result.
+        # Keep operator configuration but enforce a small floor so transient
+        # model loading is not misreported as immediate disconnection.
         self.configured_timeout = configured_timeout
         self.timeout = max(_MIN_TIMEOUT, configured_timeout)
         self._available: Optional[bool] = None  # lazily determined
         self._installed_models: list[str] = []
-        # Keep capacity for FastAPI routing/weather while local inference runs.
-        # Operators can override this for GPU-backed or dedicated Ollama hosts.
-        default_threads = max(1, (os.cpu_count() or 4) - 1)
+        # Ollama already chooses a hardware-appropriate physical-core count.
+        # Forcing os.cpu_count()-1 is harmful in containers and on SMT hosts:
+        # it can report dozens of logical CPUs and severely oversubscribe the
+        # model. Only override Ollama when an operator explicitly requests it.
+        configured_threads = os.getenv("OLLAMA_NUM_THREADS", "").strip()
         try:
-            self.num_threads = max(1, int(os.getenv("OLLAMA_NUM_THREADS", str(default_threads))))
+            self.num_threads = max(1, int(configured_threads)) if configured_threads else None
         except (TypeError, ValueError):
-            self.num_threads = default_threads
+            logger.warning("[Ollama] Ignoring invalid OLLAMA_NUM_THREADS=%r", configured_threads)
+            self.num_threads = None
+        self._thread_state = threading.local()
         # Ollama generally executes one heavyweight local model efficiently at
         # a time. Serialize generation even when advisory, reasoning and the
         # ingestion daemon arrive together.
@@ -72,6 +76,17 @@ class OllamaClient:
                 configured_timeout,
                 self.timeout,
             )
+
+    def _record_generation(self, detail: dict) -> None:
+        """Record status globally for health and per caller for attribution.
+
+        Chat may probe the non-blocking lock while a reasoning call is active.
+        Thread-local attribution prevents that BUSY probe from overwriting the
+        reasoning caller's eventual SUCCESS/TIMEOUT state.
+        """
+        value = dict(detail)
+        self._last_generation = value
+        self._thread_state.last_generation = value
 
     def is_available(self) -> bool:
         """Check whether Ollama is reachable. Cached after first successful probe."""
@@ -110,9 +125,11 @@ class OllamaClient:
         Callers MUST handle None and fall back to deterministic logic.
         """
         if not self.is_available():
+            self._record_generation({"status": "unreachable"})
             logger.warning("[Ollama] Server not reachable at %s — using deterministic fallback.", self.host)
             return None
         if self._installed_models and self.model not in self._installed_models:
+            self._record_generation({"status": "model_missing", "model": self.model})
             logger.error(
                 "[Ollama] Model '%s' is not installed. Available models: %s. Run: ollama pull %s",
                 self.model,
@@ -133,10 +150,11 @@ class OllamaClient:
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
-                "num_thread": self.num_threads,
-                "num_ctx": 4096,
+                "num_ctx": 2048,
             },
         }
+        if self.num_threads is not None:
+            payload["options"]["num_thread"] = self.num_threads
         if json_schema is not None:
             # Ollama accepts a JSON Schema as `format`; constrained decoding is
             # substantially more reliable than merely asking an 8B model for
@@ -150,6 +168,7 @@ class OllamaClient:
         now = time.monotonic()
         if now < self._cooldown_until:
             remaining = int(self._cooldown_until - now)
+            self._record_generation({"status": "cooldown", "remaining_s": remaining})
             logger.info(
                 "[Ollama] Generation cooldown active for %ss — using deterministic fallback.",
                 remaining,
@@ -161,11 +180,15 @@ class OllamaClient:
         # deterministic evidence when Ollama is busy.
         acquired = self._generation_lock.acquire(blocking=wait_for_slot)
         if not acquired:
-            self._last_generation = {"status": "busy"}
+            self._record_generation({"status": "busy"})
             return None
         try:
             now = time.monotonic()
             if now < self._cooldown_until:
+                self._record_generation({
+                    "status": "cooldown",
+                    "remaining_s": int(self._cooldown_until - now),
+                })
                 return None
             try:
                 t0 = time.monotonic()
@@ -178,21 +201,21 @@ class OllamaClient:
                 elapsed_ms = int((time.monotonic() - t0) * 1000)
 
                 if resp.status_code != 200:
-                    self._last_generation = {
+                    self._record_generation({
                         "status": "http_error",
                         "http_status": resp.status_code,
                         "duration_ms": elapsed_ms,
-                    }
+                    })
                     logger.error("[Ollama] HTTP %s: %s", resp.status_code, resp.text[:200])
                     return None
 
                 data = resp.json()
                 response_text = data.get("response", "").strip()
-                self._last_generation = {
+                self._record_generation({
                     "status": "success" if response_text else "empty_response",
                     "duration_ms": elapsed_ms,
                     "response_chars": len(response_text),
-                }
+                })
                 logger.info(
                     "[Ollama] %s responded in %s ms (%s chars)",
                     self.model,
@@ -206,11 +229,11 @@ class OllamaClient:
                 # start timeout. One timeout opens a short circuit-breaker;
                 # deterministic safety output remains immediately available.
                 self._cooldown_until = time.monotonic() + 60.0
-                self._last_generation = {
+                self._record_generation({
                     "status": "timeout",
                     "timeout_s": effective_timeout,
                     "cooldown_s": 60,
-                }
+                })
                 logger.warning(
                     "[Ollama] Generation timed out after %.1fs at %s. The server is reachable; "
                     "use a smaller OLLAMA_MODEL or raise OLLAMA_TIMEOUT_S. A 60s cooldown is active.",
@@ -220,7 +243,7 @@ class OllamaClient:
                 # A generation timeout does not mean the server disconnected.
                 return None
             except Exception as e:
-                self._last_generation = {"status": "error", "detail": str(e)}
+                self._record_generation({"status": "error", "detail": str(e)})
                 logger.exception("[Ollama] Unexpected generation error")
                 return None
         finally:
@@ -228,7 +251,8 @@ class OllamaClient:
 
     @property
     def last_generation_status(self) -> str:
-        return str(self._last_generation.get("status", "unknown"))
+        detail = getattr(self._thread_state, "last_generation", self._last_generation)
+        return str(detail.get("status", "unknown"))
 
     def log_configuration(self) -> None:
         """Emit an unmistakable startup signature for stale-server diagnosis."""

@@ -27,6 +27,16 @@ class AgentEngineTruthfulnessTests(unittest.TestCase):
             'pfz': [],
         }
 
+    def test_processing_registry_only_marks_optional_model_roles_running(self):
+        engine = MultiAgentEngine()
+        engine._set_all_runtime('PROCESSING')
+        runtime = engine.list_agents()
+        running = [agent for agent in runtime if agent['status'] == 'PROCESSING']
+        completed = [agent for agent in runtime if agent['status'] == 'COMPLETED']
+        self.assertEqual(len(running), 6)
+        self.assertTrue(all(agent['type'] == 'LLM/Analytical' for agent in running))
+        self.assertEqual(len(completed), 5)
+
     @patch('agents_engine.ollama.generate', return_value=None)
     def test_optional_llm_uses_named_fallback_without_fake_evidence(self, _generate):
         engine = MultiAgentEngine()
@@ -63,6 +73,24 @@ class AgentEngineTruthfulnessTests(unittest.TestCase):
         parsed = MultiAgentEngine._parse_analytical_response(text)
         self.assertEqual(len(parsed), 6)
         self.assertEqual(parsed['orchestrator'], 'Summary finding')
+
+    def test_qwen_thinking_block_is_removed_before_role_parsing(self):
+        text = '<think>private chain of thought</think>\n' + '\n'.join(
+            f'{role} | Evidence-bound {role} finding'
+            for role in (
+                'ocean_analysis', 'satellite_analysis', 'weather_hazard',
+                'marine_ecology', 'fisheries_pfz', 'orchestrator',
+            )
+        )
+        parsed = MultiAgentEngine._parse_analytical_response(text)
+        self.assertEqual(len(parsed), 6)
+        self.assertNotIn('private chain of thought', str(parsed))
+
+    def test_unfinished_qwen_thinking_is_not_misattributed(self):
+        parsed = MultiAgentEngine._parse_analytical_response(
+            '<think>ocean_analysis | this is reasoning, not a final finding'
+        )
+        self.assertEqual(parsed, {})
 
     @patch('agents_engine.ollama.generate')
     def test_role_delimited_model_result_completes_all_optional_agents(self, generate):

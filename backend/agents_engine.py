@@ -8,6 +8,11 @@ from ollama_client import ollama
 
 logger = logging.getLogger("orca.agents")
 
+
+class ReasoningBusyError(RuntimeError):
+    """Raised instead of queueing another heavyweight local-model run."""
+
+
 class MultiAgentEngine:
     """
     11 Collaborative Agents Architecture for ORCA Box backend.
@@ -60,12 +65,20 @@ class MultiAgentEngine:
         }
         with self._runtime_lock:
             for agent_id, runtime in self._runtime.items():
-                runtime["status"] = status
                 if status == "PROCESSING":
+                    # Snapshot validation and configured-limit arithmetic are
+                    # local/immediate; do not falsely leave all eleven agents
+                    # spinning while only the six optional model roles wait.
+                    runtime["status"] = (
+                        "PROCESSING" if agent_id in llm_ids else "COMPLETED"
+                    )
                     runtime["provider_state"] = (
                         "OLLAMA_RUNNING" if agent_id in llm_ids else "DETERMINISTIC"
                     )
-                elif status == "FAILED":
+                    runtime["last_duration_ms"] = None
+                else:
+                    runtime["status"] = status
+                if status == "FAILED":
                     runtime["provider_state"] = (
                         "OLLAMA_REQUEST_FAILED" if agent_id in llm_ids else "DETERMINISTIC"
                     )
@@ -101,6 +114,13 @@ class MultiAgentEngine:
         if not response:
             return {}
         text = response.strip()
+        # Older Ollama builds may ignore the top-level `think: false` option
+        # used with Qwen3. Never let hidden reasoning pollute role attribution;
+        # retain only the final answer after a completed thinking block.
+        if "</think>" in text:
+            text = text.rsplit("</think>", 1)[1].strip()
+        elif text.startswith("<think>"):
+            return {}
         if text.startswith("```"):
             lines = text.splitlines()
             text = "\n".join(lines[1:-1]).strip()
@@ -191,7 +211,7 @@ class MultiAgentEngine:
         if use_llm:
             response = ollama.generate(
                 prompt=(
-                    "Analyse the supplied ORCA evidence for all six roles. Return exactly six "
+                    "/no_think\nAnalyse the supplied ORCA evidence for all six roles. Return exactly six "
                     "plain lines in this format: ROLE_ID | short evidence-bound finding. "
                     "Use these ROLE_IDs once each: ocean_analysis, satellite_analysis, "
                     "weather_hazard, marine_ecology, fisheries_pfz, orchestrator. "
@@ -204,7 +224,8 @@ class MultiAgentEngine:
                     "Marine Risk engine owns the verdict and your output cannot change it."
                 ),
                 temperature=0.1,
-                max_tokens=240,
+                max_tokens=180,
+                timeout_s=60.0,
             )
         elapsed_ms = int((time.monotonic() - started) * 1000)
 
@@ -232,14 +253,25 @@ class MultiAgentEngine:
                 "llm_attempted": use_llm,
                 "llm_invoked": valid,
                 "llm_model": ollama.model,
-                "llm_provider_state": "success" if valid else ollama.last_generation_status,
+                "llm_provider_state": (
+                    "success" if valid
+                    else "invalid_output" if response
+                    else ollama.last_generation_status
+                ),
                 "fallback_used": not valid,
             }
         return results
 
     def run_collaborative_reasoning(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
-        """Run the pipeline while exposing live status through `/agents`."""
-        with self._run_lock:
+        """Run one bounded pipeline while exposing live status through `/agents`.
+
+        Never queue a second expensive local-model request behind the first;
+        callers receive an explicit busy response and can retry after the
+        current terminal state appears in the registry.
+        """
+        if not self._run_lock.acquire(blocking=False):
+            raise ReasoningBusyError("A reasoning pass is already running on this ORCA Box.")
+        try:
             self._set_all_runtime("PROCESSING")
             try:
                 result = self._run_collaborative_reasoning(snapshot, use_llm=True)
@@ -248,6 +280,8 @@ class MultiAgentEngine:
                 raise
             self._record_runtime_results(result)
             return result
+        finally:
+            self._run_lock.release()
 
     def deterministic_advisory(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
         """Return safety arithmetic immediately without touching Ollama/runtime state."""
