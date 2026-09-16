@@ -414,14 +414,16 @@ def route_advisory(from_lat: float = Query(20.9), from_lon: float = Query(70.37)
     worst_level = "GOOD"
     unknown_inputs = False
 
-    # Route points are independent. Fetching them serially made a 10-point
-    # route take several minutes when NOAA/INCOIS were slow; bounded parallel
-    # sampling keeps the request within the app's network timeout.
-    with ThreadPoolExecutor(max_workers=min(6, len(legs))) as pool:
-        snapshots = list(pool.map(
-            lambda pt: providers.fetch_zone_snapshot(pt[0], pt[1], include_secondary=False),
-            legs,
-        ))
+    # Open-Meteo supports coordinate arrays, so all route points require only
+    # one marine request + one wind request instead of N×2 connections.
+    if hasattr(providers, "fetch_route_weather_batch"):
+        snapshots = providers.fetch_route_weather_batch(legs)
+    else:  # keeps small provider doubles/backward-compatible deployments valid
+        with ThreadPoolExecutor(max_workers=min(6, len(legs))) as pool:
+            snapshots = list(pool.map(
+                lambda pt: providers.fetch_zone_snapshot(pt[0], pt[1], include_secondary=False),
+                legs,
+            ))
 
     for idx, (pt, snap) in enumerate(zip(legs, snapshots)):
         if snap.get("error"):

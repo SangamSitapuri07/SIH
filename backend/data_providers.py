@@ -349,6 +349,69 @@ class DataProvidersEngine:
         # but must never turn every other coordinate into "land".
         return False if allowed is True else None
 
+    def fetch_route_weather_batch(self, points: List[List[float]]) -> List[Dict[str, Any]]:
+        """Fetch current wave/wind/gust for many route points in two requests.
+
+        Open-Meteo accepts comma-separated coordinate arrays. This avoids the
+        old N×2 upstream fan-out that made the UI wait for batches of individual
+        requests even after route geometry was ready.
+        """
+        if not points:
+            return []
+        latitudes = ",".join(f"{point[0]:.5f}" for point in points)
+        longitudes = ",".join(f"{point[1]:.5f}" for point in points)
+        marine_url = "https://marine-api.open-meteo.com/v1/marine"
+        forecast_url = "https://api.open-meteo.com/v1/forecast"
+        marine_params = {
+            "latitude": latitudes, "longitude": longitudes,
+            "current": "wave_height,wave_period,swell_wave_height,swell_wave_period",
+            "timezone": "UTC",
+        }
+        forecast_params = {
+            "latitude": latitudes, "longitude": longitudes,
+            "current": "wind_speed_10m,wind_gusts_10m",
+            "wind_speed_unit": "kn", "timezone": "UTC",
+        }
+        started = time.perf_counter()
+        try:
+            with httpx.Client(timeout=20.0, follow_redirects=True) as client, ThreadPoolExecutor(max_workers=2) as pool:
+                marine_future = pool.submit(client.get, marine_url, params=marine_params)
+                forecast_future = pool.submit(client.get, forecast_url, params=forecast_params)
+                marine_response, forecast_response = marine_future.result(), forecast_future.result()
+            marine_response.raise_for_status(); forecast_response.raise_for_status()
+            marine_payload, forecast_payload = marine_response.json(), forecast_response.json()
+            marine_items = marine_payload if isinstance(marine_payload, list) else [marine_payload]
+            forecast_items = forecast_payload if isinstance(forecast_payload, list) else [forecast_payload]
+            if len(marine_items) != len(points) or len(forecast_items) != len(points):
+                raise ValueError("Open-Meteo multi-location response length mismatch")
+            latency_ms = round((time.perf_counter() - started) * 1000)
+            results = []
+            for point, marine_item, forecast_item in zip(points, marine_items, forecast_items):
+                marine = marine_item.get("current", {})
+                forecast = forecast_item.get("current", {})
+                wave, wind, gust = marine.get("wave_height"), forecast.get("wind_speed_10m"), forecast.get("wind_gusts_10m")
+                if wave is None or wind is None or gust is None:
+                    results.append({"error": True, "reason": "Open-Meteo returned incomplete route conditions"})
+                    continue
+                results.append({
+                    "latitude": point[0], "longitude": point[1], "timestamp": int(time.time()),
+                    "variables": {"wave_height_m": wave, "wave_period_s": marine.get("wave_period"),
+                                  "swell_height_m": marine.get("swell_wave_height"), "swell_period_s": marine.get("swell_wave_period"),
+                                  "wind_speed_kn": wind, "wind_gust_kn": gust},
+                    "sources_used": [{"name": "Open-Meteo Marine"}, {"name": "Open-Meteo Forecast"}],
+                    "sources_failed": [],
+                })
+            self._record_provider("open_meteo_marine", "FRESH", latency_ms=latency_ms,
+                                  observed_at=(marine_items[0].get("current", {}) or {}).get("time"))
+            self._record_provider("open_meteo_forecast", "FRESH", latency_ms=latency_ms,
+                                  observed_at=(forecast_items[0].get("current", {}) or {}).get("time"))
+            return results
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
+            latency_ms = round((time.perf_counter() - started) * 1000)
+            self._record_provider("open_meteo_marine", "UNREACHABLE", latency_ms=latency_ms, reason=str(exc))
+            self._record_provider("open_meteo_forecast", "UNREACHABLE", latency_ms=latency_ms, reason=str(exc))
+            return [{"error": True, "reason": f"Route weather unavailable: {exc}"} for _ in points]
+
     def fetch_zone_snapshot(self, lat: float, lon: float, include_gfw: bool = False,
                             include_secondary: bool = True) -> Dict[str, Any]:
         """Fetch live marine and forecast observations for a coordinate.

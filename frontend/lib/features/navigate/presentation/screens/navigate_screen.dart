@@ -117,7 +117,7 @@ class _NavigateScreenState extends ConsumerState<NavigateScreen> {
 
           final Widget results = state.when(
             data: (RouteAnalysisState data) => data.advisory == null
-                ? const _RouteEmpty()
+                ? (data.check == null ? const _RouteEmpty() : const _RouteLoading())
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[

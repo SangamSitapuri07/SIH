@@ -54,6 +54,12 @@ class NavigateNotifier extends StateNotifier<AsyncValue<RouteAnalysisState>> {
       toLon: toLon,
     );
 
+    // Paint verified/rejected geometry immediately; weather scoring continues
+    // independently instead of leaving the whole workspace behind a spinner.
+    if (checkResult.isOk) {
+      state = AsyncValue.data(RouteAnalysisState(check: checkResult.valueOrNull));
+    }
+
     final advisoryResult = await _useCase.getRouteAdvisory(
       fromLat: fromLat,
       fromLon: fromLon,
