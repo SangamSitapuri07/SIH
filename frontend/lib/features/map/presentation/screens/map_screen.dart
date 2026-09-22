@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/offline/connectivity_watcher.dart';
+import '../../../../l10n/app_localizations.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
 import '../../../../core/utils/date_formatter.dart';
@@ -102,7 +103,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final MapGridDto? gridData = grid?.valueOrNull;
 
     return OrcaWorkspaceScaffold(
-      title: 'Ocean map',
+      title: AppLocalizations.of(context)?.tabMap ?? 'Map',
       subtitle: 'Fields, layers and point inspection',
       locationLabel: 'Map centre',
       coordinateLabel: GeoUtils.formatCoordinate(_fieldCenter.latitude, _fieldCenter.longitude),
@@ -267,7 +268,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             if (pfz?.valueOrNull != null)
               PolylineLayer(polylines: _pfzPolylines(pfz!.valueOrNull!)),
             MarkerLayer(markers: markers),
-            RichAttributionWidget(
+            const RichAttributionWidget(
               attributions: <SourceAttribution>[
                 TextSourceAttribution('© OpenStreetMap contributors'),
               ],
@@ -627,7 +628,7 @@ class _SearchPanel extends StatelessWidget {
                     textInputAction: TextInputAction.search,
                     decoration: const InputDecoration(
                       isDense: true,
-                      hintText: 'Coordinates (18.92, 72.83) or saved location',
+                      hintText: 'Coordinates (18.92, 72.20) or saved location',
                       prefixIcon: Icon(Icons.search_rounded, size: 18),
                       contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     ),
@@ -992,9 +993,9 @@ class _FieldProvenance extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Row(
+                    const Row(
                       children: <Widget>[
-                        const Expanded(child: OrcaEyebrow('PFZ GEOMETRY', color: OrcaTheme.textMuted)),
+                        Expanded(child: OrcaEyebrow('PFZ GEOMETRY', color: OrcaTheme.textMuted)),
                         OrcaStateChip(state: OrcaDataState.current),
                       ],
                     ),
@@ -1078,7 +1079,7 @@ class _FieldProvenance extends StatelessWidget {
                 OrcaProvenance(timeLabel: field.resolution),
               ],
               const SizedBox(height: 2),
-              OrcaProvenance(timeLabel: 'Wind threshold colouring follows ORCA limits: 20 kn caution, 34 kn danger.'),
+              const OrcaProvenance(timeLabel: 'Wind threshold colouring follows ORCA limits: 20 kn caution, 34 kn danger.'),
             ],
           ),
         );
@@ -1179,11 +1180,11 @@ class _AttributionNote extends StatelessWidget {
   const _AttributionNote();
 
   @override
-  Widget build(BuildContext context) => Row(
+  Widget build(BuildContext context) => const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Icon(Icons.copyright_rounded, size: 13, color: OrcaTheme.textMuted),
-          const SizedBox(width: 6),
+          Icon(Icons.copyright_rounded, size: 13, color: OrcaTheme.textMuted),
+          SizedBox(width: 6),
           Expanded(
             child: Text(
               'Base chart data © OpenStreetMap contributors. Marine values are point-sampled model fields returned by this ORCA Box — never interpolated or substituted.',

@@ -111,9 +111,9 @@ class _PointRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    point.waveM == null || point.windKn == null
+                    point.waveM == null || point.windKn == null || point.gustKn == null
                         ? 'Marine inputs unavailable at this point'
-                        : 'Wave ${point.waveM!.toStringAsFixed(1)} m · Wind ${point.windKn!.toStringAsFixed(1)} kn',
+                        : 'Wave ${point.waveM!.toStringAsFixed(1)} m · Wind ${point.windKn!.toStringAsFixed(1)} kn · Gust ${point.gustKn!.toStringAsFixed(1)} kn',
                     style: OrcaType.body.copyWith(
                       fontSize: 12.5,
                       color: OrcaTheme.textPrimary,

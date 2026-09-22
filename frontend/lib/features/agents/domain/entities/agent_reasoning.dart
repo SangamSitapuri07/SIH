@@ -8,7 +8,7 @@ class AgentTraceFinding {
   final String agentClass; // DETERMINISTIC or LLM
   final String status; // completed, running, degraded, failed
   final int? durationMs;
-  final String verdict; // good, caution, danger
+  final String? verdict; // good, caution, danger; null when this role owns no safety verdict
   final String summary;
   final List<String> evidence;
   final List<String> warnings;

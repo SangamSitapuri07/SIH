@@ -59,8 +59,11 @@ class CommandCenterRemoteDataSource {
     return MarineConditionsDto.fromJson(res.data as Map<String, dynamic>);
   }
 
-  Future<SystemHealthDto> getHealth() async {
-    final res = await _dio.get<dynamic>(ApiPaths.health);
+  Future<SystemHealthDto> getHealth({bool probe = false}) async {
+    final res = await _dio.get<dynamic>(
+      ApiPaths.health,
+      queryParameters: <String, dynamic>{if (probe) 'probe': true},
+    );
     if (res.data is! Map<String, dynamic>) {
       throw const FormatException('health: unexpected response shape');
     }
@@ -164,7 +167,9 @@ class CommandCenterNotifier
       // The alert feed is an independent, optional source. Its outage must
       // not hide otherwise verified conditions or source-health data.
       final conditionsFuture = ds.getConditions(lat, lon);
-      final healthFuture = ds.getHealth();
+      // Pull-to-refresh explicitly probes authenticated/remote providers;
+      // background refreshes remain fast and report the latest observed state.
+      final healthFuture = ds.getHealth(probe: fromPull);
       final cycloneFuture = ds.getCycloneWatch()
           .catchError((_) => const CycloneWatchResponse.unavailable());
       final core = await Future.wait([conditionsFuture, healthFuture]);

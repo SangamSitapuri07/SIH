@@ -134,7 +134,7 @@ class SavedLocationsScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Text(
+            const Text(
               'Values start from your working location and stay editable. ORCA never replaces them with a built-in coordinate.',
               style: OrcaType.caption,
             ),

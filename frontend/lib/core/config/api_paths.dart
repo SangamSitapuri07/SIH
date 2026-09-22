@@ -9,6 +9,8 @@ class ApiPaths {
   static const String field = '/api/v1/field';
   static const String routeCheck = '/api/v1/route-check';
   static const String routeAdvisory = '/api/v1/route-advisory';
+  static const String tripPlan = '/api/v1/trip-plan';
+  static const String fishingZones = '/api/v1/fishing-zones';
   static const String layers = '/api/v1/layers';
   static const String datasets = '/api/v1/datasets';
   static const String zones = '/api/v1/zones';

@@ -66,8 +66,8 @@ class OrcaChatEntry {
   const OrcaChatEntry({required this.question, required this.answer});
 }
 
-/// Conversational workspace. Answers are assembled from live ORCA Box
-/// endpoints; this is deliberately not an open-ended chat model.
+/// Conversational workspace backed by the evidence-grounded Ask ORCA endpoint.
+/// Optional Ollama wording is kept separate from deterministic safety facts.
 class AskOrcaThread extends StatelessWidget {
   final List<OrcaChatEntry> entries;
   final String? subject;
@@ -104,8 +104,8 @@ class AskOrcaThread extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 const OrcaProvenance(
-                  source: 'GET /api/v1/advisory · /api/v1/health · /api/v1/reason',
-                  timeLabel: 'No generated text is invented: each reply quotes the deterministic result or the provider evidence behind it',
+                  source: 'POST /api/v1/chat · deterministic evidence + optional Ollama explanation',
+                  timeLabel: 'Ollama may explain supplied evidence but cannot own or change the deterministic verdict',
                   maxLines: 2,
                 ),
               ],

@@ -1,0 +1,9 @@
+{
+  "@@locale": "bn",
+  "appName": "ORCA", "appTagline": "সহযোগী এজেন্টের মাধ্যমে সামুদ্রিক অবস্থা ও নিরাপত্তা পরামর্শ",
+  "tabHome": "প্রধান", "tabMap": "মানচিত্র", "tabAi": "AI এজেন্ট", "tabAlerts": "সতর্কতা", "tabNavigate": "পথ", "tabInfo": "তথ্য",
+  "verdictGo": "যাওয়া নিরাপদ", "verdictCaution": "সাবধান", "verdictNoGo": "বিপদ — যাবেন না", "verdictUnknown": "অজানা",
+  "canIGoTitle": "আজ কি সমুদ্রে যেতে পারি?", "safeWindowLabel": "নিরাপদ সময়", "variablesTitle": "বর্তমান অবস্থা",
+  "alertsTitle": "সক্রিয় সামুদ্রিক সতর্কতা", "navigateTitle": "পথ নিরাপত্তা ও স্থল পরীক্ষা", "infoTitle": "সিস্টেম ও ডেটার অবস্থা",
+  "save": "সংরক্ষণ", "cancel": "বাতিল", "retry": "আবার চেষ্টা", "languageLabel": "ভাষা"
+}

@@ -10,6 +10,7 @@ class SourceHealthItem {
   final int? latencyMs;
   final String? note;
   final int? checkedAt;
+  final String? observedAt;
 
   const SourceHealthItem({
     required this.key,
@@ -18,6 +19,7 @@ class SourceHealthItem {
     this.latencyMs,
     this.note,
     this.checkedAt,
+    this.observedAt,
   });
 }
 
@@ -41,10 +43,13 @@ class HealthNotifier extends StateNotifier<AsyncValue<SystemHealthSnapshot>> {
     checkHealth();
   }
 
-  Future<void> checkHealth() async {
+  Future<void> checkHealth({bool probe = false}) async {
     state = const AsyncValue.loading();
     try {
-      final response = await _ref.read(dioProvider).get<Map<String, dynamic>>(ApiPaths.health);
+      final response = await _ref.read(dioProvider).get<Map<String, dynamic>>(
+        ApiPaths.health,
+        queryParameters: <String, dynamic>{if (probe) 'probe': true},
+      );
       final payload = response.data;
       if (payload == null) throw const FormatException('Empty health response');
       state = AsyncValue.data(_parseHealth(payload));
@@ -66,6 +71,7 @@ class HealthNotifier extends StateNotifier<AsyncValue<SystemHealthSnapshot>> {
             latencyMs: (raw['latency_ms'] as num?)?.toInt(),
             note: raw['reason']?.toString(),
             checkedAt: (raw['checked_at'] as num?)?.toInt(),
+            observedAt: raw['observed_at']?.toString(),
           );
         }
       });

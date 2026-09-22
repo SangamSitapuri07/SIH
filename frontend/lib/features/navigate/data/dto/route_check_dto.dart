@@ -128,6 +128,7 @@ class RouteAdvisoryDto {
               lon: (p['lon'] as num?)?.toDouble(),
               waveM: (p['wave_m'] as num?)?.toDouble(),
               windKn: (p['wind_kn'] as num?)?.toDouble(),
+              gustKn: (p['gust_kn'] as num?)?.toDouble(),
               state: p['state'] as String? ?? 'unverified',
               why: p['why'] as String? ?? 'Marine inputs unavailable for this route point.',
             ),

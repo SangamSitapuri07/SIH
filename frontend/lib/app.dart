@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'main.dart' show appAlertTapHandler;
 import 'core/cache/cache_service.dart';
+import 'core/localization/language_options.dart';
 import 'core/theme/orca_theme.dart';
 import 'core/widgets/orca_navigation.dart';
 import 'features/advisory/presentation/screens/home_screen.dart';
@@ -54,12 +55,12 @@ class OrcaApp extends ConsumerWidget {
   const OrcaApp({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) => MaterialApp.router(
-    title: 'ORCA Marine Intelligence',
+    onGenerateTitle: (context) => AppLocalizations.of(context)?.appName ?? 'ORCA',
     debugShowCheckedModeBanner: false,
     theme: OrcaTheme.theme,
     routerConfig: ref.watch(routerProvider),
     locale: Locale(ref.watch(selectedLocaleProvider)),
-    supportedLocales: const [Locale('en'), Locale('hi'), Locale('te')],
+    supportedLocales: orcaSupportedLocales,
     localizationsDelegates: const [AppLocalizations.delegate, GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
   );
 }

@@ -38,7 +38,7 @@ class _VoiceAdvisoryButtonState extends ConsumerState<VoiceAdvisoryButton> {
             await voice.speakAdvisory(
               verdict: widget.advisory.verdict,
               lang: lang,
-              plainLines: lang == 'hi' ? widget.advisory.plainHi : widget.advisory.plainEn,
+              plainLines: widget.advisory.localizedPlain(lang),
             );
             if (mounted) setState(() => _speaking = false);
           }

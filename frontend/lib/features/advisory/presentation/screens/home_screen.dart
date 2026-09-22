@@ -6,6 +6,7 @@ import '../../../../core/auth/supabase_auth_service.dart';
 import '../../../../core/cache/staleness.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/live/live_channel.dart';
+import '../../../../l10n/app_localizations.dart';
 import '../../../../core/offline/connectivity_watcher.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
@@ -63,7 +64,7 @@ class HomeScreen extends ConsumerWidget {
     }
 
     return OrcaWorkspaceScaffold(
-      title: 'Overview',
+      title: AppLocalizations.of(context)?.tabHome ?? 'Home',
       subtitle: 'Morning brief',
       locationLabel: locationLabel,
       coordinateLabel: coordinateLabel,

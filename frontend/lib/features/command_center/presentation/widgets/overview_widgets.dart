@@ -55,6 +55,7 @@ class OverviewVerdictHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final language = Localizations.localeOf(context).languageCode;
     final word = decisionWord(advisory?.verdict);
     final hasDecision = advisory != null && word != null;
     final color = hasDecision
@@ -134,7 +135,7 @@ class OverviewVerdictHero extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             hasDecision
-                ? advisory!.headline
+                ? advisory!.localizedHeadline(language)
                 : unavailableReason ??
                     'ORCA has not received the verified marine inputs it needs '
                         'to issue a departure verdict for this location.',
@@ -145,10 +146,10 @@ class OverviewVerdictHero extends StatelessWidget {
               color: OrcaTheme.onDeepTeal,
             ),
           ),
-          if (hasDecision && advisory!.plainEn.isNotEmpty) ...[
+          if (hasDecision && advisory!.localizedPlain(language).isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
-              advisory!.plainEn.first,
+              advisory!.localizedPlain(language).first,
               style: const TextStyle(
                 fontFamily: 'Inter',
                 fontSize: 13,

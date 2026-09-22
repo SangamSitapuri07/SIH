@@ -1,5 +1,6 @@
 import asyncio
 import json
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,6 +15,7 @@ load_dotenv(Path(__file__).with_name(".env"))
 from event_hub import event_hub
 import routes_v1
 from routes_v1 import router as v1_router, providers, agents_engine
+from ollama_client import ollama
 from routes_v1 import _ADVISORY_CACHE, _ADVISORY_CACHE_TIMES
 from ingestion import IngestionDaemon
 
@@ -25,6 +27,22 @@ ingestion_daemon: IngestionDaemon | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global ingestion_daemon
+    # This signature must appear once after every real server restart. If logs
+    # still mention six 25-second requests, an older checkout/process is being
+    # run rather than this integration.
+    ollama.log_configuration()
+    # Boundary WFS download/parsing can be slow on a fresh installation. Warm
+    # it before the UI asks for a route, without blocking API startup.
+    threading.Thread(
+        target=providers.boundaries.ensure_ready,
+        name="orca-boundary-warmup",
+        daemon=True,
+    ).start()
+    threading.Thread(
+        target=providers.fetch_incois_pfz,
+        name="orca-pfz-warmup",
+        daemon=True,
+    ).start()
     ingestion_daemon = IngestionDaemon(
         providers_engine=providers,
         agents_engine=agents_engine,
@@ -33,7 +51,7 @@ async def lifespan(app: FastAPI):
         poll_interval_s=600.0,   # per-coordinate snapshot refresh every 10 min
         cyclone_interval_s=1800.0,  # GDACS/JTWC check every 30 min
     )
-    ingestion_daemon.watch(18.92, 72.83, label="Default (Mumbai Offshore)")
+    ingestion_daemon.watch(18.92, 72.20, label="Default (Mumbai Offshore)")
     ingestion_daemon.start()
     # Client-requested coordinates join the watchlist automatically.
     routes_v1.set_watch_hook(lambda lat, lon: ingestion_daemon.watch(lat, lon))

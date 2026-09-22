@@ -53,7 +53,6 @@ class AlertCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String severity = (alert.severity ?? 'UNSPECIFIED').toUpperCase();
-    final Color color = _severityInk(alert.severity);
 
     return OrcaCard(
       padding: const EdgeInsets.all(16),

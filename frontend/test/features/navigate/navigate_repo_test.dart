@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:orca_app/features/navigate/data/dto/route_advisory_dto.dart';
 import 'package:orca_app/features/navigate/data/dto/route_check_dto.dart';
 
 void main() {

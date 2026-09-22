@@ -5,6 +5,7 @@ import '../../data/repositories/navigate_repo_impl.dart';
 import '../../domain/entities/route_check.dart';
 import '../../domain/repositories/navigate_repo.dart';
 import '../../domain/usecases/get_route_advisory.dart';
+import 'offline_navigation_provider.dart';
 
 /// Provider for NavigateRemoteDataSource.
 final navigateRemoteDataSourceProvider = Provider<NavigateRemoteDataSource>((ref) {
@@ -28,8 +29,15 @@ final getRouteAdvisoryUseCaseProvider = Provider<GetRouteAdvisoryUseCase>((ref) 
 class RouteAnalysisState {
   final RouteCheckEntity? check;
   final RouteAdvisoryEntity? advisory;
+  final bool advisoryLoading;
+  final String? advisoryError;
 
-  const RouteAnalysisState({this.check, this.advisory});
+  const RouteAnalysisState({
+    this.check,
+    this.advisory,
+    this.advisoryLoading = false,
+    this.advisoryError,
+  });
 }
 
 /// StateNotifier evaluating route transit safety.
@@ -54,6 +62,31 @@ class NavigateNotifier extends StateNotifier<AsyncValue<RouteAnalysisState>> {
       toLon: toLon,
     );
 
+    // Paint verified/rejected geometry immediately; weather scoring continues
+    // independently instead of leaving the whole workspace behind a spinner.
+    if (checkResult.isOk) {
+      final check = checkResult.valueOrNull;
+      state = AsyncValue.data(RouteAnalysisState(
+        check: check,
+        advisoryLoading: check?.ok == true,
+      ));
+      if (check != null && check.ok == true) {
+        // Geometry is operationally useful offline even if the independent
+        // weather request later times out. Its weather state remains explicit.
+        await _ref.read(offlineNavigationProvider.notifier).saveVerifiedGeometry(check);
+      } else {
+        // A rejected or reference-only route has no transit geometry to score;
+        // do not trigger a second backend verification/weather request.
+        return;
+      }
+    } else {
+      state = AsyncValue.error(
+        checkResult.failureOrNull?.message ?? 'Route geometry could not be planned.',
+        StackTrace.current,
+      );
+      return;
+    }
+
     final advisoryResult = await _useCase.getRouteAdvisory(
       fromLat: fromLat,
       fromLon: fromLon,
@@ -62,17 +95,22 @@ class NavigateNotifier extends StateNotifier<AsyncValue<RouteAnalysisState>> {
     );
 
     if (checkResult.isOk && advisoryResult.isOk) {
-      state = AsyncValue.data(
-        RouteAnalysisState(
-          check: checkResult.valueOrNull,
-          advisory: advisoryResult.valueOrNull,
-        ),
-      );
+      final check = checkResult.valueOrNull;
+      final advisory = advisoryResult.valueOrNull;
+      state = AsyncValue.data(RouteAnalysisState(check: check, advisory: advisory));
+      if (check != null && advisory != null && check.ok == true) {
+        // Persist verified geometry and its explicitly expiring weather
+        // evidence. GPS progress can then run with no server connection.
+        await _ref.read(offlineNavigationProvider.notifier).saveRoute(check, advisory);
+      }
     } else {
-      final failureMsg = checkResult.failureOrNull?.message ??
-          advisoryResult.failureOrNull?.message ??
-          'Route evaluation failed.';
-      state = AsyncValue.error(failureMsg, StackTrace.current);
+      // Do not erase valid geometry merely because live weather is slow or
+      // unavailable. The UI keeps the route and marks weather UNVERIFIED.
+      state = AsyncValue.data(RouteAnalysisState(
+        check: checkResult.valueOrNull,
+        advisoryError: advisoryResult.failureOrNull?.message ??
+            'Live route weather is unavailable. Saved geometry remains usable.',
+      ));
     }
   }
 }

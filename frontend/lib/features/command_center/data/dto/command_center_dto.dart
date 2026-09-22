@@ -167,7 +167,7 @@ class MarineConditionsDto {
       );
     }
 
-    int pfzCount = 0;
+    int pfzCount = (json['pfz_count'] as num?)?.toInt() ?? 0;
     String? pfzSource;
     final pfz = json['pfz'];
     if (pfz is List) {

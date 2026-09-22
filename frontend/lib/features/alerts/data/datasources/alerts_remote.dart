@@ -11,9 +11,9 @@ class AlertsRemoteDataSource {
     final response = await _dio.get<dynamic>(ApiPaths.alerts);
     final data = response.data;
     if (data == null) throw const FormatException('Empty alerts response');
-    final raw = data is Map<String, dynamic>
-        ? data['alerts'] as List<dynamic>? ?? const []
-        : data is List<dynamic> ? data : const [];
+    final List<dynamic> raw = data is Map<String, dynamic>
+        ? data['alerts'] as List<dynamic>? ?? const <dynamic>[]
+        : data is List<dynamic> ? data : const <dynamic>[];
     return raw.whereType<Map<String, dynamic>>().map(AlertDto.fromJson).toList();
   }
 }

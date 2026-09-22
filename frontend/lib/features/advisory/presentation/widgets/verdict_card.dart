@@ -5,6 +5,7 @@ import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/widgets/orca_ui.dart';
+import '../../../../l10n/app_localizations.dart';
 import '../../domain/entities/advisory.dart';
 
 /// Primary skipper safety verdict card.
@@ -19,7 +20,11 @@ class VerdictCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String verdictText = _verdictText(advisory.verdict);
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final String language = Localizations.localeOf(context).languageCode;
+    final String verdictText = _verdictText(advisory.verdict, l10n);
+    final String headline = advisory.localizedHeadline(language);
+    final List<String> bullets = advisory.localizedPlain(language);
     final IconData shape = VerdictColors.iconForVerdict(advisory.verdict);
     final OrcaDataState state = resolveDataState(
       hasValue: true,
@@ -34,12 +39,12 @@ class VerdictCard extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              const Expanded(child: OrcaEyebrow('DEPARTURE SAFETY VERDICT', color: OrcaTheme.onDeepTealMuted)),
+              Expanded(child: OrcaEyebrow(l10n.canIGoTitle.toUpperCase(), color: OrcaTheme.onDeepTealMuted)),
               OrcaStateChip(state: state, onDark: true),
             ],
           ),
           const SizedBox(height: 14),
-          const Text('Can I go fishing today?', style: OrcaType.heroTitle),
+          Text(l10n.canIGoTitle, style: OrcaType.heroTitle),
           const SizedBox(height: 6),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -60,19 +65,12 @@ class VerdictCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          Text(advisory.headline, style: OrcaType.heroBody.copyWith(fontWeight: FontWeight.w700)),
-          if (advisory.headlineHi != null && advisory.headlineHi!.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 6),
-            Text(
-              advisory.headlineHi!,
-              style: OrcaType.heroBody.copyWith(color: OrcaTheme.onDeepTealMuted),
-            ),
-          ],
-          if (advisory.plainEn.isNotEmpty) ...<Widget>[
+          Text(headline, style: OrcaType.heroBody.copyWith(fontWeight: FontWeight.w700)),
+          if (bullets.isNotEmpty) ...<Widget>[
             const SizedBox(height: 16),
             Divider(color: Colors.white.withValues(alpha: 0.14), height: 1),
             const SizedBox(height: 14),
-            for (final String bullet in advisory.plainEn.take(4)) ...<Widget>[
+            for (final String bullet in bullets.take(4)) ...<Widget>[
               Padding(
                 padding: const EdgeInsets.only(bottom: 7),
                 child: Row(
@@ -130,17 +128,16 @@ class VerdictCard extends StatelessWidget {
     return DateFormatter.formatIstTime(parsed);
   }
 
-  String _verdictText(String value) {
+  String _verdictText(String value, AppLocalizations l10n) {
     final String normal = value.toLowerCase().replaceAll('-', '_');
-    if (normal.contains('go') && !normal.contains('no_go') && !normal.contains('nogo')) {
-      return 'GO SAFE ✔';
+    // Check NO-GO before GO because the former contains the latter.
+    if (normal.contains('no_go') || normal.contains('nogo') || normal.contains('danger')) {
+      return '${l10n.verdictNoGo} ⛔';
     }
     if (normal.contains('caution') || normal.contains('mod')) {
-      return 'CAUTION ⚠';
+      return '${l10n.verdictCaution} ⚠';
     }
-    if (normal.contains('no_go') || normal.contains('nogo') || normal.contains('danger')) {
-      return 'NO-GO ⛔';
-    }
-    return value.toUpperCase();
+    if (normal.contains('go')) return '${l10n.verdictGo} ✔';
+    return l10n.verdictUnknown;
   }
 }

@@ -80,8 +80,10 @@ class AdvisoryEntity {
   final String colorHex;
   final String headline;
   final String? headlineHi;
+  final String? headlineTe;
   final List<String> plainEn;
   final List<String> plainHi;
+  final List<String> plainTe;
   final SafeWindow? safeWindow;
   final Map<String, VariableItem> variables;
   final List<HourlyPoint> hourlyChart;
@@ -92,13 +94,27 @@ class AdvisoryEntity {
   final DateTime timestamp;
   final StalenessInfo staleness;
 
+  String localizedHeadline(String languageCode) {
+    if (languageCode == 'hi' && (headlineHi ?? '').isNotEmpty) return headlineHi!;
+    if (languageCode == 'te' && (headlineTe ?? '').isNotEmpty) return headlineTe!;
+    return headline;
+  }
+
+  List<String> localizedPlain(String languageCode) {
+    if (languageCode == 'hi' && plainHi.isNotEmpty) return plainHi;
+    if (languageCode == 'te' && plainTe.isNotEmpty) return plainTe;
+    return plainEn;
+  }
+
   const AdvisoryEntity({
     required this.verdict,
     required this.colorHex,
     required this.headline,
     this.headlineHi,
+    this.headlineTe,
     required this.plainEn,
     required this.plainHi,
+    this.plainTe = const [],
     this.safeWindow,
     required this.variables,
     required this.hourlyChart,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/live/live_channel.dart';
+import '../../../../l10n/app_localizations.dart';
 import '../../../../core/offline/connectivity_watcher.dart';
 import '../../../../core/theme/orca_theme.dart';
 import '../../../../core/theme/verdict_colors.dart';
@@ -47,7 +48,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
     final int unreviewed = all.where((AlertItem alert) => !reviewed.contains(alert.id)).length;
 
     return OrcaWorkspaceScaffold(
-      title: 'Alerts',
+      title: AppLocalizations.of(context)?.alertsTitle ?? 'Alerts',
       subtitle: 'Official provider warnings',
       locationLabel: 'Feed coverage',
       coordinateLabel: all.isEmpty ? 'No active alerts' : '${all.length} active alert${all.length == 1 ? '' : 's'}',

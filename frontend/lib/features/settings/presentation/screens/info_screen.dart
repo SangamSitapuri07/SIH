@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/cache/cache_service.dart';
 import '../../../../core/cache/staleness.dart';
+import '../../../../core/localization/language_options.dart';
 import '../../../../core/network/dio_provider.dart';
 import '../../../../core/sync/sync_manager.dart';
 import '../../../../core/theme/orca_theme.dart';
@@ -11,6 +12,7 @@ import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/widgets/orca_navigation.dart';
 import '../../../../core/widgets/orca_ui.dart';
 import '../../../../core/widgets/toast.dart';
+import '../../../../l10n/app_localizations.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/server_config_dialog.dart';
 
@@ -28,6 +30,8 @@ class InfoScreen extends ConsumerWidget {
     'alerts.latest',
     'reasoning.latest',
     'health.latest',
+    'trip_plan.latest',
+    'navigation.offline_route',
     'settings.locale',
     'alerts.reviewed',
     'profile',
@@ -49,7 +53,7 @@ class InfoScreen extends ConsumerWidget {
             .length;
 
     return OrcaWorkspaceScaffold(
-      title: 'Data sources',
+      title: AppLocalizations.of(context)?.infoTitle ?? 'Data sources',
       subtitle: 'Provider health, cache freshness and recovery',
       locationLabel: 'ORCA Box',
       coordinateLabel: baseUrl,
@@ -59,7 +63,7 @@ class InfoScreen extends ConsumerWidget {
       stateLabel: health == null
           ? 'HEALTH UNAVAILABLE'
           : '$operational/${health.dataSources.length} USABLE',
-      onRefresh: () => ref.read(healthProvider.notifier).checkHealth(),
+      onRefresh: () => ref.read(healthProvider.notifier).checkHealth(probe: true),
       body: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final bool twoColumn = constraints.maxWidth > OrcaTheme.compactBreakpoint;
@@ -71,9 +75,9 @@ class InfoScreen extends ConsumerWidget {
                 title: 'Provider health',
                 subtitle: health == null
                     ? 'The ORCA Box health endpoint did not answer'
-                    : 'Status, latency and last observation reported by ${baseUrl}',
+                    : 'Status, latency and last observation reported by $baseUrl',
                 actionLabel: 'Re-check',
-                onAction: () => ref.read(healthProvider.notifier).checkHealth(),
+                onAction: () => ref.read(healthProvider.notifier).checkHealth(probe: true),
               ),
               const SizedBox(height: 12),
               healthState.when(
@@ -116,7 +120,7 @@ class InfoScreen extends ConsumerWidget {
                       title: 'System health unavailable',
                       message: '$error\nORCA could not reach the health endpoint, so no provider is reported as working.',
                       actionLabel: 'Retry',
-                      onAction: () => ref.read(healthProvider.notifier).checkHealth(),
+                      onAction: () => ref.read(healthProvider.notifier).checkHealth(probe: true),
                     ),
                     const SizedBox(height: 12),
                     const _RecoveryCard(),
@@ -163,7 +167,7 @@ class InfoScreen extends ConsumerWidget {
           );
 
           final Widget body = RefreshIndicator(
-            onRefresh: () => ref.read(healthProvider.notifier).checkHealth(),
+            onRefresh: () => ref.read(healthProvider.notifier).checkHealth(probe: true),
             color: OrcaTheme.accent,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -199,7 +203,11 @@ class InfoScreen extends ConsumerWidget {
 
   static bool _isUsable(String status) {
     final String normal = status.toUpperCase();
-    return normal == 'FRESH' || normal == 'CACHED' || normal == 'CONFIGURED' || normal == 'AVAILABLE';
+    return normal == 'FRESH' ||
+        normal == 'CACHED' ||
+        normal == 'CONNECTED' ||
+        normal == 'AVAILABLE' ||
+        normal == 'OK';
   }
 }
 
@@ -211,17 +219,18 @@ class _SourceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String status = item.status.toUpperCase();
+    final DateTime? observedAt = DateFormatter.parseIso(item.observedAt);
     final Color color = switch (status) {
-      'FRESH' || 'CACHED' || 'AVAILABLE' => VerdictColors.go,
-      'CONFIGURED' || 'UNVERIFIED' => VerdictColors.caution,
-      'UNAVAILABLE' || 'UNREACHABLE' || 'FAILED' => VerdictColors.critical,
+      'FRESH' || 'CACHED' || 'CONNECTED' || 'AVAILABLE' || 'OK' => VerdictColors.go,
+      'CONFIGURED' || 'UNVERIFIED' || 'NOT_INTEGRATED' => VerdictColors.caution,
+      'UNAVAILABLE' || 'UNREACHABLE' || 'AUTHENTICATION_FAILED' || 'RATE_LIMITED' || 'FAILED' => VerdictColors.critical,
       'CREDENTIAL_REQUIRED' || 'TOKEN_REQUIRED' => VerdictColors.stale,
       _ => VerdictColors.stale,
     };
     final OrcaDataState state = switch (status) {
-      'FRESH' => OrcaDataState.current,
+      'FRESH' || 'CONNECTED' || 'AVAILABLE' || 'OK' => OrcaDataState.current,
       'CACHED' => OrcaDataState.cached,
-      'CONFIGURED' => OrcaDataState.forecast,
+      'CONFIGURED' || 'NOT_INTEGRATED' => OrcaDataState.forecast,
       'UNVERIFIED' => OrcaDataState.loading,
       _ => OrcaDataState.unavailable,
     };
@@ -266,13 +275,18 @@ class _SourceTile extends StatelessWidget {
                     Text('key ${item.key}', style: OrcaType.caption.copyWith(fontSize: 10.5)),
                     if (item.latencyMs != null)
                       Text('${item.latencyMs} ms', style: OrcaType.caption.copyWith(fontSize: 10.5)),
-                    if (item.checkedAt != null)
+                    if (observedAt != null)
                       Text(
-                        'observed ${DateFormatter.formatIstTime(DateTime.fromMillisecondsSinceEpoch(item.checkedAt! * 1000, isUtc: true))}',
+                        'data time ${DateFormatter.formatIstTime(observedAt)}',
                         style: OrcaType.caption.copyWith(fontSize: 10.5),
                       )
                     else
-                      Text('no observation time reported', style: OrcaType.caption.copyWith(fontSize: 10.5)),
+                      Text('data time not supplied', style: OrcaType.caption.copyWith(fontSize: 10.5)),
+                    if (item.checkedAt != null)
+                      Text(
+                        'checked ${DateFormatter.formatIstTime(DateTime.fromMillisecondsSinceEpoch(item.checkedAt! * 1000, isUtc: true))}',
+                        style: OrcaType.caption.copyWith(fontSize: 10.5),
+                      ),
                   ],
                 ),
               ],
@@ -344,13 +358,14 @@ class _LanguageCard extends StatelessWidget {
             const OrcaEyebrow('LANGUAGE', color: OrcaTheme.textMuted),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              value: language,
+              initialValue: language,
               decoration: const InputDecoration(labelText: 'Interface language'),
-              items: const <DropdownMenuItem<String>>[
-                DropdownMenuItem<String>(value: 'en', child: Text('English')),
-                DropdownMenuItem<String>(value: 'hi', child: Text('हिन्दी')),
-                DropdownMenuItem<String>(value: 'te', child: Text('తెలుగు')),
-              ],
+              items: orcaLanguages
+                  .map((OrcaLanguageOption option) => DropdownMenuItem<String>(
+                        value: option.code,
+                        child: Text(option.label),
+                      ))
+                  .toList(),
               onChanged: (String? value) {
                 if (value != null) onChanged(value);
               },

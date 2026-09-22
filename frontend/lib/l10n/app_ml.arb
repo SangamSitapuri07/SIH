@@ -1,0 +1,9 @@
+{
+  "@@locale": "ml",
+  "appName": "ORCA", "appTagline": "സഹകരണ ഏജന്റുകളോടെയുള്ള സമുദ്രസ്ഥിതിയും സുരക്ഷാ ഉപദേശവും",
+  "tabHome": "ഹോം", "tabMap": "ഭൂപടം", "tabAi": "AI ഏജന്റുകൾ", "tabAlerts": "മുന്നറിയിപ്പുകൾ", "tabNavigate": "വഴി", "tabInfo": "വിവരം",
+  "verdictGo": "പോകുന്നത് സുരക്ഷിതം", "verdictCaution": "ജാഗ്രത", "verdictNoGo": "അപകടം — പോകരുത്", "verdictUnknown": "അജ്ഞാതം",
+  "canIGoTitle": "ഇന്ന് കടലിൽ പോകാമോ?", "safeWindowLabel": "സുരക്ഷിത സമയം", "variablesTitle": "നിലവിലെ സ്ഥിതി",
+  "alertsTitle": "സജീവ സമുദ്ര മുന്നറിയിപ്പുകൾ", "navigateTitle": "വഴി സുരക്ഷയും കര പരിശോധനയും", "infoTitle": "സിസ്റ്റവും ഡാറ്റ നിലയും",
+  "save": "സംരക്ഷിക്കുക", "cancel": "റദ്ദാക്കുക", "retry": "വീണ്ടും ശ്രമിക്കുക", "languageLabel": "ഭാഷ"
+}
