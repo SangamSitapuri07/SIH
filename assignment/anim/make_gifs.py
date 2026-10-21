@@ -37,6 +37,7 @@ SCENES = {
     "tanka":     (scenes3.tanka,     400, 400, 28, 70),
     "minar":     (scenes3.minar,     400, 590, 32, 70),
     "legacy":    (scenes3.legacy,    400, 545, 32, 70),
+    "teddy":     (scenes3.teddy,     400, 500, 32, 65),
 }
 
 

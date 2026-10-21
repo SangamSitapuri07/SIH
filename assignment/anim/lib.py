@@ -46,6 +46,17 @@ def ease(u):
     return u * u * (3 - 2 * u)
 
 
+_FONT_CACHE = {}
+
+
+def _font(path, px):
+    key = (path, px)
+    if key not in _FONT_CACHE:
+        from PIL import ImageFont
+        _FONT_CACHE[key] = ImageFont.truetype(path, px)
+    return _FONT_CACHE[key]
+
+
 # ------------------------------------------------------------------ canvas
 class Canvas:
     def __init__(self, W, H, ss=SS):
@@ -78,6 +89,19 @@ class Canvas:
             y0, y1 = y1, y0
         self.d.rectangle([x0 * self.ss, y0 * self.ss, x1 * self.ss, y1 * self.ss],
                          fill=hexc(col))
+
+    def rrect(self, x0, y0, x1, y1, r, col):
+        if x1 < x0:
+            x0, x1 = x1, x0
+        if y1 < y0:
+            y0, y1 = y1, y0
+        self.d.rounded_rectangle([x0 * self.ss, y0 * self.ss, x1 * self.ss, y1 * self.ss],
+                                 radius=max(1, int(r * self.ss)), fill=hexc(col))
+
+    def text(self, x, y, s, font, size, col, anchor="mm"):
+        """Draw text; `font` is a ttf path, `size` in canvas units."""
+        f = _font(font, max(4, int(size * self.ss)))
+        self.d.text((x * self.ss, y * self.ss), s, font=f, fill=hexc(col), anchor=anchor)
 
     def poly(self, pts, col):
         self.d.polygon(self._pts(pts), fill=hexc(col))

@@ -362,3 +362,165 @@ def legacy(t, W, H):
         c.line((bxp - 8, byp + fl), (bxp, byp - 2), 1.8, "1c0c18")
         c.line((bxp, byp - 2), (bxp + 8, byp + fl), 1.8, "1c0c18")
     return c.finish()
+
+
+# ------------------------------------------------------------ TEDDY (thank you)
+import os as _os
+
+_FONT_BOLD = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                           "..", "assets", "TNRBold.ttf")
+_FONT_DISP = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                           "..", "assets", "Bernard.ttf")
+
+
+def _heart(c, x, y, s, col, alpha=1.0):
+    pts = []
+    for i in range(13):
+        a = TAU * i / 12
+        hx = 16 * math.sin(a) ** 3
+        hy = -(13 * math.cos(a) - 5 * math.cos(2 * a) - 2 * math.cos(3 * a) - math.cos(4 * a))
+        pts.append((x + hx * s, y + hy * s))
+    if alpha >= 1:
+        c.poly(pts, col)
+    else:
+        c.apoly(pts, col, alpha)
+
+
+def teddy(t, W, H):
+    """A plush teddy bear waving and saying 'Thank you mates!'"""
+    c = Canvas(W, H)
+    c.gradient([(0, "ffe3b0"), (0.55, "f7b06a"), (1, "e07a4a")])
+    c.glow(200, 240, 230, "ffe8b8", 0.55)
+    # party bunting across the top corners
+    for side in (0, 1):
+        x0, x1 = (-20, 190) if side == 0 else (210, 420)
+        y0, y1 = (8, 52) if side == 0 else (52, 8)
+        pts = [(x0 + (x1 - x0) * u, y0 + (y1 - y0) * u + 14 * math.sin(math.pi * u))
+               for u in [i / 6 for i in range(7)]]
+        c.path(pts, 2.4, "8a4a28")
+        for i in range(6):
+            u = i / 6
+            fx = x0 + (x1 - x0) * (u + 0.08)
+            fy = y0 + (y1 - y0) * (u + 0.08) + 14 * math.sin(math.pi * (u + 0.08))
+            col = ("d4404c" if i % 2 == 0 else "f2b53a") if side == 0 else ("2e8b57" if i % 2 == 0 else "e8895a")
+            c.poly([(fx - 8, fy + 1), (fx + 8, fy + 1), (fx, fy + 20)], col)
+    # falling confetti
+    rnd = random.Random(21)
+    cols = ["d4404c", "f2b53a", "2e8b57", "4a7ac8", "e8895a", "b04ac8"]
+    for i in range(24):
+        a0 = rnd.random()
+        x = rnd.random() * W
+        y = ((t + a0) % 1) * (H + 50) - 25
+        rot = TAU * (t * 2 + a0)
+        w, h = 3.2, 6.5
+        ca, sa = math.cos(rot), math.sin(rot)
+        col = cols[i % len(cols)]
+        c.poly([(x + w * ca - h * sa, y + w * sa + h * ca),
+                (x - w * ca - h * sa, y - w * sa + h * ca),
+                (x - w * ca + h * sa, y - w * sa - h * ca),
+                (x + w * ca + h * sa, y + w * sa - h * ca)], col)
+    # rising hearts
+    for i in range(5):
+        a0 = rnd.random()
+        u = (t + a0) % 1
+        hx = (46 if i % 2 == 0 else W - 46) + (rnd.random() - 0.5) * 60
+        hy = H + 30 - u * (H * 0.72)
+        al = min(1, min(u, 1 - u) * 4) * 0.75
+        _heart(c, hx, hy, 0.7 + 0.3 * math.sin(TAU * (t + a0)), "c8324a", al)
+
+    # ---------------- teddy bear ----------------
+    bob = 4.0 * math.sin(TAU * t)                 # body bounce
+    hbob = bob * 1.6                              # head bob
+    FUR = "8a5228"        # main brown
+    FUR_D = "6e3c1c"      # shaded brown
+    FUR_L = "b06a34"      # highlight brown
+    TAN = "e0b078"        # muzzle / belly / pads
+    GY = 488
+    cx = 200
+
+    def fluff(x, y, rx, ry, n, r, col, seed):
+        rr = random.Random(seed)
+        for i in range(n):
+            a = TAU * (i / n + 0.02 * rr.random())
+            fx = x + math.cos(a) * rx
+            fy = y + math.sin(a) * ry
+            c.circle(fx, fy, r * (0.85 + 0.3 * rr.random()), col)
+
+    # shadow under the bear
+    c.ellipse(cx + 6, GY + 6, 118, 18, "b06030")
+    # hind feet (in front of body)
+    for fx in (cx - 66, cx + 66):
+        c.ellipse(fx, GY - 16, 42, 26, FUR)
+        fluff(fx, GY - 16, 40, 25, 12, 6, FUR_D, 7)
+        c.ellipse(fx, GY - 14, 24, 15, TAN)
+    # body
+    c.ellipse(cx, GY - 92 + bob, 96, 88, FUR)
+    fluff(cx, GY - 92 + bob, 94, 86, 26, 8, FUR_D, 3)
+    c.ellipse(cx, GY - 86 + bob, 58, 52, TAN)
+    c.ellipse(cx - 26, GY - 120 + bob, 40, 30, FUR_L)   # chest sheen
+    # left arm (viewer left) hanging down
+    c.line((cx - 82, GY - 118 + bob), (cx - 108, GY - 52 + bob), 34, FUR)
+    c.circle(cx - 82, GY - 118 + bob, 18, FUR)
+    c.circle(cx - 108, GY - 52 + bob, 19, FUR)
+    c.ellipse(cx - 110, GY - 48 + bob, 11, 9, TAN)
+    # right arm waving (paw clear of the head silhouette)
+    wa = math.radians(-52 + 16 * math.sin(TAU * 2 * t))
+    sh = (cx + 82, GY - 118 + bob)
+    paw = (sh[0] + math.cos(wa) * 86, sh[1] + math.sin(wa) * 86)
+    c.line(sh, paw, 34, FUR)
+    c.circle(sh[0], sh[1], 18, FUR)
+    c.circle(paw[0], paw[1], 20, FUR)
+    c.ellipse(paw[0] + math.cos(wa) * 5, paw[1] + math.sin(wa) * 5, 11, 9, TAN)
+    # head
+    hy = 252 + hbob
+    c.ellipse(cx, hy, 88, 80, FUR)
+    fluff(cx, hy, 86, 78, 22, 8, FUR_D, 5)
+    # ears
+    for ex in (cx - 62, cx + 62):
+        c.circle(ex, hy - 56, 34, FUR)
+        c.circle(ex, hy - 56, 22, FUR_D)
+        c.circle(ex, hy - 56, 15, TAN)
+    c.ellipse(cx - 32, hy - 30, 36, 26, FUR_L)          # forehead sheen
+    # muzzle
+    c.ellipse(cx, hy + 42, 52, 38, TAN)
+    # eyes (button eyes with glint, blinking)
+    blink = (t % 0.5) > 0.44
+    for ex in (cx - 34, cx + 34):
+        if blink:
+            c.line((ex - 11, hy - 8), (ex + 11, hy - 8), 4.5, FUR_D)
+        else:
+            c.circle(ex, hy - 8, 12, "241208")
+            c.circle(ex - 3.5, hy - 11, 4.2, "ffffff")
+            c.circle(ex + 3, hy - 4, 1.8, "ffffff")
+    # rosy cheeks
+    c.acircle(cx - 58, hy + 30, 15, (220, 110, 110), 0.35)
+    c.acircle(cx + 58, hy + 30, 15, (220, 110, 110), 0.35)
+    # nose + shine
+    c.ellipse(cx, hy + 26, 17, 12, "3a1c0c")
+    c.ellipse(cx - 5, hy + 22, 5, 3.5, "6a4428")
+    # mouth talking
+    o = 0.5 + 0.5 * math.sin(TAU * 6 * t)
+    c.ellipse(cx, hy + 52, 9 + 5 * o, 3 + 9 * o, "3a1c0c")
+    c.path([(cx - 22, hy + 44), (cx - 12, hy + 50 + 3 * o), (cx, hy + 46)], 3, "5a2c14")
+    c.path([(cx + 22, hy + 44), (cx + 12, hy + 50 + 3 * o), (cx, hy + 46)], 3, "5a2c14")
+
+    # ---------------- speech bubble ----------------
+    by = 3.5 * math.sin(TAU * 2 * t)
+    bx0, bx1, by0, by1 = 52, 348, 62 + by, 152 + by
+    c.rrect(bx0 - 5, by0 - 5, bx1 + 5, by1 + 5, 26, "3a1c0c")
+    c.rrect(bx0, by0, bx1, by1, 22, "fffdf4")
+    # tail toward the bear's head
+    c.poly([(196, by1 - 4), (236, by1 - 4), (222, by1 + 46 + hbob * 0.4)], "3a1c0c")
+    c.poly([(204, by1 - 6), (228, by1 - 6), (218, by1 + 38 + hbob * 0.4)], "fffdf4")
+    c.text(200, 102 + by, "Thank you mates!", _FONT_DISP if _os.path.exists(_FONT_DISP) else _FONT_BOLD,
+           30, "4a2210")
+    # sparkle stars around the bear
+    for i in range(8):
+        a0 = rnd.random()
+        tw = max(0.0, math.sin(TAU * (t + a0)))
+        sx = 30 + rnd.random() * (W - 60)
+        sy = 180 + rnd.random() * (H - 230)
+        r = 1.2 + 4 * tw
+        c.line((sx - r * 2, sy), (sx + r * 2, sy), 1.3, (255, 245, 210, 255))
+        c.line((sx, sy - r * 2), (sx, sy + r * 2), 1.3, (255, 245, 210, 255))
+    return c.finish()

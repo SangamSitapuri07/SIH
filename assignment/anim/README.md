@@ -20,6 +20,7 @@ plays GIFs automatically in slideshow mode).
 | `tanka.gif`     | 14 | the silver tanka of Iltutmish, spinning |
 | `minar.gif`     | 15 | the Qutb Minar rises, storey by storey |
 | `legacy.gif`    | 16 | what they built still stands |
+| `teddy.gif`     | 18 | plush teddy bear waves and says “Thank you mates!” |
 
 ## Regenerate
 
@@ -38,5 +39,5 @@ cd .. && python3 make_ppt.py    # rebuild the deck with the new GIFs
   Limb angles: `0` = straight down, `90` = forward, `180` = up.
 - `scenes1.py` — `hills`, `ground_strip`, `dust` + `razia`, `duel`, `mongol`
 - `scenes2.py` — `ring`, `crown` + `intro`, `market`, `damyak`, `polo`, `iltutmish`
-- `scenes3.py` — `puppet`, `balban`, `tanka`, `minar`, `legacy`
+- `scenes3.py` — `puppet`, `balban`, `tanka`, `minar`, `legacy`, `teddy`
 - `make_gifs.py` — scene registry, palette conversion, GIF export

@@ -1182,6 +1182,18 @@ anim.build_shape(ty.shape_id)
 running_horse(s, anim, Inches(5.1), w=1.35, dur=6000)
 anim.apply()
 
+# ====================================================================
+#  SLIDE 18 — THE TEDDY BEAR SAYS GOODBYE (animated)
+# ====================================================================
+s, anim = add_slide()
+side_bar(s); footer(s, 18)
+heading(s, anim, "THANK YOU, MATES!")
+picture(s, anim, f"{ASSETS}/anim/teddy.gif", Inches(4.57), Inches(1.42),
+        Inches(4.2), Inches(5.25),
+        "That's the story of the Slave Dynasty \u2014 thank you mates!",
+        effect="zoom", effect_dur=700, ken=False)
+anim.apply()
+
 OUT = "/home/user/SIH/assignment/Slave_Dynasty_Mamluk_Presentation.pptx"
 prs.save(OUT)
 print("saved", OUT, "| slides:", len(prs.slides._sldIdLst))
