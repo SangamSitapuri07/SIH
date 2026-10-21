@@ -329,6 +329,43 @@ def prop(slide, path, l, t, w, h):
 GALLOP = ("M 0 0 L 0.1 -0.015 L 0.2 0 L 0.3 -0.015 L 0.4 0 L 0.5 -0.015 "
           "L 0.6 0 L 0.7 -0.015 L 0.8 0 L 0.9 -0.015 L 1.0 0 L 1.18 0 E")
 
+WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+CREAM2 = RGBColor(0xFF, 0xE9, 0xC9)
+BLUE = RGBColor(0x3B, 0x6E, 0xA5)
+GREEN2 = RGBColor(0x2E, 0x6B, 0x33)
+
+
+def dbox(slide, lines, l, t, w, h, fill=BROWN, line_c=GOLD,
+         shape=MSO_SHAPE.ROUNDED_RECTANGLE):
+    """Diagram box. lines = [(text, size, color, font, bold), ...]"""
+    sh = slide.shapes.add_shape(shape, Inches(l), Inches(t), Inches(w), Inches(h))
+    if fill is None:
+        sh.fill.background()
+    else:
+        sh.fill.solid(); sh.fill.fore_color.rgb = fill
+    if line_c is None:
+        sh.line.fill.background()
+    else:
+        sh.line.color.rgb = line_c; sh.line.width = Pt(1.5)
+    sh.shadow.inherit = False
+    tf = sh.text_frame
+    tf.word_wrap = True
+    tf.margin_left = tf.margin_right = Pt(3)
+    tf.margin_top = tf.margin_bottom = Pt(2)
+    for i, (txt, size, color, font, bold) in enumerate(lines):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        p.alignment = PP_ALIGN.CENTER
+        set_run(p.add_run(), txt, size, font, color, bold=bold)
+    return sh
+
+
+def dlabel(slide, text, l, t, w, size=12, color=GRAY, italic=True, bold=False,
+           align=PP_ALIGN.CENTER):
+    tb = box(slide, Inches(l), Inches(t), Inches(w), Inches(0.5))
+    p = tb.text_frame.paragraphs[0]; p.alignment = align
+    set_run(p.add_run(), text, size, BODY_FONT, color, bold=bold, italic=italic)
+    return tb
+
 
 def running_horse(slide, anim, t, w=1.5, dur=7000):
     """Horse+rider silhouette galloping across the slide, looping forever."""
@@ -475,15 +512,44 @@ for c in cols:
 anim.apply()
 
 # ====================================================================
-#  SLIDE 3 — INTRODUCTION  (map)
+#  SLIDE 3 — INTRODUCTION  (animated: three houses, one throne)
 # ====================================================================
+def _three_houses(s, anim, pic):
+    cards = [("HOUSE OF AIBAK", "1206 \u2013 1211", BROWN),
+             ("HOUSE OF ILTUTMISH", "1211 \u2013 1266", BROWN2),
+             ("HOUSE OF BALBAN", "1266 \u2013 1290", BROWN)]
+    shapes = []
+    y = 1.8
+    for i, (name, yrs, fill) in enumerate(cards):
+        c = dbox(s, [(name, 13, CREAM2, HEAD_FONT, False),
+                     (yrs, 12, WHITE, BODY_FONT, True)], 9.5, y, 3.3, 1.0, fill=fill)
+        shapes.append(("card", c))
+        if i < 2:
+            ar = dlabel(s, "\u25bc", 10.9, y + 1.02, 0.5, size=16, color=BROWN2,
+                        italic=False, bold=True)
+            shapes.append(("arrow", ar))
+        y += 1.55
+    capt = dlabel(s, "Three families \u2014 one throne", 9.5, y + 0.05, 3.3)
+    effs, d = [], 0
+    for kind, sp in shapes:
+        effs.append({"spid": sp.shape_id,
+                     "kind": "zoom" if kind == "card" else "fade",
+                     "dur": 400, "delay": d})
+        d += 380
+    effs.append({"spid": capt.shape_id, "kind": "fade", "dur": 400, "delay": d})
+    anim.add_group(effs, click=True)
+    for _, sp in shapes:
+        anim.build_shape(sp.shape_id)
+    anim.build_shape(capt.shape_id)
+
+
 content_slide(3, "INTRODUCTION", [
     ("Rulers of Delhi, 1206\u20131290 CE ", "\u2014 the first dynasty of the Delhi Sultanate, founded after Muhammad Ghori's death."),
     ("'Mamluk' ", "is Arabic for 'one who is owned'. Every sultan of this line was a former slave or a slave's descendant."),
     ("Nobody ruled as a slave ", "\u2014 each ruler was legally freed (manumitted) before taking the throne."),
     ("Really three families: ", "the houses of Aibak, Iltutmish and Balban, one after another."),
     ("Why it matters: ", "it laid the foundation of the Delhi Sultanate \u2014 Delhi as capital, the tanka coin, the iqta system, the Qutb Minar \u2014 shaping north India for 300 years."),
-], img="map.jpg", caption="The Mamluk Sultanate, c. 1250", size=18, gap=14, img_w=3.4, img_h=3.2)
+], size=18, gap=14, reserve_right=3.9, extras=_three_houses)
 
 # ====================================================================
 #  SLIDE 4 — TIMELINE AT A GLANCE (animated boxes)
@@ -553,14 +619,71 @@ anim.apply()
 # ====================================================================
 #  CONTENT SLIDES
 # ====================================================================
+def _slave_ladder(s, anim, pic):
+    """Slavery as a ladder — steps rise one by one, crown lands on top."""
+    steps = ["Bought in the market", "Trained & converted", "Slave soldier",
+             "General / Governor", "SULTAN"]
+    shapes = []
+    for i, txt in enumerate(steps):
+        x = 9.15 + i * 0.22
+        y = 6.15 - i * 0.93
+        fill = BROWN if i < 4 else GREEN2
+        st = dbox(s, [(txt, 12 if i < 4 else 14, WHITE if i < 4 else CREAM2,
+                       BODY_FONT if i < 4 else HEAD_FONT, i < 4)],
+                  x, y, 2.9, 0.78, fill=fill)
+        shapes.append(st)
+    crown = s.shapes.add_shape(MSO_SHAPE.STAR_5_POINT,
+                               Inches(11.2), Inches(1.45), Inches(0.75), Inches(0.75))
+    crown.fill.solid(); crown.fill.fore_color.rgb = GOLD
+    crown.line.color.rgb = BROWN; crown.line.width = Pt(1.25)
+    crown.shadow.inherit = False
+    capt = dlabel(s, "Slavery was a ladder, not a pit", 9.3, 6.95, 3.6)
+    effs = [{"spid": st.shape_id, "kind": "wipeup", "dur": 350, "delay": i * 380}
+            for i, st in enumerate(shapes)]
+    effs.append({"spid": crown.shape_id, "kind": "zoom", "dur": 350,
+                 "delay": len(shapes) * 380})
+    effs.append({"spid": capt.shape_id, "kind": "fade", "dur": 400,
+                 "delay": len(shapes) * 380 + 300})
+    anim.add_group(effs, click=True)
+    anim.add_group([{"spid": crown.shape_id, "kind": "pulse", "dur": 700,
+                     "repeat": 3}], click=False)
+    for sp in shapes + [crown, capt]:
+        anim.build_shape(sp.shape_id)
+
+
 content_slide(5, "WHO WERE THE MAMLUKS?", [
     ("Elite military slaves ", "(bandagan) \u2014 Turkic boys bought in Central Asian markets, trained in war, horsemanship and court manners."),
     ("Loyalty by design: ", "cut off from family and clan, a slave soldier had nobody except his master."),
     ("Promotion purely on merit ", "\u2014 a talented slave could rise to general, governor\u2026 and eventually king."),
     ("Not plantation slavery: ", "they ate well, commanded armies, married into noble families \u2014 apprenticeship plus bonded loyalty."),
     ("Ghori's 'sons': ", "asked about having no heir, Ghori said his thousands of Turkish slaves would carry his name \u2014 and they did."),
-], img="mamluk_cavalry.jpg", caption="Turkic mamluk cavalry (artistic reconstruction)",
-    size=17, gap=13)
+], size=17, gap=13, reserve_right=4.0, extras=_slave_ladder)
+
+def _empire_splits(s, anim, pic):
+    """Ghori's empire shatters into three — boxes fly apart."""
+    top = dbox(s, [("GHORI'S EMPIRE", 14, CREAM2, HEAD_FONT, False),
+                   ("\u2020 murdered 1206", 11, WHITE, BODY_FONT, True)],
+               9.75, 1.7, 2.9, 1.0, fill=DARK)
+    rivals = [("YILDIZ", "Ghazni", BROWN2), ("QABACHA", "Multan\u2013Uch", BROWN2),
+              ("AIBAK", "DELHI \u2714", GREEN2)]
+    rboxes = []
+    for i, (nm, place, fill) in enumerate(rivals):
+        rb = dbox(s, [(nm, 12.5, CREAM2, HEAD_FONT, False),
+                      (place, 11, WHITE, BODY_FONT, True)],
+                  9.32 + i * 1.3, 3.75 + (0.35 if i == 1 else 0), 1.22, 0.95, fill=fill)
+        rboxes.append(rb)
+    capt = dlabel(s, "One empire \u2014 three swords drawn", 9.35, 5.35, 3.6)
+    anim.add_group([{"spid": top.shape_id, "kind": "zoom", "dur": 500}], click=False)
+    paths = ["M 0 -0.18 L -0.02 0 E", "M 0 -0.22 L 0 0 E", "M 0 -0.26 L 0.02 0 E"]
+    effs = [{"spid": rb.shape_id, "kind": "fly", "path": paths[i], "dur": 600,
+             "delay": i * 300, "swing": (-8, 0, 8)[i]} for i, rb in enumerate(rboxes)]
+    effs.append({"spid": capt.shape_id, "kind": "fade", "dur": 400, "delay": 1300})
+    anim.add_group(effs, click=True)
+    anim.add_group([{"spid": rboxes[2].shape_id, "kind": "pulse", "dur": 700,
+                     "repeat": 3}], click=False)
+    for sp in [top] + rboxes + [capt]:
+        anim.build_shape(sp.shape_id)
+
 
 content_slide(6, "1206 \u2013 BIRTH OF THE SULTANATE", [
     ("March 1206: ", "Muhammad Ghori assassinated at Damyak on the Indus \u2014 no son, only ambitious slave generals."),
@@ -568,7 +691,30 @@ content_slide(6, "1206 \u2013 BIRTH OF THE SULTANATE", [
     ("Aibak moved fastest: ", "invited by the nobles and citizens of Lahore, he took charge of Hindustan within months."),
     ("Legitimacy mattered: ", "he used modest titles (Malik, Sipahsalar) until formally freed and recognised (c. 1208)."),
     ("The result: ", "an independent Indian kingdom owing nothing to Ghazni \u2014 the Delhi Sultanate begins here."),
-], img="map.jpg", caption="The new state and its frontiers", size=17, gap=13, img_h=3.2)
+], size=17, gap=13, reserve_right=4.0, extras=_empire_splits)
+
+def _coin_shower(s, anim, pic):
+    """'Lakh Baksh' — gold coins rain down, endlessly generous."""
+    hands = dbox(s, [("LAKH BAKSH", 15, CREAM2, HEAD_FONT, False),
+                     ("the giver of lakhs", 11, WHITE, BODY_FONT, True)],
+                 9.6, 1.75, 3.1, 1.0, fill=BROWN)
+    anim.add_group([{"spid": hands.shape_id, "kind": "zoom", "dur": 500}], click=False)
+    anim.build_shape(hands.shape_id)
+    xs = [9.75, 10.45, 11.15, 11.85, 12.55]
+    for i, x in enumerate(xs):
+        coin = s.shapes.add_shape(MSO_SHAPE.OVAL, Inches(x), Inches(2.95),
+                                  Inches(0.34), Inches(0.34))
+        coin.fill.solid(); coin.fill.fore_color.rgb = GOLD
+        coin.line.color.rgb = BROWN; coin.line.width = Pt(1)
+        coin.shadow.inherit = False
+        anim.add_group([{"spid": coin.shape_id, "kind": "motion",
+                         "path": "M 0 0 L 0 0.46 E", "dur": 1600 + i * 180,
+                         "delay": i * 320, "repeat": "indefinite"}], click=False)
+    capt = dlabel(s, "Chroniclers rarely name him without praising his charity",
+                  9.3, 6.75, 3.7)
+    anim.add_group([{"spid": capt.shape_id, "kind": "fade", "dur": 500}], click=False)
+    anim.build_shape(capt.shape_id)
+
 
 content_slide(7, "QUTB-UD-DIN AIBAK (r. 1206\u20131210)", [
     ("Slave market to throne: ", "sold as a child at Nishapur, educated by a qazi, bought by Ghori \u2014 rose to be his best general."),
@@ -576,7 +722,31 @@ content_slide(7, "QUTB-UD-DIN AIBAK (r. 1206\u20131210)", [
     ("'Lakh Baksh' ", "\u2014 the giver of lakhs \u2014 famous above all for open-handed generosity."),
     ("Builder: ", "began the Quwwat-ul-Islam mosque and Qutb Minar at Delhi; Adhai Din ka Jhonpra at Ajmer."),
     ("Sudden end (1210): ", "died in a fall while playing chaugan (polo) at Lahore. His short reign turned a general's command into a kingdom."),
-], img="quwwat.jpg", caption="Quwwat-ul-Islam mosque \u2014 begun by Aibak", size=17, gap=13)
+], size=17, gap=13, reserve_right=4.0, extras=_coin_shower)
+
+def _foundation_stack(s, anim, pic):
+    """Iltutmish builds the state — foundation blocks stack up, one per click."""
+    blocks = [("Rivals crushed", "Yildiz \u2022 Qabacha \u2022 Bengal"),
+              ("IQTA system", "land revenue = salary"),
+              ("The FORTY", "Turkan-i-Chahalgani"),
+              ("TANKA + JITAL", "sound money"),
+              ("CALIPH 1229", "lawful sultanate")]
+    shapes = []
+    for i, (a, b) in enumerate(blocks):
+        bl = dbox(s, [(a, 12.5, CREAM2, HEAD_FONT, False),
+                      (b, 10.5, WHITE, BODY_FONT, False)],
+                  9.45, 6.1 - i * 0.92, 3.4, 0.8,
+                  fill=BROWN if i % 2 == 0 else BROWN2,
+                  shape=MSO_SHAPE.RECTANGLE)
+        shapes.append(bl)
+    capt = dlabel(s, "Brick by brick \u2014 a state is built", 9.45, 1.35, 3.4)
+    for bl in shapes:
+        anim.add_group([{"spid": bl.shape_id, "kind": "wipeup", "dur": 450}],
+                       click=True)
+        anim.build_shape(bl.shape_id)
+    anim.add_group([{"spid": capt.shape_id, "kind": "fade", "dur": 400}], click=False)
+    anim.build_shape(capt.shape_id)
+
 
 content_slide(8, "ILTUTMISH (r. 1211\u20131236) \u2013 THE REAL FOUNDER", [
     ("Sold by his own brothers ", "out of jealousy \u2014 rose through sheer ability."),
@@ -585,14 +755,50 @@ content_slide(8, "ILTUTMISH (r. 1211\u20131236) \u2013 THE REAL FOUNDER", [
     ("Institution builder: ", "the Forty (Chahalgani), the iqta system, Delhi as permanent capital."),
     ("Currency reform: ", "silver tanka + copper jital \u2014 ancestors of the rupee."),
     ("Boldest decision: ", "nominated his daughter Razia as heir over his sons."),
-], img="iltutmish_tomb.jpg", caption="Carved walls of Iltutmish's tomb, Qutb complex",
-    size=16.5, gap=11)
+], size=16.5, gap=11, reserve_right=4.1, extras=_foundation_stack)
 
-def _arrow_volley(s, anim, pic):
-    """Mongol arrows whistle across the bottom of the slide, endlessly."""
-    specs = [(Inches(6.35), 2100, 0), (Inches(6.62), 1700, 450), (Inches(6.88), 1900, 900)]
-    for t, dur, delay in specs:
-        ar = prop(s, f"{ASSETS}/arrow.png", -Inches(1.5), t, Inches(1.35), Inches(0.2))
+def _indus_standoff(s, anim, pic):
+    """Animated scene: the horde advances to the Indus, Delhi declines, horde retreats."""
+    title = dlabel(s, "1221 \u2014 the Indus stand-off", 9.25, 1.45, 3.9, color=BROWN,
+                   italic=False, bold=True)
+    river = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(11.28), Inches(1.95),
+                               Inches(0.14), Inches(3.6))
+    river.fill.solid(); river.fill.fore_color.rgb = BLUE
+    river.line.fill.background(); river.shadow.inherit = False
+    rlab = dlabel(s, "INDUS", 10.95, 5.6, 0.8, size=10, color=BLUE, italic=False, bold=True)
+    khan = dbox(s, [("CHINGIZ", 13, CREAM2, HEAD_FONT, False),
+                    ("KHAN", 13, CREAM2, HEAD_FONT, False)],
+                9.25, 3.0, 1.35, 1.1, fill=DARK)
+    delhi = dbox(s, [("DELHI", 13, CREAM2, HEAD_FONT, False),
+                     ("Iltutmish", 11, WHITE, BODY_FONT, True)],
+                 11.8, 3.0, 1.35, 1.1, fill=BROWN)
+    bubble = dbox(s, [("\u201cDelhi's climate", 10.5, DARK, BODY_FONT, False),
+                      ("will not suit you\u201d", 10.5, DARK, BODY_FONT, False)],
+                  11.0, 4.45, 2.15, 0.75, fill=CREAM2, line_c=BROWN,
+                  shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+    # scene fades in
+    anim.add_group([{"spid": title.shape_id, "kind": "fade", "dur": 400},
+                    {"spid": river.shape_id, "kind": "wipe", "dur": 600, "delay": 200},
+                    {"spid": rlab.shape_id, "kind": "fade", "dur": 300, "delay": 600},
+                    {"spid": khan.shape_id, "kind": "fade", "dur": 400, "delay": 700},
+                    {"spid": delhi.shape_id, "kind": "fade", "dur": 400, "delay": 900}],
+                   click=False)
+    # click 1: the horde advances to the river bank
+    anim.add_group([{"spid": khan.shape_id, "kind": "motion",
+                     "path": "M 0 0 L 0.047 0 E", "dur": 900}], click=True)
+    # click 2: the famous polite refusal
+    anim.add_group([{"spid": bubble.shape_id, "kind": "zoom", "dur": 400}], click=True)
+    # click 3: the horde turns back — Delhi breathes
+    anim.add_group([{"spid": khan.shape_id, "kind": "motion",
+                     "path": "M 0 0 L -0.09 -0.01 E", "dur": 1100}], click=True)
+    anim.add_group([{"spid": delhi.shape_id, "kind": "pulse", "dur": 600,
+                     "repeat": 3}], click=False)
+    for sp in (title, river, rlab, khan, delhi, bubble):
+        anim.build_shape(sp.shape_id)
+    # arrows still whistle along the bottom of the slide
+    for t, dur, delay in ((6.35, 2100, 0), (6.62, 1700, 450), (6.88, 1900, 900)):
+        ar = prop(s, f"{ASSETS}/arrow.png", -Inches(1.5), Inches(t),
+                  Inches(1.35), Inches(0.2))
         anim.add_group([{"spid": ar.shape_id, "kind": "motion",
                          "path": "M 0 0 L 1.3 0.012 E", "dur": dur,
                          "delay": delay, "repeat": "indefinite"}], click=False)
@@ -604,8 +810,43 @@ content_slide(9, "THE MONGOL STORM (1221)", [
     ("Iltutmish's masterstroke: ", "he politely replied that Delhi's climate 'would not suit' the prince \u2014 and quietly moved troops."),
     ("Result: ", "the Mongols withdrew; India escaped the fate of Merv, Nishapur and Baghdad."),
     ("One wrong step in 1221 ", "and the thirty-year-old Sultanate might have ended there."),
-], img="genghis.jpg", caption="Chingiz Khan \u2014 Yuan-era portrait", size=17, gap=14,
-    img_w=2.9, img_h=3.4, extras=_arrow_volley)
+], size=17, gap=14, reserve_right=4.4, extras=_indus_standoff)
+
+def _razia_rise_fall(s, anim, pic):
+    """Razia rises on the people's shoulders — and is pulled down by the Forty."""
+    throne_y = 2.1
+    start_dy = 0.30          # fraction of slide height she rises through
+    crown = s.shapes.add_shape(MSO_SHAPE.STAR_5_POINT,
+                               Inches(10.95), Inches(throne_y - 0.65),
+                               Inches(0.6), Inches(0.6))
+    crown.fill.solid(); crown.fill.fore_color.rgb = GOLD
+    crown.line.color.rgb = BROWN; crown.line.width = Pt(1)
+    crown.shadow.inherit = False
+    razia = dbox(s, [("RAZIA", 15, CREAM2, HEAD_FONT, False),
+                     ("SULTAN", 12, WHITE, BODY_FONT, True)],
+                 10.25, throne_y, 2.0, 1.05, fill=GREEN2)
+    up = dlabel(s, "\u25b2  raised by the people of Delhi (1236)",
+                9.3, 5.45, 3.9, size=12, color=GREEN2, italic=False, bold=True)
+    down = dlabel(s, "\u25bc  pulled down by the Turkish Forty (1240)",
+                  9.3, 5.92, 3.9, size=12, color=BROWN, italic=False, bold=True)
+    # click 1: she rises to the throne
+    anim.add_group([{"spid": up.shape_id, "kind": "fade", "dur": 400},
+                    {"spid": razia.shape_id, "kind": "fly",
+                     "path": f"M 0 {start_dy} L 0 0 E", "dur": 1100, "delay": 200},
+                    {"spid": crown.shape_id, "kind": "zoom", "dur": 400,
+                     "delay": 1300}], click=True)
+    # click 2: the fall
+    anim.add_group([{"spid": down.shape_id, "kind": "fade", "dur": 400},
+                    {"spid": razia.shape_id, "kind": "motion",
+                     "path": "M 0 0 L 0.012 0.26 E", "dur": 1100, "delay": 300},
+                    {"spid": crown.shape_id, "kind": "spin", "deg": 40,
+                     "dur": 900, "delay": 300}], click=True)
+    capt = dlabel(s, "Not for ruling badly \u2014 for ruling too independently",
+                  9.25, 6.5, 4.0)
+    anim.add_group([{"spid": capt.shape_id, "kind": "fade", "dur": 500}], click=False)
+    for sp in (crown, razia, up, down, capt):
+        anim.build_shape(sp.shape_id)
+
 
 content_slide(10, "RAZIA SULTAN (r. 1236\u20131240)", [
     ("First and only woman ", "to rule from the throne of Delhi \u2014 crowned after Delhi's citizens rose against Ruknuddin Firuz."),
@@ -614,8 +855,41 @@ content_slide(10, "RAZIA SULTAN (r. 1236\u20131240)", [
     ("Merit over birth: ", "promoted able outsiders like the Abyssinian Yaqut \u2014 enraging the Turkish Forty."),
     ("The fall (1240): ", "betrayed, imprisoned, married the rebel Altunia, marched on Delhi \u2014 killed near Kaithal."),
     ("She fell not for ruling badly ", "\u2014 but for ruling too independently."),
-], img="razia.jpg", caption="Razia Sultana on horseback \u2014 19th-c. painting",
-    size=16.5, gap=11, img_w=2.9, img_h=3.7)
+], size=16.5, gap=11, reserve_right=4.2, extras=_razia_rise_fall)
+
+def _puppet_show(s, anim, pic):
+    """A sultan dangling on the Forty's strings — swinging helplessly."""
+    forty = dbox(s, [("THE FORTY", 14, CREAM2, HEAD_FONT, False),
+                     ("king-makers", 11, WHITE, BODY_FONT, True)],
+                 9.7, 1.7, 3.0, 0.95, fill=DARK)
+    from pptx.enum.shapes import MSO_CONNECTOR
+    strings = []
+    for x in (10.35, 12.05):
+        ln = s.shapes.add_connector(MSO_CONNECTOR.STRAIGHT,
+                                    Inches(x), Inches(2.65), Inches(11.2), Inches(3.9))
+        ln.line.color.rgb = GRAY; ln.line.width = Pt(1.25)
+        ln.shadow.inherit = False
+        strings.append(ln)
+    puppet = dbox(s, [("PUPPET", 12.5, CREAM2, HEAD_FONT, False),
+                      ("SULTAN", 12.5, CREAM2, HEAD_FONT, False),
+                      ("Bahram \u2022 Masud", 10, WHITE, BODY_FONT, False)],
+                  10.35, 3.9, 1.7, 1.25, fill=BROWN2)
+    capt = dlabel(s, "Crowned, controlled\u2026 and cut loose", 9.6, 5.5, 3.3)
+    anim.add_group([{"spid": forty.shape_id, "kind": "zoom", "dur": 500},
+                    {"spid": strings[0].shape_id, "kind": "wipe", "dur": 400, "delay": 400},
+                    {"spid": strings[1].shape_id, "kind": "wipe", "dur": 400, "delay": 550},
+                    {"spid": puppet.shape_id, "kind": "fly",
+                     "path": "M 0 -0.12 L 0 0 E", "dur": 600, "delay": 800},
+                    {"spid": capt.shape_id, "kind": "fade", "dur": 400, "delay": 1500}],
+                   click=True)
+    # the puppet keeps swinging on its strings
+    anim.add_group([{"spid": puppet.shape_id, "kind": "motion",
+                     "path": ("M 0 0 L 0.012 0.004 L 0 0.006 L -0.012 0.004 "
+                              "L 0 0 E"), "dur": 2600,
+                     "repeat": "indefinite"}], click=False)
+    for sp in [forty, puppet, capt] + strings:
+        anim.build_shape(sp.shape_id)
+
 
 content_slide(11, "THE PUPPET YEARS (1240\u20131266)", [
     ("King-makers unleashed: ", "the Forty crowned, controlled and destroyed Bahram Shah (1240\u201342) and Masud Shah (1242\u201346)."),
@@ -623,7 +897,36 @@ content_slide(11, "THE PUPPET YEARS (1240\u20131266)", [
     ("Nasiruddin Mahmud (1246\u201366): ", "gentle and pious \u2014 wisely left the real work of government to his deputy, Balban."),
     ("A historian's gift: ", "Minhaj-us-Siraj dedicated his Tabaqat-i-Nasiri to this sultan \u2014 our most important source."),
     ("1266: ", "Mahmud died without a son; the deputy finally took the crown himself."),
-], size=18, gap=15)
+], size=17, gap=14, reserve_right=4.0, extras=_puppet_show)
+
+def _two_pillars(s, anim, pic):
+    """The crown rests on two pillars — ceremony and terror."""
+    p1 = dbox(s, [("THEATRE OF", 11.5, CREAM2, HEAD_FONT, False),
+                  ("MAJESTY", 11.5, CREAM2, HEAD_FONT, False),
+                  ("sijda \u2022 paibos", 9.5, WHITE, BODY_FONT, False),
+                  ("Nauroz pomp", 9.5, WHITE, BODY_FONT, False)],
+              9.55, 3.6, 1.55, 2.5, fill=BROWN, shape=MSO_SHAPE.RECTANGLE)
+    p2 = dbox(s, [("BLOOD", 11.5, CREAM2, HEAD_FONT, False),
+                  ("AND IRON", 11.5, CREAM2, HEAD_FONT, False),
+                  ("bandits crushed", 9.5, WHITE, BODY_FONT, False),
+                  ("barid spies", 9.5, WHITE, BODY_FONT, False)],
+              11.5, 3.6, 1.55, 2.5, fill=BROWN2, shape=MSO_SHAPE.RECTANGLE)
+    beam = dbox(s, [("ZIL-E-ILAHI", 13.5, DARK, HEAD_FONT, False),
+                    ("Shadow of God", 10.5, DARK, BODY_FONT, True)],
+                9.4, 2.55, 3.8, 0.9, fill=GOLD, line_c=BROWN)
+    capt = dlabel(s, "Majesty restored \u2014 at a price", 9.4, 6.25, 3.8)
+    # pillars rise one per click, then the golden beam descends onto them
+    anim.add_group([{"spid": p1.shape_id, "kind": "wipeup", "dur": 700}], click=True)
+    anim.add_group([{"spid": p2.shape_id, "kind": "wipeup", "dur": 700}], click=True)
+    anim.add_group([{"spid": beam.shape_id, "kind": "fly",
+                     "path": "M 0 -0.22 L 0 0 E", "dur": 800},
+                    {"spid": capt.shape_id, "kind": "fade", "dur": 400,
+                     "delay": 800}], click=True)
+    anim.add_group([{"spid": beam.shape_id, "kind": "pulse", "dur": 700,
+                     "repeat": 3}], click=False)
+    for sp in (p1, p2, beam, capt):
+        anim.build_shape(sp.shape_id)
+
 
 content_slide(12, "BALBAN (r. 1266\u20131287) \u2013 BLOOD AND IRON", [
     ("Water-carrier to 'Shadow of God': ", "declared the Sultan Zil-e-Ilahi; court modelled on the Persian emperors."),
@@ -632,8 +935,7 @@ content_slide(12, "BALBAN (r. 1266\u20131287) \u2013 BLOOD AND IRON", [
     ("Broke the Forty: ", "old comrades sidelined, poisoned or executed; barid spies in every province."),
     ("Bengal (1279): ", "marched there at nearly eighty; an example so harsh Bengal stayed quiet for a generation."),
     ("The price: ", "his heir Prince Muhammad fell to the Mongols (1285); Balban died broken in 1287."),
-], img="balban_tomb.jpg", caption="Balban's tomb \u2014 one of India's first true arches",
-    size=16.5, gap=11)
+], size=16.5, gap=11, reserve_right=4.2, extras=_two_pillars)
 
 def _sword_clash(s, anim, pic):
     """Two talwars fly in from the corners and cross with a golden clash burst."""
@@ -672,6 +974,39 @@ content_slide(13, "FALL OF THE DYNASTY (1287\u20131290)", [
     ("More than a family change: ", "the Turkish slave elite's monopoly broke forever \u2014 the dynasty fell to the very principle that had raised it: power belongs to the capable."),
 ], size=17, gap=14, reserve_right=3.6, extras=_sword_clash)
 
+def _state_machine(s, anim, pic):
+    """Animated org-chart: Sultan on top, iqta below, revenue & orders flowing."""
+    sultan = dbox(s, [("SULTAN", 14, CREAM2, HEAD_FONT, False),
+                      ("Delhi", 10.5, WHITE, BODY_FONT, True)],
+                  10.1, 1.6, 2.2, 0.95, fill=DARK)
+    mins = dbox(s, [("wazir \u2022 ariz \u2022 insha \u2022 qazi", 10.5, WHITE, BODY_FONT, True)],
+                9.6, 2.85, 3.2, 0.55, fill=BROWN)
+    iqta = dbox(s, [("MUQTIS \u2014 IQTA PROVINCES", 11.5, CREAM2, HEAD_FONT, False),
+                    ("collect revenue \u2022 keep troops", 10, WHITE, BODY_FONT, False)],
+                9.6, 5.5, 3.2, 0.95, fill=BROWN2)
+    up = dbox(s, [("\u25b2", 13, WHITE, BODY_FONT, True)], 10.0, 5.1, 0.45, 0.45,
+              fill=GREEN2, line_c=None, shape=MSO_SHAPE.OVAL)
+    dn = dbox(s, [("\u25bc", 13, WHITE, BODY_FONT, True)], 11.95, 3.6, 0.45, 0.45,
+              fill=BROWN, line_c=None, shape=MSO_SHAPE.OVAL)
+    lup = dlabel(s, "revenue", 9.28, 4.35, 1.0, size=10.5, color=GREEN2, italic=False, bold=True)
+    ldn = dlabel(s, "orders", 12.35, 4.35, 0.9, size=10.5, color=BROWN, italic=False, bold=True)
+    anim.add_group([{"spid": sultan.shape_id, "kind": "zoom", "dur": 450},
+                    {"spid": mins.shape_id, "kind": "fade", "dur": 400, "delay": 400},
+                    {"spid": iqta.shape_id, "kind": "fade", "dur": 400, "delay": 800},
+                    {"spid": lup.shape_id, "kind": "fade", "dur": 300, "delay": 1200},
+                    {"spid": ldn.shape_id, "kind": "fade", "dur": 300, "delay": 1300}],
+                   click=True)
+    # revenue flows up, orders flow down — forever
+    anim.add_group([{"spid": up.shape_id, "kind": "motion",
+                     "path": "M 0 0 L 0 -0.2 E", "dur": 1800,
+                     "repeat": "indefinite"}], click=False)
+    anim.add_group([{"spid": dn.shape_id, "kind": "motion",
+                     "path": "M 0 0 L 0 0.2 E", "dur": 1800, "delay": 900,
+                     "repeat": "indefinite"}], click=False)
+    for sp in (sultan, mins, iqta, lup, ldn):
+        anim.build_shape(sp.shape_id)
+
+
 content_slide(14, "ADMINISTRATION", [
     ("The Sultan: ", "absolute in theory \u2014 military power + Islamic legitimacy + (after Balban) a semi-divine aura."),
     ("Great ministries: ", "diwan-i-wizarat (finance), ariz-i-mamalik (army), diwan-i-insha (correspondence), qazi (justice)."),
@@ -679,33 +1014,79 @@ content_slide(14, "ADMINISTRATION", [
     ("Transferable, not hereditary: ", "strong sultans shuffled muqtis so no officer could grow local roots."),
     ("Army & intelligence: ", "heavy cavalry and war elephants; Balban paid the central army directly; barids everywhere."),
     ("Everyday India carried on: ", "village life, caste society, customary law \u2014 taxed but rarely touched."),
-], img="tanka.jpg", caption="Silver tanka of Iltutmish \u2014 ancestor of the rupee",
-    size=16.5, gap=11, img_w=2.9, img_h=2.9,
-    extras=lambda s, anim, pic: anim.add_group(
-        [{"spid": pic.shape_id, "kind": "spin", "deg": 360, "dur": 6000,
-          "repeat": "indefinite"}], click=False))
+], size=16.5, gap=11, reserve_right=4.1, extras=_state_machine)
 
-# ---- Architecture slide (two pictures)
-s, anim = add_slide()
-side_bar(s); footer(s, 15)
-heading(s, anim, "ART AND ARCHITECTURE")
-bullets(s, anim, [
+# ---- Architecture slide: the Qutb Minar BUILDS ITSELF, storey by storey
+def _minar_build(s, anim, pic):
+    ground = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(9.4), Inches(6.45),
+                                Inches(3.6), Inches(0.1))
+    ground.fill.solid(); ground.fill.fore_color.rgb = GOLD
+    ground.line.fill.background(); ground.shadow.inherit = False
+    cx = 11.2
+    storeys = [(1.55, 1.05, "1199", BROWN), (1.28, 0.95, "", BROWN2),
+               (1.04, 0.85, "", BROWN), (0.82, 0.7, "1220", BROWN2),
+               (0.62, 0.6, "", BROWN)]
+    blocks = []
+    y = 6.45
+    for w, h, yr, fill in storeys:
+        y -= h
+        st = dbox(s, [(yr, 10, CREAM2, BODY_FONT, True)] if yr else
+                  [("", 6, WHITE, BODY_FONT, False)],
+                  cx - w / 2, y, w, h, fill=fill, line_c=GOLD,
+                  shape=MSO_SHAPE.ROUND_2_SAME_RECTANGLE)
+        blocks.append(st)
+    dome = s.shapes.add_shape(MSO_SHAPE.OVAL, Inches(cx - 0.17), Inches(y - 0.32),
+                              Inches(0.34), Inches(0.3))
+    dome.fill.solid(); dome.fill.fore_color.rgb = GOLD
+    dome.line.color.rgb = BROWN; dome.line.width = Pt(1)
+    dome.shadow.inherit = False
+    lab = dlabel(s, "QUTB MINAR \u2014 72.5 m", 9.4, 1.35, 3.6, size=13, color=BROWN,
+                 italic=False, bold=True)
+    sub = dlabel(s, "begun by Aibak \u2022 finished by Iltutmish", 9.4, 6.65, 3.6,
+                 size=11.5)
+    anim.add_group([{"spid": ground.shape_id, "kind": "wipe", "dur": 400}], click=False)
+    effs = [{"spid": b.shape_id, "kind": "wipeup", "dur": 500, "delay": i * 520}
+            for i, b in enumerate(blocks)]
+    effs.append({"spid": dome.shape_id, "kind": "zoom", "dur": 350,
+                 "delay": len(blocks) * 520})
+    effs.append({"spid": lab.shape_id, "kind": "fade", "dur": 400,
+                 "delay": len(blocks) * 520 + 300})
+    effs.append({"spid": sub.shape_id, "kind": "fade", "dur": 400,
+                 "delay": len(blocks) * 520 + 500})
+    anim.add_group(effs, click=True)
+    for sp in blocks + [ground, dome, lab, sub]:
+        anim.build_shape(sp.shape_id)
+
+
+content_slide(15, "ART AND ARCHITECTURE", [
     ("Quwwat-ul-Islam mosque: ", "Delhi's first great mosque \u2014 built on carved temple pillars; two artistic worlds merging."),
     ("Qutb Minar: ", "begun by Aibak, completed by Iltutmish \u2014 72.5 m, world's tallest brick minaret."),
     ("Tombs: ", "Iltutmish's carved tomb; Sultan Ghari \u2014 earliest Islamic tomb in India."),
     ("Balban's tomb: ", "one of India's first true arches \u2014 pointing toward the Mughal domes to come."),
-], Inches(0.75), Inches(1.5), Inches(5.7), Inches(5.3), size=16, gap=13)
-picture(s, anim, f"{ASSETS}/quwwat.jpg", Inches(6.7), Inches(1.5), Inches(3.05), Inches(4.2),
-        caption=None)
-# the Qutb Minar "rises from the ground" (wipe-up entrance)
-picture(s, anim, f"{ASSETS}/qutb_minar.jpg", Inches(9.95), Inches(1.5), Inches(3.05), Inches(4.2),
-        caption=None, effect="wipeup", effect_dur=1600)
-cap = box(s, Inches(6.7), Inches(5.8), Inches(6.3), Inches(0.5))
-p = cap.text_frame.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-set_run(p.add_run(), "Quwwat-ul-Islam corridor  \u2022  Qutb Minar", 12, BODY_FONT, GRAY, italic=True)
-anim.add_group([{"spid": cap.shape_id, "kind": "fade", "dur": 400}], click=False)
-anim.build_shape(cap.shape_id)
-anim.apply()
+], size=17, gap=14, reserve_right=4.1, extras=_minar_build)
+
+def _legacy_wheel(s, anim, pic):
+    """What they left behind — chips radiate from the dynasty's core."""
+    core = dbox(s, [("1206\u20131290", 12, CREAM2, HEAD_FONT, False),
+                    ("WHAT THEY LEFT", 11, WHITE, BODY_FONT, True)],
+                9.75, 1.6, 2.9, 0.9, fill=DARK)
+    chips = [("DELHI as capital", BROWN), ("IQTA + ministries", BROWN2),
+             ("TANKA currency", BROWN), ("Mongols kept out", BROWN2),
+             ("Indo-Islamic culture", BROWN), ("A throne EARNED", GREEN2)]
+    shapes = []
+    y = 2.75
+    for txt, fill in chips:
+        c = dbox(s, [(txt, 11.5, WHITE, BODY_FONT, True)], 9.75, y, 2.9, 0.58,
+                 fill=fill)
+        shapes.append(c)
+        y += 0.73
+    anim.add_group([{"spid": core.shape_id, "kind": "zoom", "dur": 500}], click=False)
+    effs = [{"spid": c.shape_id, "kind": "fly", "path": "M 0.12 0 L 0 0 E",
+             "dur": 380, "delay": i * 300} for i, c in enumerate(shapes)]
+    anim.add_group(effs, click=True)
+    for sp in [core] + shapes:
+        anim.build_shape(sp.shape_id)
+
 
 content_slide(16, "LEGACY AND SIGNIFICANCE", [
     ("Political: ", "made Delhi the imperial centre of India \u2014 a status it has never really lost."),
@@ -714,8 +1095,7 @@ content_slide(16, "LEGACY AND SIGNIFICANCE", [
     ("Strategic: ", "its defence of the north-west kept the Mongol catastrophe out of India."),
     ("Cultural: ", "Amir Khusrau's poetry, the Chishti saints, and the start of the Indo-Islamic synthesis."),
     ("A radical idea: ", "a slave could become sultan; a woman could rule \u2014 the throne of Delhi could be earned."),
-], img="qutb_minar.jpg", caption="The dynasty's signature on Delhi's skyline",
-    size=16.5, gap=11, img_w=2.9, img_h=4.5)
+], size=16.5, gap=11, reserve_right=4.0, extras=_legacy_wheel)
 
 # ---- Conclusion
 s, anim = add_slide()
