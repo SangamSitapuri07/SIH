@@ -73,30 +73,93 @@ class Animator:
         spid, kind, prg = e["spid"], e["kind"], e.get("prg")
         delay = e.get("delay", 0)
         dur = e.get("dur", 500)
+        rep = e.get("repeat")            # None | "indefinite" | int (times)
         tgt = self._tgt(spid, prg)
-        preset = {"fade": 10, "wipe": 22, "zoom": 53}[kind]
-        i1, i2, i3 = next(self._id), next(self._id), next(self._id)
-        inner = (
-            f'<p:set><p:cBhvr><p:cTn id="{i2}" dur="1" fill="hold">'
-            f'<p:stCondLst><p:cond delay="0"/></p:stCondLst></p:cTn>{tgt}'
-            f'<p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst>'
-            f'</p:cBhvr><p:to><p:strVal val="visible"/></p:to></p:set>'
-        )
-        if kind == "wipe":
-            inner += (f'<p:animEffect transition="in" filter="wipe(down)">'
-                      f'<p:cBhvr><p:cTn id="{i3}" dur="{dur}"/>{tgt}</p:cBhvr></p:animEffect>')
-        else:
-            inner += (f'<p:animEffect transition="in" filter="fade">'
-                      f'<p:cBhvr><p:cTn id="{i3}" dur="{dur}"/>{tgt}</p:cBhvr></p:animEffect>')
-        if kind == "zoom":
-            i4 = next(self._id)
-            inner += (
-                f'<p:animScale><p:cBhvr><p:cTn id="{i4}" dur="{dur}" fill="hold"/>'
-                f'{tgt}</p:cBhvr><p:from x="20000" y="20000"/>'
-                f'<p:to x="100000" y="100000"/></p:animScale>'
+        i1 = next(self._id)
+        rep_attr = ""
+        if rep is not None:
+            rep_attr = (' repeatCount="indefinite"' if rep == "indefinite"
+                        else f' repeatCount="{int(rep) * 1000}"')
+
+        def _set_visible():
+            i = next(self._id)
+            return (
+                f'<p:set><p:cBhvr><p:cTn id="{i}" dur="1" fill="hold">'
+                f'<p:stCondLst><p:cond delay="0"/></p:stCondLst></p:cTn>{tgt}'
+                f'<p:attrNameLst><p:attrName>style.visibility</p:attrName>'
+                f'</p:attrNameLst></p:cBhvr><p:to><p:strVal val="visible"/></p:to></p:set>'
             )
+
+        # ---------- motion along a path (shape already visible) ----------
+        if kind == "motion":
+            i2 = next(self._id)
+            inner = (
+                f'<p:animMotion origin="layout" path="{e["path"]}" '
+                f'pathEditMode="relative" ptsTypes="">'
+                f'<p:cBhvr><p:cTn id="{i2}" dur="{dur}"{rep_attr} fill="hold"/>{tgt}'
+                f'<p:attrNameLst><p:attrName>ppt_x</p:attrName>'
+                f'<p:attrName>ppt_y</p:attrName></p:attrNameLst>'
+                f'</p:cBhvr></p:animMotion>'
+            )
+            preset, pclass = 0, "path"
+        # ---------- fly-in entrance along a path (+ optional swing) ------
+        elif kind == "fly":
+            inner = _set_visible()
+            i2 = next(self._id)
+            inner += (
+                f'<p:animMotion origin="layout" path="{e["path"]}" '
+                f'pathEditMode="relative" ptsTypes="">'
+                f'<p:cBhvr><p:cTn id="{i2}" dur="{dur}" fill="hold"/>{tgt}'
+                f'<p:attrNameLst><p:attrName>ppt_x</p:attrName>'
+                f'<p:attrName>ppt_y</p:attrName></p:attrNameLst>'
+                f'</p:cBhvr></p:animMotion>'
+            )
+            if e.get("swing"):
+                i3 = next(self._id)
+                inner += (
+                    f'<p:animRot by="{int(e["swing"] * 60000)}">'
+                    f'<p:cBhvr><p:cTn id="{i3}" dur="{dur}" fill="hold"/>{tgt}'
+                    f'<p:attrNameLst><p:attrName>r</p:attrName></p:attrNameLst>'
+                    f'</p:cBhvr></p:animRot>'
+                )
+            preset, pclass = 2, "entr"
+        # ---------- continuous spin (emphasis) ---------------------------
+        elif kind == "spin":
+            i2 = next(self._id)
+            inner = (
+                f'<p:animRot by="{int(e.get("deg", 360) * 60000)}">'
+                f'<p:cBhvr><p:cTn id="{i2}" dur="{dur}"{rep_attr} fill="hold"/>{tgt}'
+                f'<p:attrNameLst><p:attrName>r</p:attrName></p:attrNameLst>'
+                f'</p:cBhvr></p:animRot>'
+            )
+            preset, pclass = 8, "emph"
+        # ---------- pulse (emphasis) --------------------------------------
+        elif kind == "pulse":
+            i2 = next(self._id)
+            inner = (
+                f'<p:animScale><p:cBhvr>'
+                f'<p:cTn id="{i2}" dur="{dur}" autoRev="1"{rep_attr} fill="hold"/>{tgt}'
+                f'</p:cBhvr><p:by x="110000" y="110000"/></p:animScale>'
+            )
+            preset, pclass = 26, "emph"
+        # ---------- entrances: fade / wipe / wipeup / zoom ----------------
+        else:
+            preset = {"fade": 10, "wipe": 22, "wipeup": 22, "zoom": 53}[kind]
+            pclass = "entr"
+            inner = _set_visible()
+            i3 = next(self._id)
+            filt = {"wipe": "wipe(down)", "wipeup": "wipe(up)"}.get(kind, "fade")
+            inner += (f'<p:animEffect transition="in" filter="{filt}">'
+                      f'<p:cBhvr><p:cTn id="{i3}" dur="{dur}"/>{tgt}</p:cBhvr></p:animEffect>')
+            if kind == "zoom":
+                i4 = next(self._id)
+                inner += (
+                    f'<p:animScale><p:cBhvr><p:cTn id="{i4}" dur="{dur}" fill="hold"/>'
+                    f'{tgt}</p:cBhvr><p:from x="20000" y="20000"/>'
+                    f'<p:to x="100000" y="100000"/></p:animScale>'
+                )
         return (
-            f'<p:par><p:cTn id="{i1}" presetID="{preset}" presetClass="entr" '
+            f'<p:par><p:cTn id="{i1}" presetID="{preset}" presetClass="{pclass}" '
             f'presetSubtype="0" fill="hold" grpId="0" nodeType="{ntype}">'
             f'<p:stCondLst><p:cond delay="{delay}"/></p:stCondLst>'
             f'<p:childTnLst>{inner}</p:childTnLst></p:cTn></p:par>'
@@ -223,7 +286,7 @@ def bullets(slide, anim, items, l, t, w, h, size=17, gap=12, per_click=True):
     return tb
 
 
-def picture(slide, anim, path, l, t, w, h, caption=None, zoom=True):
+def picture(slide, anim, path, l, t, w, h, caption=None, effect="zoom", effect_dur=600):
     """Aspect-fit crop into box, brown frame, optional caption. Returns pic."""
     iw, ih = Image.open(path).size
     box_ratio = w / h
@@ -247,29 +310,55 @@ def picture(slide, anim, path, l, t, w, h, caption=None, zoom=True):
         p.alignment = PP_ALIGN.CENTER
         set_run(p.add_run(), caption, 12, BODY_FONT, GRAY, italic=True)
         shapes.append(cap)
-    effs = [{"spid": sp.shape_id, "kind": "zoom" if zoom else "fade", "dur": 600,
-             "delay": 150 * i} for i, sp in enumerate(shapes)]
+    effs = []
+    for i, sp in enumerate(shapes):
+        k = effect if i == 0 else "fade"
+        effs.append({"spid": sp.shape_id, "kind": k, "dur": effect_dur, "delay": 150 * i})
     anim.add_group(effs, click=False)
     for sp in shapes:
         anim.build_shape(sp.shape_id)
     return pic
 
 
+def prop(slide, path, l, t, w, h):
+    """Transparent PNG prop (horse / sword / arrow) — no frame, no auto-anim."""
+    pic = slide.shapes.add_picture(path, l, t, w, h)
+    return pic
+
+
+GALLOP = ("M 0 0 L 0.1 -0.015 L 0.2 0 L 0.3 -0.015 L 0.4 0 L 0.5 -0.015 "
+          "L 0.6 0 L 0.7 -0.015 L 0.8 0 L 0.9 -0.015 L 1.0 0 L 1.18 0 E")
+
+
+def running_horse(slide, anim, t, w=1.5, dur=7000):
+    """Horse+rider silhouette galloping across the slide, looping forever."""
+    wi = Inches(w); hi = Emu(int(wi * 932 / 1205))
+    horse = prop(slide, f"{ASSETS}/horse.png", -Emu(int(wi * 1.2)), t, wi, hi)
+    anim.add_group([{"spid": horse.shape_id, "kind": "motion", "path": GALLOP,
+                     "dur": dur, "repeat": "indefinite"}], click=False)
+    return horse
+
+
 # content slide with picture on the right
 def content_slide(n, title, items, img=None, caption=None, size=17, gap=12,
-                  img_w=3.3, img_h=4.3):
+                  img_w=3.3, img_h=4.3, extras=None, reserve_right=0.0):
     s, anim = add_slide()
     side_bar(s); footer(s, n)
     heading(s, anim, title)
+    pic = None
     if img:
         iw, ih = Inches(img_w), Inches(img_h)
         il = SW - iw - Inches(0.55)
         it = Inches(1.55)
-        picture(s, anim, f"{ASSETS}/{img}", il, it, iw, ih, caption)
+        pic = picture(s, anim, f"{ASSETS}/{img}", il, it, iw, ih, caption)
         tw = il - Inches(1.05)
+    elif reserve_right:
+        tw = SW - Inches(1.7) - Inches(reserve_right)
     else:
         tw = SW - Inches(1.7)
     bullets(s, anim, items, Inches(0.8), Inches(1.5), tw, Inches(5.6), size=size, gap=gap)
+    if extras:
+        extras(s, anim, pic)
     anim.apply()
     return s
 
@@ -346,6 +435,8 @@ anim.add_group([{"spid": tb3.shape_id, "kind": "fade", "dur": 500},
 for t in (tb1, tb2, tb3, tb4):
     anim.build_shape(t.shape_id)
 anim.build_shape(seal.shape_id); anim.build_shape(art_l.shape_id); anim.build_shape(art_r.shape_id)
+# galloping horse rides across the bottom of the title slide, forever
+running_horse(s, anim, Inches(6.1), w=1.55, dur=7000)
 anim.apply()
 
 # ====================================================================
@@ -455,6 +546,8 @@ for i, (card, dot) in enumerate(tl_shapes):
 anim.add_group(effs, click=True)
 for card, dot in tl_shapes:
     anim.build_shape(card.shape_id); anim.build_shape(dot.shape_id)
+# after the cards appear, a rider gallops down the timeline
+running_horse(s, anim, Inches(3.18), w=1.15, dur=5500)
 anim.apply()
 
 # ====================================================================
@@ -495,6 +588,16 @@ content_slide(8, "ILTUTMISH (r. 1211\u20131236) \u2013 THE REAL FOUNDER", [
 ], img="iltutmish_tomb.jpg", caption="Carved walls of Iltutmish's tomb, Qutb complex",
     size=16.5, gap=11)
 
+def _arrow_volley(s, anim, pic):
+    """Mongol arrows whistle across the bottom of the slide, endlessly."""
+    specs = [(Inches(6.35), 2100, 0), (Inches(6.62), 1700, 450), (Inches(6.88), 1900, 900)]
+    for t, dur, delay in specs:
+        ar = prop(s, f"{ASSETS}/arrow.png", -Inches(1.5), t, Inches(1.35), Inches(0.2))
+        anim.add_group([{"spid": ar.shape_id, "kind": "motion",
+                         "path": "M 0 0 L 1.3 0.012 E", "dur": dur,
+                         "delay": delay, "repeat": "indefinite"}], click=False)
+
+
 content_slide(9, "THE MONGOL STORM (1221)", [
     ("Chingiz Khan on the Indus: ", "after destroying Khwarazm, the Mongols chased prince Jalal-ud-din to India's doorstep."),
     ("The dilemma: ", "shelter the fugitive prince and invite Chingiz Khan in \u2014 or refuse and look cowardly?"),
@@ -502,7 +605,7 @@ content_slide(9, "THE MONGOL STORM (1221)", [
     ("Result: ", "the Mongols withdrew; India escaped the fate of Merv, Nishapur and Baghdad."),
     ("One wrong step in 1221 ", "and the thirty-year-old Sultanate might have ended there."),
 ], img="genghis.jpg", caption="Chingiz Khan \u2014 Yuan-era portrait", size=17, gap=14,
-    img_w=2.9, img_h=3.4)
+    img_w=2.9, img_h=3.4, extras=_arrow_volley)
 
 content_slide(10, "RAZIA SULTAN (r. 1236\u20131240)", [
     ("First and only woman ", "to rule from the throne of Delhi \u2014 crowned after Delhi's citizens rose against Ruknuddin Firuz."),
@@ -532,13 +635,42 @@ content_slide(12, "BALBAN (r. 1266\u20131287) \u2013 BLOOD AND IRON", [
 ], img="balban_tomb.jpg", caption="Balban's tomb \u2014 one of India's first true arches",
     size=16.5, gap=11)
 
+def _sword_clash(s, anim, pic):
+    """Two talwars fly in from the corners and cross with a golden clash burst."""
+    sl, st = Inches(9.55), Inches(2.6)
+    sw_, sh_ = Inches(2.9), Emu(int(Inches(2.9) * 950 / 1369))
+    sword_r = prop(s, f"{ASSETS}/sword_r.png", sl, st, sw_, sh_)   # handle BL, tip TR
+    sword_l = prop(s, f"{ASSETS}/sword_l.png", sl, st, sw_, sh_)   # handle BR, tip TL
+    star = s.shapes.add_shape(MSO_SHAPE.STAR_8_POINT,
+                              Inches(10.55), Inches(3.1), Inches(0.9), Inches(0.9))
+    star.fill.solid(); star.fill.fore_color.rgb = GOLD
+    star.line.color.rgb = BROWN; star.line.width = Pt(1.25)
+    star.shadow.inherit = False
+    cap = box(s, Inches(9.35), Inches(5.0), Inches(3.5), Inches(0.6))
+    p = cap.text_frame.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+    set_run(p.add_run(), "1290 \u2014 the Khalji swords fall", 12, BODY_FONT, GRAY, italic=True)
+    anim.add_group([
+        {"spid": sword_r.shape_id, "kind": "fly", "path": "M -0.5 0.35 L 0 0 E",
+         "dur": 650, "swing": 25},
+        {"spid": sword_l.shape_id, "kind": "fly", "path": "M 0.35 0.35 L 0 0 E",
+         "dur": 650, "swing": -25},
+        {"spid": star.shape_id, "kind": "zoom", "dur": 300, "delay": 600},
+        {"spid": cap.shape_id, "kind": "fade", "dur": 400, "delay": 850},
+    ], click=True)
+    # the clash star keeps pulsing like ringing steel
+    anim.add_group([{"spid": star.shape_id, "kind": "pulse", "dur": 650,
+                     "repeat": 4}], click=False)
+    for sp in (sword_r, sword_l, star, cap):
+        anim.build_shape(sp.shape_id)
+
+
 content_slide(13, "FALL OF THE DYNASTY (1287\u20131290)", [
     ("Dynasties rarely survive their strongmen: ", "nobles ignored Balban's chosen heir and crowned teenage Kaiqubad."),
     ("Three wasted years: ", "freed from suffocating discipline, Kaiqubad sank into pleasure \u2014 administration collapsed."),
     ("Rise of the Khaljis: ", "the old Turkish party lost ground to veteran commander Jalal-ud-din Khalji."),
     ("1290 \u2013 Khalji Revolution: ", "the paralysed Kaiqubad was killed at Kilokhri; Jalal-ud-din took the throne."),
     ("More than a family change: ", "the Turkish slave elite's monopoly broke forever \u2014 the dynasty fell to the very principle that had raised it: power belongs to the capable."),
-], size=18, gap=15)
+], size=17, gap=14, reserve_right=3.6, extras=_sword_clash)
 
 content_slide(14, "ADMINISTRATION", [
     ("The Sultan: ", "absolute in theory \u2014 military power + Islamic legitimacy + (after Balban) a semi-divine aura."),
@@ -548,7 +680,10 @@ content_slide(14, "ADMINISTRATION", [
     ("Army & intelligence: ", "heavy cavalry and war elephants; Balban paid the central army directly; barids everywhere."),
     ("Everyday India carried on: ", "village life, caste society, customary law \u2014 taxed but rarely touched."),
 ], img="tanka.jpg", caption="Silver tanka of Iltutmish \u2014 ancestor of the rupee",
-    size=16.5, gap=11, img_w=2.9, img_h=2.9)
+    size=16.5, gap=11, img_w=2.9, img_h=2.9,
+    extras=lambda s, anim, pic: anim.add_group(
+        [{"spid": pic.shape_id, "kind": "spin", "deg": 360, "dur": 6000,
+          "repeat": "indefinite"}], click=False))
 
 # ---- Architecture slide (two pictures)
 s, anim = add_slide()
@@ -562,8 +697,9 @@ bullets(s, anim, [
 ], Inches(0.75), Inches(1.5), Inches(5.7), Inches(5.3), size=16, gap=13)
 picture(s, anim, f"{ASSETS}/quwwat.jpg", Inches(6.7), Inches(1.5), Inches(3.05), Inches(4.2),
         caption=None)
+# the Qutb Minar "rises from the ground" (wipe-up entrance)
 picture(s, anim, f"{ASSETS}/qutb_minar.jpg", Inches(9.95), Inches(1.5), Inches(3.05), Inches(4.2),
-        caption=None)
+        caption=None, effect="wipeup", effect_dur=1600)
 cap = box(s, Inches(6.7), Inches(5.8), Inches(6.3), Inches(0.5))
 p = cap.text_frame.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
 set_run(p.add_run(), "Quwwat-ul-Islam corridor  \u2022  Qutb Minar", 12, BODY_FONT, GRAY, italic=True)
@@ -597,7 +733,11 @@ ty = box(s, Inches(0.8), SH - Inches(1.1), SW - Inches(1.7), Inches(0.75))
 p = ty.text_frame.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
 r = p.add_run(); set_run(r, "THANK YOU", 34, HEAD_FONT, BROWN); r.font.underline = True
 anim.add_group([{"spid": ty.shape_id, "kind": "zoom", "dur": 700}], click=True)
+anim.add_group([{"spid": ty.shape_id, "kind": "pulse", "dur": 800, "repeat": 3}],
+               click=False)
 anim.build_shape(ty.shape_id)
+# a last rider gallops off into history
+running_horse(s, anim, Inches(5.1), w=1.35, dur=6000)
 anim.apply()
 
 OUT = "/home/user/SIH/assignment/Slave_Dynasty_Mamluk_Presentation.pptx"
