@@ -14,6 +14,9 @@ from pptx.enum.text import PP_ALIGN
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.oxml import parse_xml
 from PIL import Image
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import native_scenes as ns
 
 ASSETS = "/home/user/SIH/assignment/assets"
 
@@ -143,9 +146,10 @@ class Animator:
         # ---------- continuous spin (emphasis) ---------------------------
         elif kind == "spin":
             i2 = next(self._id)
+            rev_attr = ' autoRev="1"' if e.get("rev") else ""
             inner = (
                 f'<p:animRot by="{int(e.get("deg", 360) * 60000)}">'
-                f'<p:cBhvr><p:cTn id="{i2}" dur="{dur}"{rep_attr} fill="hold"/>{tgt}'
+                f'<p:cBhvr><p:cTn id="{i2}" dur="{dur}"{rep_attr}{rev_attr} fill="hold"/>{tgt}'
                 f'<p:attrNameLst><p:attrName>r</p:attrName></p:attrNameLst>'
                 f'</p:cBhvr></p:animRot>'
             )
@@ -398,7 +402,7 @@ def dlabel(slide, text, l, t, w, size=12, color=GRAY, italic=True, bold=False,
 def running_horse(slide, anim, t, w=1.5, dur=7000):
     """Horse+rider silhouette galloping across the slide, looping forever."""
     wi = Inches(w); hi = Emu(int(wi * 932 / 1205))
-    horse = prop(slide, f"{ASSETS}/horse.png", -Emu(int(wi * 1.2)), t, wi, hi)
+    horse = ns.horse_shape(slide, -Emu(int(wi * 1.2)), t, wi, hi)
     anim.add_group([{"spid": horse.shape_id, "kind": "motion", "path": GALLOP,
                      "dur": dur, "repeat": "indefinite"}], click=False)
     return horse
@@ -407,12 +411,27 @@ def running_horse(slide, anim, t, w=1.5, dur=7000):
 # content slide with picture on the right
 def content_slide(n, title, items, img=None, caption=None, size=17, gap=12,
                   img_w=3.3, img_h=4.3, extras=None, reserve_right=0.0,
-                  img_effect="fade", ken=True):
+                  img_effect="fade", ken=True, scene=None):
     s, anim = add_slide()
     side_bar(s); footer(s, n)
     heading(s, anim, title)
     pic = None
-    if img:
+    if scene:
+        iw, ih = Inches(img_w), Inches(img_h)
+        il = SW - iw - Inches(0.55)
+        it = Inches(1.55)
+        scene(s, anim, il, it, iw, ih)
+        if caption:
+            cap = box(s, il - Inches(0.3), it + ih + Inches(0.06),
+                      iw + Inches(0.6), Inches(0.55))
+            p = cap.text_frame.paragraphs[0]
+            p.alignment = PP_ALIGN.CENTER
+            set_run(p.add_run(), caption, 12, BODY_FONT, GRAY, italic=True)
+            anim.add_group([{"spid": cap.shape_id, "kind": "fade", "dur": 500}],
+                           click=False)
+            anim.build_shape(cap.shape_id)
+        tw = il - Inches(1.05)
+    elif img:
         iw, ih = Inches(img_w), Inches(img_h)
         il = SW - iw - Inches(0.55)
         it = Inches(1.55)
@@ -579,7 +598,7 @@ content_slide(3, "INTRODUCTION", [
     ("Nobody ruled as a slave ", "\u2014 each ruler was legally freed (manumitted) before taking the throne."),
     ("Really three families: ", "the houses of Aibak, Iltutmish and Balban, one after another."),
     ("Why it matters: ", "it laid the foundation of the Delhi Sultanate \u2014 Delhi as capital, the tanka coin, the iqta system, the Qutb Minar \u2014 shaping north India for 300 years."),
-], img="anim/intro.gif", caption="From chains to crowns \u2014 the story begins",
+], scene=ns.scene_intro, caption="From chains to crowns \u2014 the story begins",
     size=18, gap=14, img_w=3.5, img_h=4.4)
 
 # ====================================================================
@@ -688,7 +707,7 @@ content_slide(5, "WHO WERE THE MAMLUKS?", [
     ("Promotion purely on merit ", "\u2014 a talented slave could rise to general, governor\u2026 and eventually king."),
     ("Not plantation slavery: ", "they ate well, commanded armies, married into noble families \u2014 apprenticeship plus bonded loyalty."),
     ("Ghori's 'sons': ", "asked about having no heir, Ghori said his thousands of Turkish slaves would carry his name \u2014 and they did."),
-], img="anim/market.gif", caption="A boy is bought in Bukhara\u2026 a sultan is made",
+], scene=ns.scene_market, caption="A boy is bought in Bukhara\u2026 a sultan is made",
     size=17, gap=13, img_w=3.5, img_h=4.4)
 
 def _empire_splits(s, anim, pic):
@@ -723,7 +742,7 @@ content_slide(6, "1206 \u2013 BIRTH OF THE SULTANATE", [
     ("Aibak moved fastest: ", "invited by the nobles and citizens of Lahore, he took charge of Hindustan within months."),
     ("Legitimacy mattered: ", "he used modest titles (Malik, Sipahsalar) until formally freed and recognised (c. 1208)."),
     ("The result: ", "an independent Indian kingdom owing nothing to Ghazni \u2014 the Delhi Sultanate begins here."),
-], img="anim/ghori.gif", caption="Damyak, March 1206 \u2014 daggers in the night",
+], scene=ns.scene_ghori, caption="Damyak, March 1206 \u2014 daggers in the night",
     size=17, gap=13, img_w=3.5, img_h=4.4)
 
 def _coin_shower(s, anim, pic):
@@ -755,7 +774,7 @@ content_slide(7, "QUTB-UD-DIN AIBAK (r. 1206\u20131210)", [
     ("'Lakh Baksh' ", "\u2014 the giver of lakhs \u2014 famous above all for open-handed generosity."),
     ("Builder: ", "began the Quwwat-ul-Islam mosque and Qutb Minar at Delhi; Adhai Din ka Jhonpra at Ajmer."),
     ("Sudden end (1210): ", "died in a fall while playing chaugan (polo) at Lahore. His short reign turned a general's command into a kingdom."),
-], img="anim/aibak.gif", caption="Lakh Baksh \u2014 gold flows from the throne",
+], scene=ns.scene_aibak, caption="Lakh Baksh \u2014 gold flows from the throne",
     size=17, gap=13, img_w=3.5, img_h=4.4)
 
 def _foundation_stack(s, anim, pic):
@@ -789,7 +808,7 @@ content_slide(8, "ILTUTMISH (r. 1211\u20131236) \u2013 THE REAL FOUNDER", [
     ("Institution builder: ", "the Forty (Chahalgani), the iqta system, Delhi as permanent capital."),
     ("Currency reform: ", "silver tanka + copper jital \u2014 ancestors of the rupee."),
     ("Boldest decision: ", "nominated his daughter Razia as heir over his sons."),
-], img="anim/iltutmish.gif", caption="1229 \u2014 the Caliph\u2019s robe arrives from Baghdad",
+], scene=ns.scene_iltutmish, caption="1229 \u2014 the Caliph\u2019s robe arrives from Baghdad",
     size=16.5, gap=11, img_w=3.5, img_h=4.5)
 
 def _indus_standoff(s, anim, pic):
@@ -832,27 +851,17 @@ def _indus_standoff(s, anim, pic):
         anim.build_shape(sp.shape_id)
     # arrows still whistle along the bottom of the slide
     for t, dur, delay in ((6.35, 2100, 0), (6.62, 1700, 450), (6.88, 1900, 900)):
-        ar = prop(s, f"{ASSETS}/arrow.png", -Inches(1.5), Inches(t),
-                  Inches(1.35), Inches(0.2))
+        ar = ns.arrow_shape(s, -Inches(1.5), Inches(t), Inches(1.35), Inches(0.2))
         anim.add_group([{"spid": ar.shape_id, "kind": "motion",
                          "path": "M 0 0 L 1.3 0.012 E", "dur": dur,
                          "delay": delay, "repeat": "indefinite"}], click=False)
 
 
 def _ride_through(s, anim, pic):
-    """A rider gallops THROUGH the Mongol scene — and arrows fly below."""
-    il, it = pic.left, pic.top
-    iw, ih = pic.width, pic.height
-    hw = Inches(1.0); hh = Emu(int(hw * 932 / 1205))
-    horse = prop(s, f"{ASSETS}/horse.png", il - Emu(int(hw * 0.9)),
-                 it + ih - Emu(int(hh * 1.15)), hw, hh)
-    travel = (iw + hw * 1.2) / SW
-    anim.add_group([{"spid": horse.shape_id, "kind": "motion",
-                     "path": f"M 0 0 L {travel:.3f} -0.005 E", "dur": 3600,
-                     "repeat": "indefinite"}], click=False)
+    """A rider gallops across the whole slide — and arrows fly below."""
+    running_horse(s, anim, Inches(5.95), w=1.15, dur=5200)
     for t, dur, delay in ((6.35, 2100, 0), (6.62, 1700, 450), (6.88, 1900, 900)):
-        ar = prop(s, f"{ASSETS}/arrow.png", -Inches(1.5), Inches(t),
-                  Inches(1.35), Inches(0.2))
+        ar = ns.arrow_shape(s, -Inches(1.5), Inches(t), Inches(1.35), Inches(0.2))
         anim.add_group([{"spid": ar.shape_id, "kind": "motion",
                          "path": "M 0 0 L 1.3 0.012 E", "dur": dur,
                          "delay": delay, "repeat": "indefinite"}], click=False)
@@ -864,7 +873,7 @@ content_slide(9, "THE MONGOL STORM (1221)", [
     ("Iltutmish's masterstroke: ", "he politely replied that Delhi's climate 'would not suit' the prince \u2014 and quietly moved troops."),
     ("Result: ", "the Mongols withdrew; India escaped the fate of Merv, Nishapur and Baghdad."),
     ("One wrong step in 1221 ", "and the thirty-year-old Sultanate might have ended there."),
-], img="anim/mongol.gif", caption="1221 \u2014 the horde waits across the Indus",
+], scene=ns.scene_mongol, caption="1221 \u2014 the horde waits across the Indus",
     size=17, gap=14, img_w=3.6, img_h=4.3, extras=_ride_through)
 
 def _razia_rise_fall(s, anim, pic):
@@ -910,7 +919,7 @@ content_slide(10, "RAZIA SULTAN (r. 1236\u20131240)", [
     ("Merit over birth: ", "promoted able outsiders like the Abyssinian Yaqut \u2014 enraging the Turkish Forty."),
     ("The fall (1240): ", "betrayed, imprisoned, married the rebel Altunia, marched on Delhi \u2014 killed near Kaithal."),
     ("She fell not for ruling badly ", "\u2014 but for ruling too independently."),
-], img="anim/razia.gif", caption="A Sultan, not a Sultana \u2014 leading from the front",
+], scene=ns.scene_razia, caption="A Sultan, not a Sultana \u2014 leading from the front",
     size=16.5, gap=11, img_w=3.5, img_h=4.5)
 
 def _puppet_show(s, anim, pic):
@@ -953,7 +962,7 @@ content_slide(11, "THE PUPPET YEARS (1240\u20131266)", [
     ("Nasiruddin Mahmud (1246\u201366): ", "gentle and pious \u2014 wisely left the real work of government to his deputy, Balban."),
     ("A historian's gift: ", "Minhaj-us-Siraj dedicated his Tabaqat-i-Nasiri to this sultan \u2014 our most important source."),
     ("1266: ", "Mahmud died without a son; the deputy finally took the crown himself."),
-], img="anim/puppet.gif", caption="A throne surrounded by whispers",
+], scene=ns.scene_puppet, caption="A throne surrounded by whispers",
     size=17, gap=14, img_w=3.5, img_h=4.4)
 
 def _two_pillars(s, anim, pic):
@@ -992,36 +1001,13 @@ content_slide(12, "BALBAN (r. 1266\u20131287) \u2013 BLOOD AND IRON", [
     ("Broke the Forty: ", "old comrades sidelined, poisoned or executed; barid spies in every province."),
     ("Bengal (1279): ", "marched there at nearly eighty; an example so harsh Bengal stayed quiet for a generation."),
     ("The price: ", "his heir Prince Muhammad fell to the Mongols (1285); Balban died broken in 1287."),
-], img="anim/balban.gif", caption="A court where no one dared to laugh",
+], scene=ns.scene_balban, caption="A court where no one dared to laugh",
     size=16.5, gap=11, img_w=3.5, img_h=4.5)
 
 def _sword_clash(s, anim, pic):
-    """Two talwars fly in from the corners and cross with a golden clash burst."""
-    sl, st = Inches(9.55), Inches(2.6)
-    sw_, sh_ = Inches(2.9), Emu(int(Inches(2.9) * 950 / 1369))
-    sword_r = prop(s, f"{ASSETS}/sword_r.png", sl, st, sw_, sh_)   # handle BL, tip TR
-    sword_l = prop(s, f"{ASSETS}/sword_l.png", sl, st, sw_, sh_)   # handle BR, tip TL
-    star = s.shapes.add_shape(MSO_SHAPE.STAR_8_POINT,
-                              Inches(10.55), Inches(3.1), Inches(0.9), Inches(0.9))
-    star.fill.solid(); star.fill.fore_color.rgb = GOLD
-    star.line.color.rgb = BROWN; star.line.width = Pt(1.25)
-    star.shadow.inherit = False
-    cap = box(s, Inches(9.35), Inches(5.0), Inches(3.5), Inches(0.6))
-    p = cap.text_frame.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-    set_run(p.add_run(), "1290 \u2014 the Khalji swords fall", 12, BODY_FONT, GRAY, italic=True)
-    anim.add_group([
-        {"spid": sword_r.shape_id, "kind": "fly", "path": "M -0.5 0.35 L 0 0 E",
-         "dur": 650, "swing": 25},
-        {"spid": sword_l.shape_id, "kind": "fly", "path": "M 0.35 0.35 L 0 0 E",
-         "dur": 650, "swing": -25},
-        {"spid": star.shape_id, "kind": "zoom", "dur": 300, "delay": 600},
-        {"spid": cap.shape_id, "kind": "fade", "dur": 400, "delay": 850},
-    ], click=True)
-    # the clash star keeps pulsing like ringing steel
-    anim.add_group([{"spid": star.shape_id, "kind": "pulse", "dur": 650,
-                     "repeat": 4}], click=False)
-    for sp in (sword_r, sword_l, star, cap):
-        anim.build_shape(sp.shape_id)
+    """Two native talwar freeforms fly in and cross with a golden clash burst."""
+    ns.sword_clash_scene(s, anim, Inches(9.55), Inches(2.35), Inches(3.3),
+                         Inches(2.75), "1290 \u2014 the Khalji swords fall")
 
 
 content_slide(13, "FALL OF THE DYNASTY (1287\u20131290)", [
@@ -1030,7 +1016,7 @@ content_slide(13, "FALL OF THE DYNASTY (1287\u20131290)", [
     ("Rise of the Khaljis: ", "the old Turkish party lost ground to veteran commander Jalal-ud-din Khalji."),
     ("1290 \u2013 Khalji Revolution: ", "the paralysed Kaiqubad was killed at Kilokhri; Jalal-ud-din took the throne."),
     ("More than a family change: ", "the Turkish slave elite's monopoly broke forever \u2014 the dynasty fell to the very principle that had raised it: power belongs to the capable."),
-], img="anim/duel.gif", caption="1290 \u2014 the Khalji swords fall",
+], scene=ns.scene_duel, caption="1290 \u2014 the Khalji swords fall",
     size=17, gap=14, img_w=3.5, img_h=4.4)
 
 def _state_machine(s, anim, pic):
@@ -1073,7 +1059,7 @@ content_slide(14, "ADMINISTRATION", [
     ("Transferable, not hereditary: ", "strong sultans shuffled muqtis so no officer could grow local roots."),
     ("Army & intelligence: ", "heavy cavalry and war elephants; Balban paid the central army directly; barids everywhere."),
     ("Everyday India carried on: ", "village life, caste society, customary law \u2014 taxed but rarely touched."),
-], img="anim/tanka.gif", caption="Silver tanka of Iltutmish \u2014 ancestor of the rupee",
+], scene=ns.scene_tanka, caption="Silver tanka of Iltutmish \u2014 ancestor of the rupee",
     size=16.5, gap=11, img_w=2.9, img_h=2.9, ken=False)
 
 # ---- Architecture slide: the Qutb Minar BUILDS ITSELF, storey by storey
@@ -1123,7 +1109,7 @@ content_slide(15, "ART AND ARCHITECTURE", [
     ("Qutb Minar: ", "begun by Aibak, completed by Iltutmish \u2014 72.5 m, world's tallest brick minaret."),
     ("Tombs: ", "Iltutmish's carved tomb; Sultan Ghari \u2014 earliest Islamic tomb in India."),
     ("Balban's tomb: ", "one of India's first true arches \u2014 pointing toward the Mughal domes to come."),
-], img="anim/minar.gif", caption="The tower still rises over Delhi",
+], scene=ns.scene_minar, caption="The tower still rises over Delhi",
     size=17, gap=14, img_w=3.2, img_h=4.7, img_effect="wipeup")
 
 def _legacy_wheel(s, anim, pic):
@@ -1156,7 +1142,7 @@ content_slide(16, "LEGACY AND SIGNIFICANCE", [
     ("Strategic: ", "its defence of the north-west kept the Mongol catastrophe out of India."),
     ("Cultural: ", "Amir Khusrau's poetry, the Chishti saints, and the start of the Indo-Islamic synthesis."),
     ("A radical idea: ", "a slave could become sultan; a woman could rule \u2014 the throne of Delhi could be earned."),
-], img="anim/legacy.gif", caption="What they built still stands",
+], scene=ns.scene_legacy, caption="What they built still stands",
     size=16.5, gap=11, img_w=3.3, img_h=4.5)
 
 # ---- Conclusion
@@ -1188,10 +1174,8 @@ anim.apply()
 s, anim = add_slide()
 side_bar(s); footer(s, 18)
 heading(s, anim, "THANK YOU, MATES!")
-picture(s, anim, f"{ASSETS}/anim/teddy.gif", Inches(4.57), Inches(1.42),
-        Inches(4.2), Inches(5.25),
-        "That's the story of the Slave Dynasty \u2014 thank you mates!",
-        effect="zoom", effect_dur=700, ken=False)
+ns.teddy_scene(s, anim, Inches(4.57), Inches(1.42), Inches(4.2), Inches(5.25),
+               "That's the story of the Slave Dynasty \u2014 thank you mates!")
 anim.apply()
 
 OUT = "/home/user/SIH/assignment/Slave_Dynasty_Mamluk_Presentation.pptx"
