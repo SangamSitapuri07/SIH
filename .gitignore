@@ -65,3 +65,6 @@ Desktop.ini
 # Logs
 *.log
 logs/
+
+# Connector download workspace (raw fetched media, not deliverables)
+google_drive/
